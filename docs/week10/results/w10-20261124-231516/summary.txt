@@ -1,0 +1,16 @@
+검사 135개 중 135개 통과
+
+단계 | 재고 | 선점 RESERVED·CONSUMED | 확정 | 결제 UNKNOWN | 업무 지표 UNKNOWN | PG 거래·create | health
+1-baseline | 90 | 0·10 | 10 | 0 | 0.0 | 10·10 | UP
+2-fault | 80 | 3·17 | 17 | 3 | 3.0 | 20·20 | UP
+3-recovery | 80 | 0·20 | 20 | 0 | 0.0 | 20·20 | UP
+랭킹 | periodStart=2026-11-23 · 1위 상품 1 점수 20
+
+응답 유실 주문: 12 15 18
+가설 판정:
+가설                            예상                                                        실제                                           판정
+1. PG가 아직 처리 중            PG 조회 PENDING                                             PG 조회 SUCCESS 3/3                            기각
+2. PG 성공 응답을 잃음          ② UNKNOWN cause=READ_TIMEOUT · ⑤ 없음 · PG 호출 span ≥ 3초  ② READ_TIMEOUT 3/3 · ⑤ 0줄 · 느린 PG span 3/3  지지
+3. 성공 조회 뒤 내부 반영 실패  ② ACCEPTED · ⑤ 있음                                         ② ACCEPTED 0/3 · ⑤ 0줄                         기각
+
+(참고) Prometheus 서버가 commerce-api 업무 지표를 수집한 상태: up

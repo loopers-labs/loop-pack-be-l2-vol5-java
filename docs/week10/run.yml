@@ -1,0 +1,14 @@
+# W10 사고 실험(docs/week10/run.sh) 전용 설정. --spring.config.additional-location으로만 읽는다 — application.yml에 실험 설정을 두지 않는다.
+payment:
+  scheduler:
+    # 자동 reconcile·정리·만료를 끈다. 켜 두면 5초 안에 응답 유실 주문 3건을 먼저 고쳐 장애 상태를 관찰할 수 없다 (plan.md D-1)
+    enabled: false
+management:
+  server:
+    address: 127.0.0.1   # 관리 포트를 밖에 열지 않는다
+  tracing:
+    sampling:
+      probability: 1.0   # 실험의 모든 요청을 trace로 남긴다 (기본 0.1). 전송처는 run.sh가 --management.otlp.tracing.endpoint로 준다
+spring:
+  jpa:
+    show-sql: false      # local 프로필의 SQL 출력을 끈다 — 증거 로그가 경계 로그로 읽히게

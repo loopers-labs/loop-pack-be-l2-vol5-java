@@ -247,7 +247,7 @@ flowchart TB
 |---|---|---|
 | D-1 | **연결 방식** — 모든 앱 진짜 프로세스, run.sh가 curl·SQL로 실행하고 `check`로 검증 | ✅ 11-23 |
 | D-2 | **응답 유실 제어** — `docs/week10/pg-sim.py`(복사), 주문 ID로 지정 · callback 보관 · 중복 create 기록 | ✅ 11-24 |
-| D-3 | **주문 집합과 기대값** — 사용자 1 · 상품 1 · 20주문 × 1개, 2·5·8번째가 응답 유실 | ✅ 11-23 |
+| D-3 | **주문 집합과 기대값** — 사용자 1 · 상품 1(SQL) · 20주문 × 1개, 2·5·8번째가 응답 유실 | ✅ 11-23 |
 | D-4 | **업무 지표** — `commerce.payment.unresolved{status=PENDING\|UNKNOWN}` gauge, 읽을 때 DB에서 셈 | ✅ 11-23 |
 | D-5 | **경계 로그** — 결제 경계 ①~⑤에 `orderId`·`paymentId`·`providerOrderId`를 함께 | ✅ 11-23 |
 | D-6 | **가설과 진단** — DB만으로는 가설 2·3이 같다 → 로그 ②⑤·trace로 가른다. PG 조회는 curl 직접 | ✅ 11-23 |
@@ -256,7 +256,7 @@ flowchart TB
 | D-9 | **증거 기록** — 위치·형식·hash·실패 실행 보존 | ✅ 11-24 |
 | D-10 | **runbook** (`docs/runbook/week10.md`) 구성 | ✅ 11-24 |
 | D-11 | **회귀 범위와 정리** — 기능별 확인·미검증 위험 표, 자기 자원만 정리 | ✅ 11-24 |
-| D-12 | **분산 추적 (선택 과제, 도전)** — Zipkin, (가) 설정·1줄로 HTTP·발송 풀·PG·Kafka 잇기 → 끝나면 (나) Outbox 문맥 저장 | ✅ 11-23 |
+| D-12 | **분산 추적 (선택 과제, 도전)** — Tempo(OpenTelemetry · OTLP), (가) 설정·1줄로 HTTP·발송 풀·PG·Kafka 잇기 → 끝나면 (나) Outbox 문맥 저장 | ✅ 11-24 |
 
 ### D-1. 연결 방식 ✅ 11-23
 
@@ -317,7 +317,7 @@ flowchart LR
 | 준비 데이터 | 만드는 방법 |
 |---|---|
 | 사용자 1명 | **SQL INSERT 한 줄** — 회원가입 API가 없다 (X-USER-ID 식별만, USR-01) |
-| 브랜드 1 · 상품 1 (재고 100) | 관리자 API `POST /api-admin/v1/brands` · `POST /api-admin/v1/products` |
+| 브랜드 1 · 상품 1 (재고 100, 가격 10,000) | **SQL INSERT** (`docs/week10/sql/seed.sql`) — 관리자 API는 ADMIN 역할 인증이 필요한데 진짜 프로세스에는 로그인 수단이 없다 (항상 403). 11-24 구현 중 바꿈 |
 | 주문 20건 | 주문마다 그 상품 1개, PG 결제. `POST /api/v1/orders` → `POST /api/v1/orders/{id}/confirm` |
 
 - 사용자가 1명이라 reconcile의 "본인 주문만" 조건이 저절로 맞는다.
@@ -368,10 +368,10 @@ GET /actuator/prometheus  (run.sh curl · 운영에서는 Prometheus 서버가 �
 
 ```
 ① payment.requested      orderId=12 paymentId=5 attemptKey=… providerOrderId=LP-ORD-0000000012 amount=10000
-② payment.create.result  orderId=12 paymentId=5 providerOrderId=… result=UNKNOWN cause=READ_TIMEOUT elapsedMs=3002
-③ payment.lookup.result  orderId=12 paymentId=5 providerOrderId=… found=1 pgStatus=SUCCESS transactionKey=… source=RECONCILE_API
-④ payment.apply          orderId=12 paymentId=5 UNKNOWN→SUCCESS outcome=APPLIED source=RECONCILE_API
-⑤ payment.apply.failed   orderId=12 paymentId=5 source=… error=…        ← 반영 TX가 실패했을 때만
+② payment.create.result  orderId=12 paymentId=5 providerOrderId=… result=UNKNOWN cause=READ_TIMEOUT elapsedMs=3002 transactionKey=-
+③ payment.lookup.result  orderId=12 paymentId=5 providerOrderId=… by=PROVIDER_ORDER_ID found=1 pgStatus=SUCCESS transactionKey=… source=RECONCILE_API
+④ payment.apply          orderId=12 paymentId=5 providerOrderId=… from=UNKNOWN to=SUCCESS outcome=APPLIED source=RECONCILE_API
+⑤ payment.apply.failed   orderId=12 paymentId=5 providerOrderId=… source=… error=…        ← 반영 TX가 실패했을 때만
 ⑥ (기존) relay · streamer 로그  eventId · orderId
 ```
 
@@ -381,7 +381,9 @@ GET /actuator/prometheus  (run.sh curl · 운영에서는 Prometheus 서버가 �
 | 2. PG 성공 응답을 잃음 | ② `UNKNOWN cause=READ_TIMEOUT elapsedMs≈3000`, ⑤ **없음** |
 | 3. 성공 조회 뒤 내부 반영 실패 | ③ `SUCCESS`인데 ④ 대신 ⑤ **있음** |
 
-- `source` = 결과를 반영한 경로 (생성 응답 · callback · reconcile API · scheduler). "3건은 reconcile API로 복구했다"가 로그로 남는다.
+- `source` = 결과를 반영한 경로 `DISPATCH`(생성 응답·발송 실패) · `CALLBACK` · `RECONCILE_API` · `SCHEDULER` · `DISPATCH_CLEANUP`(멈춘 발송 정리). "3건은 reconcile API로 복구했다"가 로그로 남는다.
+- ② `result` = `ACCEPTED` · `SUCCESS` · `FAILED` · `REJECTED` · `NOT_SENT` · `UNKNOWN`, `UNKNOWN`의 `cause` = `READ_TIMEOUT`(기다리다 포기) · `READ_FAILED`(읽다 끊김) · `SERVER_ERROR`(5xx) · `UNREADABLE`.
+- ④는 반영 트랜잭션이 **commit된 뒤**에 남긴다 — 안에서 남기면 commit이 실패해도 "반영했다"는 줄이 남는다. 발송 전·중(REQUESTED·SENDING)이라 조회를 건너뛰면 `payment.lookup.skipped`.
 - 남기지 않는다: 카드 번호, 요청 헤더, PG 계정값. 사용자는 `paymentId`로 DB에서 찾는다.
 - traceId는 같은 업무의 열쇠로 쓰지 않는다 — 발송은 다른 스레드, reconcile은 나중 요청이라 같은 주문이라도 trace가 다르다 (D-12).
 
@@ -405,7 +407,7 @@ GET /actuator/prometheus  (run.sh curl · 운영에서는 Prometheus 서버가 �
 ③ PG 조회  PG 조회 API를 curl로 직접 (GET /api/v1/payments?orderId=LP-ORD-…, X-USER-ID: PG 계정)
           → SUCCESS 1건씩 · 금액 일치                            → 가설 1 기각
 ④ 로그    orderId로 grep → ② READ_TIMEOUT · ⑤ 없음              → 가설 2 지지 · 가설 3 기각
-⑤ 추적    ② 줄의 traceId로 Zipkin → PG 호출 span 약 3초 timeout   → 가설 2 보강
+⑤ 추적    ② 줄의 traceId로 Tempo → PG 호출 span 약 3초 timeout    → 가설 2 보강
 ⑥ 판정표  가설 · 예상 · 실제 · 판정(지지/기각/미확정) → 증거 파일
 ```
 
@@ -507,17 +509,17 @@ reconcile         PG 조회  GET /api/v1/payments?orderId=LP-ORD-…02   (거래
 **위치**: `docs/week10/results/<실행 ID>/` (W9 c7과 같은 방식, 실행 ID = `w10-YYYYMMDD-HHMMSS`). 커밋은 마지막 성공 실행 1개 + 글에서 쓴 실패 실행.
 
 ```
-docs/week10/results/w10-20261125-140000/
-├─ run.txt           실행 ID · 시작/끝 시각 · git commit · pg-sim.py sha256 · pg-sim PID · MySQL 컨테이너 ID · 포트
+docs/week10/results/w10-20261124-231516/
+├─ run.txt           실행 ID · 시작/끝 시각 · git commit · 쓴 jar 이름 · pg-sim.py sha256 · pg-sim PID · MySQL 컨테이너 ID · 포트
 ├─ ids/              baseline-orders.txt · fault-orders.txt · lost-orders.txt (3건)
-├─ 1-baseline/       health.json · prometheus.txt · db.tsv · pg-stats.json
-├─ 2-fault/          (같은 4개) + lost-orders-logs.txt (3건 경계 로그) · traces/<traceId>.json · hypotheses.tsv
+├─ 1-baseline/       health.json · prometheus.txt(원문) · db.tsv(대사) · unresolved.tsv · pg-stats.json · pg-transactions.json · observed-at.txt
+├─ 2-fault/          (같은 7개) + pg-lookup-<orderId>.json (진단 ③) · lost-orders-logs.txt (진단 ④) · traces/ (진단 ⑤) · hypotheses.tsv
 ├─ fault.sha256      2-fault/ 파일들의 sha256 (보존 직후 계산)
-├─ 3-recovery/       (같은 4개) + reconcile-<orderId>.json (응답)
+├─ 3-recovery/       (같은 7개) + reconcile-<orderId>.json · reconcile-again-<orderId>.json · callbacks-release.json · traces/ (Kafka 구간)
 ├─ 4-ranking/        batch.log · ranking.json
-├─ logs/             api.log · streamer.log · pg-sim.log
+├─ logs/             api.log · streamer.log · pg-sim.log (Spring Security 임시 비밀번호 줄은 가림)
 ├─ checks.tsv        이름 · 기대 · 실제 · 통과
-└─ summary.txt       "검사 N개 중 N개 통과" 또는 "실패: <검사 이름>"
+└─ summary.txt       "검사 N개 중 N개 통과" + 단계별 표 + 가설 판정, 또는 "실패: <검사 이름>"
 ```
 
 | 규칙 | 어떻게 |
@@ -536,7 +538,7 @@ docs/week10/results/w10-20261125-140000/
 | # | 칸 | 들어갈 것 | 출처 |
 |---|---|---|---|
 | 1 | 증상 | 고객 "결제 확인 중" · health UP · `commerce_payment_unresolved{status="UNKNOWN"}` > 0 | D-4 |
-| 2 | 진단 질의 | 미종결 결제 목록 SQL → PG 조회 curl → 로그 grep → Zipkin. 가설 판정표 양식 | D-5 · D-6 · D-12 |
+| 2 | 진단 질의 | 미종결 결제 목록 SQL → PG 조회 curl → 로그 grep → Tempo. 가설 판정표 양식 | D-5 · D-6 · D-12 |
 | 3 | 조치 전제 | 영향 목록 고정 · 증거 보존 끝 · PG 조회로 SUCCESS·금액 일치 확인 · create 호출 수 기록 | D-7 |
 | 4 | 조치 | 기본은 기다리기(자동 스케줄러). 바로 고쳐야 하면 reconcile API (지금은 고객용뿐) | D-7 |
 | 5 | 중단 조건 | SUCCESS가 아님 · create 증가 · NOT_FOUND·MULTIPLE·MISMATCH · 30분 만료 임박 | D-7 |
@@ -559,7 +561,7 @@ docs/week10/results/w10-20261125-140000/
 
 | 기능 (§8) | 기존 대표 테스트 | 이번 run.sh |
 |---|---|---|
-| 상품·브랜드·좋아요·관리자 | `ProductAdminApiE2ETest` · `BrandDeleteFlowE2ETest` · `LikeConcurrencyTest` | 관리자 API로 브랜드·상품 생성 |
+| 상품·브랜드·좋아요·관리자 | `ProductAdminApiE2ETest` · `BrandDeleteFlowE2ETest` · `LikeConcurrencyTest` | 브랜드·상품은 SQL로 넣음 (관리자 API는 안 씀) · 주문 API가 상품을 재검증 |
 | 포인트·주문·PG | `PaymentResultApplierIntegrationTest` · `S04ResponseLostScenarioTest` · `PointChargeConcurrencyTest` | 응답 유실 → reconcile, create 0 |
 | 이벤트·Outbox | `OutboxInterruptionIntegrationTest` · `ConsumedOrderConfirmationTest` | 진짜 relay·Kafka·구매 활동 |
 | 쿠폰 | `CouponQueueFlowE2ETest` · `CouponIssueServiceIntegrationTest` | 쓰지 않음 (줄 수 불변만) |
@@ -577,7 +579,7 @@ docs/week10/results/w10-20261125-140000/
 | 월요일 00:00 UTC를 넘는 복구 | run.sh가 그 근처 실행을 거부해 피했을 뿐이다 |
 | 운영자 reconcile 경로 | 없음 (D-7 빈틈) |
 
-**정리**: run.sh가 띄운 것만 — 기록한 PID와 `$RUN-` 이름의 컨테이너·네트워크(MySQL · Redis · Kafka 3 · Zipkin). 성공이면 지우고, 실패면 남긴 채 지우는 명령을 출력한다 (W9 c7과 같음). 원래 떠 있던 로컬 docker는 건드리지 않는다. trace는 Zipkin을 지우기 전에 증거 폴더로 받는다.
+**정리**: run.sh가 띄운 것만 — 기록한 PID와 `$RUN-` 이름의 컨테이너·네트워크(MySQL · Redis · Kafka 3 · Tempo · Prometheus · Grafana). 성공이면 지우고, 실패면 남긴 채 지우는 명령을 출력한다 (W9 c7과 같음). `KEEP=1`이면 성공해도 남겨 Grafana로 본다. 원래 떠 있던 로컬 docker는 건드리지 않는다. trace는 Tempo를 지우기 전에 증거 폴더로 받는다.
 
 ### D-12. 분산 추적 (선택 과제) ✅ 11-23 — (가) 먼저, 끝나면 (나)
 
@@ -589,10 +591,19 @@ trace 7f3a…   POST /api/v1/orders/12/confirm
 └─ commerce-api  http post → pg-sim /api/v1/payments      3002ms  ✗ timeout
 ```
 
-**수집 서버 = Zipkin** (과제는 도구를 지정하지 않는다. 참고 문서는 OpenTelemetry Context Propagation):
-- 템플릿에 `micrometer-tracing-bridge-brave`가 이미 있다 (`supports/logging`). Brave의 전송처로 가장 자연스러운 것이 Zipkin이고, Spring Boot가 `management.zipkin.tracing.endpoint` 설정만으로 자동 구성한다.
-- Spring Boot 3의 기본 전파 형식은 W3C `traceparent` 헤더다 — OpenTelemetry와 같은 표준이라 개념은 참고 문서와 같다.
-- 대안(OpenTelemetry bridge + Jaeger/Tempo)은 요즘 신규 구축에 더 흔하지만 bridge 교체·collector 구성이 더 든다.
+**수집 서버 = Grafana Tempo** (11-24 Zipkin에서 바꿈 — 요즘 많이 쓰는 쪽. 과제는 도구를 지정하지 않는다. 참고 문서는 OpenTelemetry Context Propagation):
+
+```
+commerce-api ─┐  OTLP HTTP        ┌─ Tempo :3200 ──┐
+streamer ─────┴──────────▶ Tempo ─┤                ├─ Grafana (Explore: trace · 업무 지표)
+                         :4318    └─ run.sh curl   │
+commerce-api /actuator/prometheus ◀── Prometheus ──┘
+```
+
+- 보내는 쪽: `supports/logging`의 bridge를 Brave → **OpenTelemetry bridge + OTLP exporter**로 바꿨다. Tempo가 기본으로 받는 형식이 OTLP다.
+- `management.otlp.tracing.endpoint`를 주지 않으면 exporter가 만들어지지 않는다 → 평소 실행·테스트는 아무 데도 보내지 않는다 (Zipkin reporter는 기본 주소로 계속 보내려 해 경고가 쌓인다).
+- Tempo는 자체 화면이 없다 → run.sh가 Grafana를 같이 띄우고 Prometheus·Tempo를 데이터 소스로 넣는다. 업무 지표(3 → 0)와 trace를 한 화면에서 본다.
+- 전파 형식은 그대로 W3C `traceparent` 헤더다. 로그의 `[traceId-spanId]`(Spring Boot 기본 형식)로 로그 줄과 trace를 잇는다.
 
 **(가) 이번에 잇는 것** — 설정·1줄 코드
 
@@ -602,7 +613,7 @@ trace 7f3a…   POST /api/v1/orders/12/confirm
 | 확정 → 발송 스레드 풀 | 끊김 (스레드가 바뀜) | `PaymentDispatchConfig` 풀에 `ContextPropagatingTaskDecorator` |
 | commerce-api → PG (HTTP 나감) | 기록 안 됨 (`RestClient.builder()` 직접 생성) | adapter의 RestClient에 `observationRegistry` 연결 → `traceparent` 헤더가 PG로 나감 |
 | relay → Kafka → streamer | 기록 안 됨 (KafkaTemplate · listener factory를 직접 만들어 `spring.kafka.*.observation-enabled`가 안 먹음) | `KafkaConfig` 템플릿, streamer listener factory에 `setObservationEnabled(true)` |
-| 수집 | 전송처 없음, 샘플링 기본 10% | `zipkin-reporter-brave` 의존성 + run.sh에 Zipkin 컨테이너, `--management.zipkin.tracing.endpoint=… --management.tracing.sampling.probability=1.0` |
+| 수집 | 전송처 없음, 샘플링 기본 10% | `micrometer-tracing-bridge-otel` + `opentelemetry-exporter-otlp`. run.sh가 Tempo 컨테이너를 띄우고 `--management.otlp.tracing.endpoint=…`를 준다. 샘플링 1.0은 `docs/week10/run.yml` |
 | pg-sim | — | 받은 `traceparent`를 기록 → "헤더가 실제로 나갔다"는 증거 |
 
 **잇지 않는 것 (끊김을 증거·문서에 남긴다)**
@@ -615,11 +626,40 @@ trace 7f3a…   POST /api/v1/orders/12/confirm
 | batch | 다른 프로세스·나중 실행 → 새 trace. `snapshotId`로 연결 |
 
 **run.sh check** (로그 → 추적 연결):
-- 응답 유실 주문의 ② 로그 줄에서 traceId를 꺼내 Zipkin API(`/api/v2/trace/{traceId}`)로 받는다 → PG 호출 span이 3초 이상 · error.
+- 응답 유실 주문의 ② 로그 줄에서 traceId를 꺼내 Tempo API(`/api/traces/{traceId}`)로 받는다 → PG 호출 span이 3초 이상 · error, 같은 trace에 확정 요청 span.
 - pg-sim이 그 create에서 받은 `traceparent`의 traceId가 같다.
 - relay 발행 span(commerce-api)과 구매 활동 소비 span(commerce-streamer)이 같은 trace에 있다.
 
 **(나) (가)가 끝나면** — Outbox에 trace 문맥 저장: 주문 확정 때 `order_outbox`에 `traceparent`를 같이 저장하고, relay가 그 문맥을 부모로 발행한다 → [결과 반영(reconcile) → Outbox → Kafka → streamer]가 한 trace. 비용: 컬럼 추가 · relay 코드 · 테스트.
+
+## 실행 결과 (2026-11-24, `docs/week10/results/w10-20261124-231516/`)
+
+**검사 135개 중 135개 통과** — `bash docs/week10/run.sh` 한 번, jar는 커밋 `f00c01f1`.
+
+| 단계 | 재고 | 선점 RESERVED·CONSUMED | 확정 | 결제 UNKNOWN | 업무 지표 UNKNOWN | PG 거래·create | health |
+|---|---|---|---|---|---|---|---|
+| baseline | 90 | 0·10 | 10 | 0 | 0.0 | 10·10 | UP |
+| fault | 80 | **3**·17 | 17 | **3** | **3.0** | 20·20 | **UP** |
+| recovery | **80** | 0·20 | 20 | 0 | 0.0 | **20·20** | UP |
+| 랭킹 | periodStart 2026-11-23 · 상품 1 점수 **20** · 1위 | | | | | | |
+
+| 가설 | 실제 | 판정 |
+|---|---|---|
+| 1. PG가 아직 처리 중 | PG 조회 SUCCESS 3/3 | 기각 |
+| 2. PG 성공 응답을 잃음 | ② `cause=READ_TIMEOUT` 3/3 · ⑤ 0줄 · PG 호출 span ≥ 3초 3/3 | 지지 |
+| 3. 성공 조회 뒤 내부 반영 실패 | ② ACCEPTED 0/3 · ⑤ 0줄 | 기각 |
+
+- 추적: 응답 유실 주문의 확정 요청 trace에 PG 호출 span(약 3초 · 오류)이 있고, pg-sim이 받은 `traceparent`의 traceId가 같다. (나)로 reconcile 요청 → relay 발행 → streamer 소비가 **한 trace**다.
+- 반복 reconcile 3번 + 보관 callback 3건 전송 뒤 Outbox · 구매 활동 · 선점 · 재고 · create 수가 그대로다.
+
+**성공 전에 멈춘 실행 4번** (실패 실행 폴더는 커밋하지 않았다 — 원인은 아래와 변경 이력)
+
+| 실행 | 멈춘 곳 | 원인 | 고친 것 |
+|---|---|---|---|
+| 1 | commerce-api 시작 | 명령줄 `--datasource.redis.replicas[0].port`가 목록 항목을 통째로 바꿔 host가 빠짐 | host도 함께 준다 |
+| 2 | 복구 뒤 Outbox 발행 대기 | `shedlock` 테이블(엔티티 아님)이 없어 relay가 매번 실패 — fault 단계 검사는 다 통과 | W7·W9·W10 DDL 파일을 차례로 적용 |
+| 3 | fault: PG 호출 span | trace를 너무 일찍 읽었다 — 24ms짜리 확정 span만 먼저 도착하고 3초짜리 PG span은 아직 오는 중 | 기다린 span이 들어올 때까지 다시 받는다 |
+| 4 | recovery: 구매 활동 로그의 traceId | `ls … \| head -1`이 이름 순으로 **지난주 streamer jar**를 골랐다 (Brave bridge, 전송처 없음) | jar를 지금 HEAD hash 이름으로 고른다 |
 
 ## 변경 이력
 
@@ -635,3 +675,10 @@ trace 7f3a…   POST /api/v1/orders/12/confirm
 - 2026-11-24: D-8 대사 목록 · D-9 증거 기록 · D-10 runbook 구성 · D-11 회귀 범위와 정리 초안(🔧).
 - 2026-11-24: D-2 제어 구성 · D-8 · D-9 · D-10 · D-11 ✅ — 설계 항목 12개 모두 합의. 구현 순서: pg-sim → 업무 지표 → 경계 로그 → run.sh → 분산 추적 (가) → runbook → 회귀·PR.
 - 2026-11-24: 구현 ① pg-sim — 실험용 경로 이름을 `/_control/…`·`/_stats`에서 `/test/…`로 바꿨다 (`_`가 무슨 뜻인지 읽히지 않는다는 지적). `/test/transactions` 추가.
+- 2026-11-24: 구현 ② 업무 지표 `commerce.payment.unresolved` (MeterBinder · 읽을 때 COUNT) + JUnit 3개.
+- 2026-11-24: 구현 ③ 경계 로그 ①~⑤. 결과 적용 경계의 reconcile·apply·recordUnknown·closeUnclaimed에 `source` 인자를 더했다 — 기존 테스트의 호출 32곳은 인자만 더하고 기대값은 그대로. `PgUnknownResultException`에 이유(READ_TIMEOUT 등)를 담고 adapter 테스트 4개에 이유 확인을 더했다.
+- 2026-11-24: D-12 수집 서버를 Zipkin → **Tempo**로 바꿨다 (요즘 많이 쓰는 쪽이라는 의견). bridge를 Brave → OpenTelemetry + OTLP로, run.sh에 Tempo · Prometheus · Grafana. (가) 발송 풀 문맥 전달 · PG RestClient 관측 · Kafka template·listener 관측.
+- 2026-11-24: D-12 (나) 구현 — `order_outbox.trace_parent` (+ `docs/week10/schema.sql`), relay가 그 문맥을 부모로 발행.
+- 2026-11-24: D-3 브랜드·상품을 관리자 API → SQL(`docs/week10/sql/seed.sql`)로 바꿨다 — 관리자 API는 ADMIN 인증이 있어 진짜 프로세스에서 부를 수 없다.
+- 2026-11-24: run.sh 첫 두 실행은 준비 단계에서 멈췄다 — ① Redis replica 목록을 명령줄로 주면 항목이 통째로 바뀌어 host가 빠졌다 ② `shedlock` 테이블(엔티티 아님)이 없어 relay가 돌지 않았다 → W7·W9·W10 DDL 파일을 차례로 적용하게 고쳤다.
+- 2026-11-24: run.sh 3·4번째 실행 실패 원인(trace를 너무 일찍 읽음 · 지난 jar를 고름)을 고쳐 5번째 실행에서 검사 135개 통과. 증거 `docs/week10/results/w10-20261124-231516/`.

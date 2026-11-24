@@ -1,0 +1,14 @@
+# W10 run.sh의 Grafana — 업무 지표(Prometheus)와 trace(Tempo)를 한 화면에서 본다. KEEP=1로 실행하면 끝난 뒤에도 남는다.
+apiVersion: 1
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+  - name: Tempo
+    uid: tempo
+    type: tempo
+    access: proxy
+    url: http://tempo:3200
