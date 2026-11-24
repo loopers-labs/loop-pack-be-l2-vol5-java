@@ -10,19 +10,13 @@ import org.springframework.stereotype.Component;
 public class PaymentLog {
 
     void created(Payment payment, CreateObservation observation) {
-        switch (observation) {
-            case CreateObservation.Accepted accepted -> log.info(
-                "PG 생성 호출이 끝났다: paymentId={}, orderId={}, result=accepted",
-                payment.getId(), payment.getOrderId());
-            case CreateObservation.RejectedNoEffect rejected -> log.info(
-                "PG 생성 호출이 끝났다: paymentId={}, orderId={}, result=rejected",
-                payment.getId(), payment.getOrderId());
-            case CreateObservation.NotSent notSent -> log.info(
-                "PG 생성 호출이 끝났다: paymentId={}, orderId={}, result=not_sent",
-                payment.getId(), payment.getOrderId());
-            case CreateObservation.CreateUnknown unknown -> log.warn(
-                "PG 생성 호출의 결과를 모른다. 다시 보내지 않고 조회로 확인한다: paymentId={}, orderId={}, result=unknown",
-                payment.getId(), payment.getOrderId());
+        String result = CreateResult.nameOf(observation);
+        if (observation instanceof CreateObservation.CreateUnknown) {
+            log.warn("PG 생성 호출의 결과를 모른다. 다시 보내지 않고 조회로 확인한다: paymentId={}, orderId={}, result={}",
+                payment.getId(), payment.getOrderId(), result);
+            return;
         }
+        log.info("PG 생성 호출이 끝났다: paymentId={}, orderId={}, result={}",
+            payment.getId(), payment.getOrderId(), result);
     }
 }

@@ -17,13 +17,7 @@ public class PaymentMetrics {
     private final MeterRegistry meterRegistry;
 
     void created(CreateObservation observation) {
-        String result = switch (observation) {
-            case CreateObservation.Accepted accepted -> "accepted";
-            case CreateObservation.RejectedNoEffect rejected -> "rejected";
-            case CreateObservation.NotSent notSent -> "not_sent";
-            case CreateObservation.CreateUnknown unknown -> "unknown";
-        };
-        meterRegistry.counter("payment.create", "result", result).increment();
+        meterRegistry.counter("payment.create", "result", CreateResult.nameOf(observation)).increment();
     }
 
     void lookedUp(String source, LookupResult result) {
