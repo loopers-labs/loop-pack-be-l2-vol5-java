@@ -122,12 +122,15 @@ public class OrderApplicationService {
                 // 이미 발송 시작된 결제는 결과를 모르더라도 create를 다시 보내지 않는다. 확인은 조회로만 한다(설계 23절).
                 return start.current();
             }
+            log.info("PG 결제를 시작했습니다. orderId={}, providerId={}", orderId, payment.getProviderId());
             PaymentReport report = createPayment(payment, command, logContext);
             try {
                 return applyPaymentResult(orderId, report);
             } catch (RuntimeException e) {
                 // 외부 결제 사실은 rollback할 수 없으므로 저장된 주문을 새로 읽어 확인 경로로 돌려준다.
-                log.error("PG 호출 후 결과 저장에 실패했습니다. orderId={}, providerStatus={}", orderId, report.status());
+                // 예외 원문에는 SQL·값이 섞일 수 있어 종류만 남긴다.
+                log.error("PG 호출 후 결과 저장에 실패했습니다. orderId={}, providerStatus={}, causeType={}",
+                    orderId, report.status(), e.getClass().getSimpleName());
                 return transactionTemplate.execute(status -> withPayment(
                     orderRepository.findById(orderId).orElseThrow(OrderNotFoundException::new)));
             }
@@ -143,8 +146,7 @@ public class OrderApplicationService {
             if (created instanceof PaymentCreateResult.Accepted accepted) {
                 logContext.transactionKey(accepted.transaction().transactionKey());
             }
-            log.info("PG 결제 생성 시도 결과. orderId={}, providerId={}, result={}",
-                payment.getOrderId(), gateway.providerId(), created.getClass().getSimpleName());
+            logCreateResult(payment.getOrderId(), gateway.providerId(), created);
             if (!(created instanceof PaymentCreateResult.NotSent)) {
                 return PaymentReport.from(created);
             }
@@ -171,6 +173,28 @@ public class OrderApplicationService {
             }
         }
         throw new IllegalStateException("PG 우선순위 목록이 비어 있습니다.");
+    }
+
+    // 결과 모름·미발송은 실패로 단정할 수 없는 정상 경로 이탈이라 WARN이다. adapter는 같은 사실을 DEBUG로만 남긴다.
+    private static void logCreateResult(long orderId, String providerId, PaymentCreateResult created) {
+        String result = created.getClass().getSimpleName();
+        switch (created) {
+            case PaymentCreateResult.Accepted accepted -> {
+                log.info("PG 결제 생성 시도 결과. orderId={}, providerId={}, result={}, status={}",
+                    orderId, providerId, result, accepted.transaction().status());
+            }
+            case PaymentCreateResult.RejectedNoEffect rejected -> {
+                log.info("PG 결제 생성 시도 결과. orderId={}, providerId={}, result={}", orderId, providerId, result);
+            }
+            case PaymentCreateResult.Unknown unknown -> {
+                log.warn("PG 결제 생성 시도 결과. orderId={}, providerId={}, result={}, reason={}",
+                    orderId, providerId, result, unknown.reason());
+            }
+            case PaymentCreateResult.NotSent notSent -> {
+                log.warn("PG 결제 생성 시도 결과. orderId={}, providerId={}, result={}, reason={}",
+                    orderId, providerId, result, notSent.reason());
+            }
+        }
     }
 
     // PG가 보고한 결과 하나를 반영하는 유일한 경계. create 응답·조회·callback 모두 여기로 모은다(설계 23절).
@@ -307,11 +331,19 @@ public class OrderApplicationService {
         return switch (assessment) {
             case PaymentLookupAssessment.NotCalled notCalled -> OrderResult.from(order, Optional.of(payment));
             case PaymentLookupAssessment.Uncertain uncertain -> {
-                recordTransientAnomaly(order, uncertain.kind(), uncertain.summary());
+                recordTransientAnomaly(order, uncertain, source, lookup);
                 yield OrderResult.from(order, Optional.of(payment));
             }
-            case PaymentLookupAssessment.Review review -> requireReview(order, payment, review.kind(), review.summary());
-            case PaymentLookupAssessment.Verified verified -> applyLocked(order, Optional.of(payment), verified.report(), source);
+            case PaymentLookupAssessment.Review review -> {
+                log.warn("PG 조회 판정. orderId={}, source={}, result=Review, kind={}, summary={}",
+                    order.getId(), source, review.kind(), review.summary());
+                yield requireReview(order, payment, review.kind(), review.summary());
+            }
+            case PaymentLookupAssessment.Verified verified -> {
+                log.info("PG 조회 판정. orderId={}, source={}, result=Verified, providerStatus={}",
+                    order.getId(), source, verified.report().status());
+                yield applyLocked(order, Optional.of(payment), verified.report(), source);
+            }
         };
     }
 
@@ -338,13 +370,18 @@ public class OrderApplicationService {
             attempts, schedule.createdAt(), now));
     }
 
-    private void recordTransientAnomaly(Order order, Kind kind, String summary) {
+    private void recordTransientAnomaly(Order order, PaymentLookupAssessment.Uncertain uncertain, PaymentSource source,
+        PaymentTransactionsLookup lookup) {
         if (order.getStatus() == Order.Status.PAYMENT_PENDING) {
-            recordAnomaly(order.getId(), kind, summary);
+            // 조회 실패 원인은 판정에 남지 않으므로 원본 조회 결과에서 읽는다.
+            String reason = lookup instanceof PaymentTransactionsLookup.Failed failed ? failed.reason() : null;
+            log.warn("PG 조회 판정. orderId={}, source={}, result=Uncertain, kind={}, summary={}, reason={}",
+                order.getId(), source, uncertain.kind(), uncertain.summary(), reason);
+            recordAnomaly(order.getId(), uncertain.kind(), uncertain.summary());
         } else {
             // 종결 후의 불확실한 조회로 해결된 이상을 다시 열거나 영구히 미해결인 행을 만들지 않는다.
             log.info("결제 대기가 아닌 주문의 미확정 PG 조회 결과입니다. orderId={}, status={}, kind={}",
-                order.getId(), order.getStatus(), kind);
+                order.getId(), order.getStatus(), uncertain.kind());
         }
     }
 
@@ -395,6 +432,7 @@ public class OrderApplicationService {
                 payment = paymentRecordRepository.save(payment);
                 paymentAnomalyRepository.resolveTransient(order.getId(), clock.instant());
                 paymentLookupScheduleRepository.delete(order.getId());
+                logClosed(order, report, source);
             }
             case UNCHANGED -> {
                 if (order.getStatus() == Order.Status.PAYMENT_PENDING) {
@@ -410,6 +448,16 @@ public class OrderApplicationService {
             case ANOMALY -> throw new IllegalStateException("DRAFT 결과는 앞에서 처리해야 합니다.");
         }
         return OrderResult.from(order, Optional.of(payment));
+    }
+
+    // PG가 FAILED로 확정한 결제는 우리 시스템의 실패가 아닌 정상 종결이라 INFO다.
+    private static void logClosed(Order order, PaymentReport report, PaymentSource source) {
+        if (order.getStatus() == Order.Status.CONFIRMED) {
+            log.info("결제를 확정했습니다. orderId={}, source={}", order.getId(), source);
+        } else {
+            log.info("결제 실패로 종결했습니다. orderId={}, result={}, providerStatus={}, source={}",
+                order.getId(), report.outcome(), report.status(), source);
+        }
     }
 
     private void recordAnomaly(long orderId, Kind kind, String summary) {

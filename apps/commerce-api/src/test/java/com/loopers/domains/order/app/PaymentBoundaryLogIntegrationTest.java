@@ -75,6 +75,8 @@ class PaymentBoundaryLogIntegrationTest {
         users.save(new UserJpaEntity(1));
         long brand = brands.create("브랜드").id();
         long productId = products.create(brand, "상품", 1000, 5).id();
+        // 주입 저장소가 실패 직전 상태를 기록할 때 상품 두 개의 재고를 읽는다.
+        products.create(brand, "둘째 상품", 1000, 5);
         orderId = orders.create(1, List.of(new OrderApplicationService.ItemRequest(productId, 2))).id();
         logs = new SnapshotAppender();
         logs.start();
@@ -140,7 +142,7 @@ class PaymentBoundaryLogIntegrationTest {
         assertThat(unknown.getLoggerName()).isEqualTo(SERVICE_LOGGER);
         assertThat(unknown.getFormattedMessage()).contains(CREATE_RESULT);
         assertThat(arguments(unknown)).contains("Unknown");
-        assertThat(arguments(unknown)).anySatisfy(argument -> assertThat(argument).contains("SocketTimeoutException"));
+        assertThat(arguments(unknown)).anySatisfy(argument -> assertThat(argument).contains("HttpTimeoutException"));
         assertThat(unknown.getMDCPropertyMap())
             .containsEntry("orderId", String.valueOf(orderId))
             .containsEntry("attemptKey", attemptKey)
