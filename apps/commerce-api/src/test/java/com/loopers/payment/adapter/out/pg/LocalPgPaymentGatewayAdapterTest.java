@@ -12,6 +12,7 @@ import com.loopers.support.pg.LocalTestPgServer;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import io.github.resilience4j.retry.RetryRegistry;
+import io.micrometer.observation.ObservationRegistry;
 import io.github.resilience4j.springboot3.circuitbreaker.autoconfigure.CircuitBreakerAutoConfiguration;
 import io.github.resilience4j.springboot3.retry.autoconfigure.RetryAutoConfiguration;
 import org.junit.jupiter.api.AfterAll;
@@ -22,6 +23,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -57,7 +59,14 @@ class LocalPgPaymentGatewayAdapterTest {
     @Configuration
     @ImportAutoConfiguration({CircuitBreakerAutoConfiguration.class, RetryAutoConfiguration.class})
     @Import({PgConfig.class, LocalPgPaymentGatewayAdapter.class})
-    static class PgAdapterContext {}
+    static class PgAdapterContext {
+
+        /** 이 테스트는 PG 계약만 본다 — trace는 기록하지 않는다 (W10 D-12의 확인은 run.sh) */
+        @Bean
+        ObservationRegistry observationRegistry() {
+            return ObservationRegistry.NOOP;
+        }
+    }
 
     @DynamicPropertySource
     static void pgProperties(DynamicPropertyRegistry registry) {
@@ -176,7 +185,7 @@ class LocalPgPaymentGatewayAdapterTest {
             PgProperties downPg = new PgProperties(
                 "http://127.0.0.1:" + unusedPort(), properties.userId(), properties.callbackUrl(),
                 properties.connectTimeout(), properties.createReadTimeout(), properties.lookupReadTimeout());
-            LocalPgPaymentGatewayAdapter downAdapter = new LocalPgPaymentGatewayAdapter(downPg, circuitBreakerRegistry, retryRegistry);
+            LocalPgPaymentGatewayAdapter downAdapter = new LocalPgPaymentGatewayAdapter(downPg, circuitBreakerRegistry, retryRegistry, ObservationRegistry.NOOP);
 
             // act & assert
             assertThatThrownBy(() -> downAdapter.request(paymentRequest())).isInstanceOf(PgNotSentException.class);

@@ -4,6 +4,7 @@ import com.loopers.payment.application.PaymentSender;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.task.support.ContextPropagatingTaskDecorator;
 import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
@@ -24,6 +25,8 @@ public class PaymentDispatchConfig {
         executor.setMaxPoolSize(properties.poolSize());
         executor.setQueueCapacity(properties.queueCapacity());
         executor.setThreadNamePrefix("payment-dispatch-");
+        // 확정 요청의 trace 문맥을 발송 스레드로 옮긴다 — 없으면 PG 호출이 새 trace로 끊긴다 (W10 D-12)
+        executor.setTaskDecorator(new ContextPropagatingTaskDecorator());
         // 종료 때 진행 중인 발송은 결과 기록까지 기다린다. 못 끝낸 건은 정리 스케줄러가 맡는다.
         executor.setWaitForTasksToCompleteOnShutdown(true);
         executor.setAwaitTerminationSeconds(10);

@@ -12,6 +12,7 @@ import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import io.github.resilience4j.retry.Retry;
 import io.github.resilience4j.retry.RetryRegistry;
+import io.micrometer.observation.ObservationRegistry;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -67,9 +68,16 @@ public class LocalPgPaymentGatewayAdapter implements PaymentGatewayPort {
     private final CircuitBreaker createCircuit;
     private final CircuitBreaker lookupCircuit;
     private final Retry lookupRetry;
+    private final ObservationRegistry observationRegistry;
 
-    public LocalPgPaymentGatewayAdapter(PgProperties properties, CircuitBreakerRegistry circuitBreakerRegistry, RetryRegistry retryRegistry) {
+    public LocalPgPaymentGatewayAdapter(
+        PgProperties properties,
+        CircuitBreakerRegistry circuitBreakerRegistry,
+        RetryRegistry retryRegistry,
+        ObservationRegistry observationRegistry
+    ) {
         this.properties = properties;
+        this.observationRegistry = observationRegistry;
         HttpClient httpClient = HttpClient.newBuilder()
             .version(HttpClient.Version.HTTP_1_1)
             .connectTimeout(properties.connectTimeout())
@@ -85,8 +93,10 @@ public class LocalPgPaymentGatewayAdapter implements PaymentGatewayPort {
     private RestClient restClient(HttpClient httpClient, Duration readTimeout) {
         JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(httpClient);
         factory.setReadTimeout(readTimeout);
+        // observationRegistry: PG 호출을 span으로 남기고 traceparent 헤더를 싣는다 (W10 D-12)
         return RestClient.builder()
             .requestFactory(factory)
+            .observationRegistry(observationRegistry)
             .baseUrl(properties.baseUrl())
             .defaultHeader(USER_HEADER, properties.userId())
             .build();
