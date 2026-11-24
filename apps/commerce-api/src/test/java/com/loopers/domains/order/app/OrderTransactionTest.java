@@ -344,6 +344,8 @@ class OrderTransactionTest {
         private final PaymentLookupScheduleRepository delegate;
         private final EntityManager entityManager;
         private final JdbcTemplate jdbcTemplate;
+        private final AtomicInteger deletesUntilFailure = new AtomicInteger();
+        private final AtomicReference<String> orderStatusBeforeDeleteFailure = new AtomicReference<>();
         private boolean armed;
         private String beforeFailure;
 
@@ -377,6 +379,27 @@ class OrderTransactionTest {
         @Override
         public void delete(long orderId) {
             delegate.delete(orderId);
+            if (deletesUntilFailure.get() > 0 && deletesUntilFailure.decrementAndGet() == 0) {
+                entityManager.flush();
+                orderStatusBeforeDeleteFailure.set(
+                    jdbcTemplate.queryForObject("select status from orders where id = ?", String.class, orderId));
+                throw new IllegalStateException("주입된 스케줄 삭제 실패");
+            }
+        }
+
+        // 무장 후 n번째 스케줄 삭제에서 앞선 변경을 DB로 보낸 뒤 실패한다. 자동 재조회 반영 트랜잭션에서 1번째는 종결 분기,
+        // 2번째는 종결 분기 뒤 advanceLookupSchedule의 삭제라 종결이 끝난 다음 rollback되는 상황을 만든다.
+        void failOnDelete(int nth) {
+            orderStatusBeforeDeleteFailure.set(null);
+            deletesUntilFailure.set(nth);
+        }
+
+        void disarmDelete() {
+            deletesUntilFailure.set(0);
+        }
+
+        String orderStatusBeforeDeleteFailure() {
+            return orderStatusBeforeDeleteFailure.get();
         }
     }
 

@@ -9,9 +9,10 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-// 실제 management 포트의 /actuator/prometheus 원문을 받아 미확인 결제 gauge 한 줄의 값을 읽는다. 서버는 127.0.0.1에 바인딩된다.
+// 실제 management 포트의 /actuator/prometheus 원문을 받아 결제 지표 한 줄의 값을 읽는다. 서버는 127.0.0.1에 바인딩된다.
 final class PrometheusScrape {
     static final String UNRESOLVED_METRIC = "commerce_payment_unresolved";
+    static final String OUTCOME_METRIC = "commerce_payment_outcome_total";
 
     private static final HttpClient HTTP_CLIENT = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(1)).build();
 
@@ -29,9 +30,16 @@ final class PrometheusScrape {
     }
 
     static Optional<Double> unresolved(String body, String status) {
-        String label = "status=\"" + status + "\"";
+        return value(body, UNRESOLVED_METRIC, "status=\"" + status + "\"");
+    }
+
+    static Optional<Double> outcome(String body, String result) {
+        return value(body, OUTCOME_METRIC, "result=\"" + result + "\"");
+    }
+
+    private static Optional<Double> value(String body, String metric, String label) {
         return body.lines()
-            .filter(line -> line.startsWith(UNRESOLVED_METRIC + "{") && line.contains(label))
+            .filter(line -> line.startsWith(metric + "{") && line.contains(label))
             .map(line -> Double.parseDouble(line.substring(line.lastIndexOf('}') + 1).trim().split(" ")[0]))
             .findFirst();
     }
