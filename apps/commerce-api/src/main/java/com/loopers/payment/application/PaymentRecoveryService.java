@@ -41,12 +41,12 @@ public class PaymentRecoveryService implements PaymentRecoveryUseCase {
         ZonedDateTime staleBefore = now.minus(STALE_AFTER);
         int closed = drain(
             limit -> paymentOutboxPort.findPendingCreatedBefore(staleBefore, limit),
-            paymentResultApplier::closeUnclaimed,
+            paymentId -> paymentResultApplier.closeUnclaimed(paymentId, PaymentResultSource.DISPATCH_CLEANUP),
             "보내지 않은 결제 정리"
         );
         int unknown = drain(
             limit -> paymentOutboxPort.findClaimedBefore(staleBefore, limit),
-            paymentResultApplier::recordUnknown,
+            paymentId -> paymentResultApplier.recordUnknown(paymentId, PaymentResultSource.DISPATCH_CLEANUP),
             "멈춘 발송을 UNKNOWN으로"
         );
         if (closed > 0 || unknown > 0) {
@@ -60,7 +60,7 @@ public class PaymentRecoveryService implements PaymentRecoveryUseCase {
         List<Payment> due = paymentPort.findDueForCheck(now, RECONCILE_PAGE_SIZE);
         for (Payment payment : due) {
             try {
-                paymentResultApplier.reconcile(payment.getId());
+                paymentResultApplier.reconcile(payment.getId(), PaymentResultSource.SCHEDULER);
             } catch (RuntimeException e) {
                 log.error("reconcile 실패 — 다음 주기에 다시 봅니다. paymentId={}", payment.getId(), e);
             }
@@ -86,7 +86,7 @@ public class PaymentRecoveryService implements PaymentRecoveryUseCase {
      * 닫기 전에 PG를 마지막으로 한 번 조회한다(잠금 밖). 그 조회로 종결됐으면 만료하지 않는다.
      */
     private PaymentApplyOutcome expireAfterLastLookup(Long paymentId) {
-        paymentResultApplier.reconcile(paymentId);
+        paymentResultApplier.reconcile(paymentId, PaymentResultSource.SCHEDULER);
         boolean resolved = paymentPort.findById(paymentId).map(Payment::isFinal).orElse(true);
         if (resolved) {
             return PaymentApplyOutcome.ALREADY_APPLIED;

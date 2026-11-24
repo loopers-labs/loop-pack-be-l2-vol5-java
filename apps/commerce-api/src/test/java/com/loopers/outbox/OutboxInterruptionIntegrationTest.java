@@ -12,6 +12,7 @@ import com.loopers.outbox.application.port.in.OrderOutboxRelayUseCase.RelayResul
 import com.loopers.outbox.application.port.out.OrderOutboxPort;
 import com.loopers.outbox.domain.OrderOutbox;
 import com.loopers.outbox.domain.OrderOutboxStatus;
+import com.loopers.payment.application.PaymentResultSource;
 import com.loopers.payment.application.PaymentResultApplier;
 import com.loopers.payment.application.port.in.PaymentDispatchUseCase;
 import com.loopers.payment.application.port.in.PaymentInfo;
@@ -178,7 +179,7 @@ class OutboxInterruptionIntegrationTest {
             paymentPort.save(locked);
         });
         PG.complete(transactionKey, "SUCCESS", null);
-        paymentResultApplier.reconcile(info.paymentId());
+        paymentResultApplier.reconcile(info.paymentId(), PaymentResultSource.RECONCILE_API);
         return id;
     }
 

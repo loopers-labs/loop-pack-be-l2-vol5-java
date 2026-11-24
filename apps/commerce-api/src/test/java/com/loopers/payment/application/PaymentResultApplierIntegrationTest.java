@@ -188,7 +188,7 @@ class PaymentResultApplierIntegrationTest {
             PG.complete(transactionKey, "SUCCESS", null);
 
             // act
-            PaymentApplyOutcome outcome = paymentResultApplier.reconcile(info.paymentId());
+            PaymentApplyOutcome outcome = paymentResultApplier.reconcile(info.paymentId(), PaymentResultSource.RECONCILE_API);
 
             // assert
             assertThat(outcome).isEqualTo(PaymentApplyOutcome.APPLIED);
@@ -206,7 +206,7 @@ class PaymentResultApplierIntegrationTest {
         @Test
         void pendingKeepsEverything() {
             // act
-            PaymentApplyOutcome outcome = paymentResultApplier.reconcile(info.paymentId());
+            PaymentApplyOutcome outcome = paymentResultApplier.reconcile(info.paymentId(), PaymentResultSource.RECONCILE_API);
 
             // assert
             assertThat(outcome).isEqualTo(PaymentApplyOutcome.NOT_FINAL);
@@ -224,7 +224,7 @@ class PaymentResultApplierIntegrationTest {
             PG.complete(transactionKey, "FAILED", "한도 초과");
 
             // act
-            PaymentApplyOutcome outcome = paymentResultApplier.reconcile(info.paymentId());
+            PaymentApplyOutcome outcome = paymentResultApplier.reconcile(info.paymentId(), PaymentResultSource.RECONCILE_API);
 
             // assert
             assertThat(outcome).isEqualTo(PaymentApplyOutcome.APPLIED);
@@ -242,7 +242,7 @@ class PaymentResultApplierIntegrationTest {
             PG.reset();
 
             // act
-            PaymentApplyOutcome outcome = paymentResultApplier.reconcile(info.paymentId());
+            PaymentApplyOutcome outcome = paymentResultApplier.reconcile(info.paymentId(), PaymentResultSource.RECONCILE_API);
 
             // assert
             assertThat(outcome).isEqualTo(PaymentApplyOutcome.NOT_FINAL);
@@ -260,7 +260,7 @@ class PaymentResultApplierIntegrationTest {
             PG.failNextLookups(3);
 
             // act
-            PaymentApplyOutcome outcome = paymentResultApplier.reconcile(info.paymentId());
+            PaymentApplyOutcome outcome = paymentResultApplier.reconcile(info.paymentId(), PaymentResultSource.RECONCILE_API);
 
             // assert
             assertThat(outcome).isEqualTo(PaymentApplyOutcome.NOT_FINAL);
@@ -279,11 +279,11 @@ class PaymentResultApplierIntegrationTest {
         void sameSuccessTwice() {
             // arrange
             PG.complete(transactionKey, "SUCCESS", null);
-            paymentResultApplier.reconcile(info.paymentId());
+            paymentResultApplier.reconcile(info.paymentId(), PaymentResultSource.RECONCILE_API);
             ZonedDateTime confirmedAt = order().getConfirmedAt();
 
             // act
-            PaymentApplyOutcome second = paymentResultApplier.reconcile(info.paymentId());
+            PaymentApplyOutcome second = paymentResultApplier.reconcile(info.paymentId(), PaymentResultSource.RECONCILE_API);
 
             // assert
             assertThat(second).isEqualTo(PaymentApplyOutcome.ALREADY_APPLIED);
@@ -298,10 +298,10 @@ class PaymentResultApplierIntegrationTest {
         void sameFailureTwice() {
             // arrange
             PG.complete(transactionKey, "FAILED", "한도 초과");
-            paymentResultApplier.reconcile(info.paymentId());
+            paymentResultApplier.reconcile(info.paymentId(), PaymentResultSource.RECONCILE_API);
 
             // act
-            PaymentApplyOutcome second = paymentResultApplier.reconcile(info.paymentId());
+            PaymentApplyOutcome second = paymentResultApplier.reconcile(info.paymentId(), PaymentResultSource.RECONCILE_API);
 
             // assert
             assertThat(second).isEqualTo(PaymentApplyOutcome.ALREADY_APPLIED);
@@ -318,7 +318,7 @@ class PaymentResultApplierIntegrationTest {
             List<PaymentApplyOutcome> outcomes = Collections.synchronizedList(new ArrayList<>());
             List<Callable<?>> tasks = new ArrayList<>();
             for (int i = 0; i < 10; i++) {
-                tasks.add(() -> outcomes.add(paymentResultApplier.reconcile(info.paymentId())));
+                tasks.add(() -> outcomes.add(paymentResultApplier.reconcile(info.paymentId(), PaymentResultSource.RECONCILE_API)));
             }
 
             // act
@@ -338,11 +338,11 @@ class PaymentResultApplierIntegrationTest {
         void failureAfterSuccessConflicts() {
             // arrange
             PG.complete(transactionKey, "SUCCESS", null);
-            paymentResultApplier.reconcile(info.paymentId());
+            paymentResultApplier.reconcile(info.paymentId(), PaymentResultSource.RECONCILE_API);
             PG.complete(transactionKey, "FAILED", "취소");
 
             // act
-            PaymentApplyOutcome outcome = paymentResultApplier.reconcile(info.paymentId());
+            PaymentApplyOutcome outcome = paymentResultApplier.reconcile(info.paymentId(), PaymentResultSource.RECONCILE_API);
 
             // assert
             assertThat(outcome).isEqualTo(PaymentApplyOutcome.CONFLICT);
@@ -363,14 +363,14 @@ class PaymentResultApplierIntegrationTest {
             doThrow(new IllegalStateException("선점 저장 실패")).doCallRealMethod().when(spy).consume(anyLong());
 
             // act & assert: 첫 반영은 실패하고 아무것도 남기지 않는다
-            assertThatThrownBy(() -> paymentResultApplier.reconcile(info.paymentId()))
+            assertThatThrownBy(() -> paymentResultApplier.reconcile(info.paymentId(), PaymentResultSource.RECONCILE_API))
                 .isInstanceOf(IllegalStateException.class);
             assertThat(payment().getStatus()).isEqualTo(PaymentStatus.PENDING);
             assertThat(order().getStatus()).isEqualTo(OrderStatus.PAYMENT_PENDING);
             assertThat(reservationRows()).containsExactly("RESERVED");
 
             // act & assert: 같은 외부 결과를 다시 조회해 반영한다
-            PaymentApplyOutcome retried = paymentResultApplier.reconcile(info.paymentId());
+            PaymentApplyOutcome retried = paymentResultApplier.reconcile(info.paymentId(), PaymentResultSource.RECONCILE_API);
             assertThat(retried).isEqualTo(PaymentApplyOutcome.APPLIED);
             assertThat(payment().getStatus()).isEqualTo(PaymentStatus.SUCCESS);
             assertThat(order().getStatus()).isEqualTo(OrderStatus.CONFIRMED);
@@ -391,7 +391,7 @@ class PaymentResultApplierIntegrationTest {
             PgTransaction wrongAmount = new PgTransaction(transactionKey, payment().getProviderOrderId(), 1L, ExternalPaymentStatus.SUCCESS, null);
 
             // act
-            PaymentApplyOutcome outcome = paymentResultApplier.apply(info.paymentId(), wrongAmount);
+            PaymentApplyOutcome outcome = paymentResultApplier.apply(info.paymentId(), wrongAmount, PaymentResultSource.RECONCILE_API);
 
             // assert
             assertThat(outcome).isEqualTo(PaymentApplyOutcome.MISMATCH);

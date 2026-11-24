@@ -8,6 +8,7 @@ import com.loopers.payment.application.port.out.PgPaymentRequest;
 import com.loopers.payment.application.port.out.PgRejectedException;
 import com.loopers.payment.application.port.out.PgTransaction;
 import com.loopers.payment.application.port.out.PgUnknownResultException;
+import com.loopers.payment.domain.ExternalPaymentStatus;
 import com.loopers.payment.domain.Payment;
 import com.loopers.payment.domain.PaymentRequestedEvent;
 import lombok.extern.slf4j.Slf4j;
@@ -62,11 +63,11 @@ public class PaymentSender {
     public void send(PaymentRequestedEvent event) {
         Long paymentId = event.paymentId();
         try {
-            PgPaymentRequest request = claim(paymentId, event);
-            if (request == null) {
+            Claimed claimed = claim(paymentId, event);
+            if (claimed == null) {
                 return;
             }
-            sendClaimed(paymentId, request);
+            sendClaimed(paymentId, claimed);
         } catch (RuntimeException e) {
             // 발송 권한을 얻은 뒤 반영에 실패하면 결제는 SENDING으로 남고, 정리 스케줄러가 UNKNOWN으로 넘긴다
             log.error("결제 발송 처리 중 오류. paymentId={}", paymentId, e);
@@ -76,7 +77,7 @@ public class PaymentSender {
     /**
      * 발송 권한을 얻으면 PG 요청을, 다른 실행(정리 스케줄러)이 먼저 가졌으면 null을 돌려준다.
      */
-    private PgPaymentRequest claim(Long paymentId, PaymentRequestedEvent event) {
+    private Claimed claim(Long paymentId, PaymentRequestedEvent event) {
         return newTransaction.execute(status -> {
             ZonedDateTime now = ZonedDateTime.now();
             if (!paymentOutboxPort.claim(paymentId, now)) {
@@ -85,30 +86,58 @@ public class PaymentSender {
             Payment payment = paymentPort.findByIdForUpdate(paymentId).orElseThrow();
             payment.markSending(now);
             paymentPort.save(payment);
-            return new PgPaymentRequest(payment.getProviderOrderId(), event.cardType(), event.cardNo(), payment.getAmount().amount());
+            PgPaymentRequest request = new PgPaymentRequest(
+                payment.getProviderOrderId(), event.cardType(), event.cardNo(), payment.getAmount().amount());
+            return new Claimed(payment.getOrderId(), request);
         });
     }
 
-    private void sendClaimed(Long paymentId, PgPaymentRequest request) {
+    /**
+     * PG 생성 1회와 그 결과를 경계 로그 ② payment.create.result로 남긴다 (W10 D-5). 카드 번호는 남기지 않는다.
+     */
+    private void sendClaimed(Long paymentId, Claimed claimed) {
+        long startedAt = System.nanoTime();
         PgTransaction created;
         try {
-            created = paymentGatewayPort.request(request);
+            created = paymentGatewayPort.request(claimed.request());
         } catch (PgRejectedException e) {
+            logCreateResult(paymentId, claimed, "REJECTED", "-", null, startedAt);
             paymentResultApplier.recordRejected(paymentId, e.getMessage());
             return;
         } catch (PgNotSentException e) {
+            logCreateResult(paymentId, claimed, "NOT_SENT", "-", null, startedAt);
             paymentResultApplier.closeNotSentAfterClaim(paymentId);
             return;
         } catch (PgUnknownResultException e) {
-            log.warn("PG 생성 결과를 모릅니다 — 조회로만 확인합니다. paymentId={}, reason={}", paymentId, e.getMessage());
-            paymentResultApplier.recordUnknown(paymentId);
+            logCreateResult(paymentId, claimed, "UNKNOWN", e.getReason().name(), null, startedAt);
+            paymentResultApplier.recordUnknown(paymentId, PaymentResultSource.DISPATCH);
             return;
         } catch (RuntimeException e) {
             // 분류하지 못한 예외는 보냈을 수 있다고 본다 — 실패로 닫지 않는다
-            log.warn("PG 생성 중 예상하지 못한 오류 — UNKNOWN으로 둡니다. paymentId={}", paymentId, e);
-            paymentResultApplier.recordUnknown(paymentId);
+            logCreateResult(paymentId, claimed, "UNKNOWN", "UNEXPECTED:" + e.getClass().getSimpleName(), null, startedAt);
+            paymentResultApplier.recordUnknown(paymentId, PaymentResultSource.DISPATCH);
             return;
         }
+        String result = created.status() == ExternalPaymentStatus.PENDING ? "ACCEPTED" : created.status().name();
+        logCreateResult(paymentId, claimed, result, "-", created.transactionKey(), startedAt);
         paymentResultApplier.recordCreated(paymentId, created);
+    }
+
+    private static void logCreateResult(Long paymentId, Claimed claimed, String result, String cause, String transactionKey, long startedAt) {
+        long elapsedMs = (System.nanoTime() - startedAt) / 1_000_000;
+        String message = "payment.create.result orderId={} paymentId={} providerOrderId={} result={} cause={} elapsedMs={} transactionKey={}";
+        Object[] values = {claimed.orderId(), paymentId, claimed.request().providerOrderId(), result, cause, elapsedMs,
+            transactionKey != null ? transactionKey : "-"};
+        if ("ACCEPTED".equals(result) || "SUCCESS".equals(result)) {
+            log.info(message, values);
+        } else {
+            log.warn(message, values);
+        }
+    }
+
+    /**
+     * 발송 권한을 얻은 결제의 주문 식별자와 PG 요청. 주문 식별자는 경계 로그의 열쇠다.
+     */
+    private record Claimed(Long orderId, PgPaymentRequest request) {
     }
 }

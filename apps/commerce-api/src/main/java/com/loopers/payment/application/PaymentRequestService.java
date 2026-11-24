@@ -18,6 +18,7 @@ import com.loopers.product.domain.ProductModel;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
@@ -33,6 +34,7 @@ import java.util.stream.Collectors;
  * 결제 요청 TX A (plan.md 4장). 주문·재고 선점·결제 시도·발송 장부를 한 트랜잭션으로 저장하고, PG는 부르지 않는다.
  * 잠금 순서: 주문 → 상품 id 오름차순 (W3 ADR-W3-03). 결과 반영(payment → 주문 → 선점 → 상품)과 순환이 없다.
  */
+@Slf4j
 @RequiredArgsConstructor
 @Component
 public class PaymentRequestService implements PaymentRequestUseCase {
@@ -86,6 +88,9 @@ public class PaymentRequestService implements PaymentRequestUseCase {
         Payment payment = savePayment(Payment.request(orderId, command.userId(), command.attemptKey(), PROVIDER, order.paymentAmount(), now));
         paymentOutboxPort.save(PaymentOutbox.paymentRequested(payment.getId()));
         eventPublisher.publishEvent(new PaymentRequestedEvent(payment.getId(), command.cardType(), command.cardNo()));
+        // 경계 로그 ① (W10 D-5). 카드 번호는 남기지 않는다.
+        log.info("payment.requested orderId={} paymentId={} attemptKey={} providerOrderId={} amount={}",
+            orderId, payment.getId(), payment.getAttemptKey(), payment.getProviderOrderId(), payment.getAmount().amount());
         return PaymentInfo.of(order, payment);
     }
 

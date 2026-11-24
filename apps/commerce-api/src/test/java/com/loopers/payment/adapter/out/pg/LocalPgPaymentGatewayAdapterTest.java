@@ -137,14 +137,16 @@ class LocalPgPaymentGatewayAdapterTest {
             assertThat(PG.transactionsCreated()).isZero();
         }
 
-        @DisplayName("G-3 거래는 생겼지만 응답이 읽기 timeout보다 늦으면 PgUnknownResultException이고, 숨은 재시도 없이 생성 호출·거래는 각 1이며, 주문 단위 조회로 그 거래를 찾는다")
+        @DisplayName("G-3 거래는 생겼지만 응답이 읽기 timeout보다 늦으면 PgUnknownResultException(READ_TIMEOUT)이고, 숨은 재시도 없이 생성 호출·거래는 각 1이며, 주문 단위 조회로 그 거래를 찾는다")
         @Test
         void unknownWhenResponseIsLost() {
             // arrange
             PG.delayNextCreateResponse(Duration.ofMillis(1500));
 
             // act & assert
-            assertThatThrownBy(() -> adapter.request(paymentRequest())).isInstanceOf(PgUnknownResultException.class);
+            assertThatThrownBy(() -> adapter.request(paymentRequest()))
+                .isInstanceOfSatisfying(PgUnknownResultException.class,
+                    e -> assertThat(e.getReason()).isEqualTo(PgUnknownResultException.Reason.READ_TIMEOUT));
             await().during(Duration.ofMillis(1500)).atMost(Duration.ofSeconds(3))
                 .until(() -> PG.createCalls() == 1 && PG.transactionsCreated() == 1);
             List<PgTransaction> found = adapter.findByProviderOrderId(ORDER_ID);
@@ -160,7 +162,9 @@ class LocalPgPaymentGatewayAdapterTest {
             PG.dropNextCreateConnection();
 
             // act & assert
-            assertThatThrownBy(() -> adapter.request(paymentRequest())).isInstanceOf(PgUnknownResultException.class);
+            assertThatThrownBy(() -> adapter.request(paymentRequest()))
+                .isInstanceOfSatisfying(PgUnknownResultException.class,
+                    e -> assertThat(e.getReason()).isEqualTo(PgUnknownResultException.Reason.READ_FAILED));
             await().during(Duration.ofMillis(500)).atMost(Duration.ofSeconds(2))
                 .until(() -> PG.createCalls() == 1 && PG.transactionsCreated() == 1);
         }
@@ -185,7 +189,9 @@ class LocalPgPaymentGatewayAdapterTest {
             PG.failNextCreateAfterCreating();
 
             // act & assert
-            assertThatThrownBy(() -> adapter.request(paymentRequest())).isInstanceOf(PgUnknownResultException.class);
+            assertThatThrownBy(() -> adapter.request(paymentRequest()))
+                .isInstanceOfSatisfying(PgUnknownResultException.class,
+                    e -> assertThat(e.getReason()).isEqualTo(PgUnknownResultException.Reason.SERVER_ERROR));
             assertThat(PG.transactionsCreated()).isEqualTo(1);
         }
 
@@ -196,7 +202,9 @@ class LocalPgPaymentGatewayAdapterTest {
             PG.garbleNextCreateResponse();
 
             // act & assert
-            assertThatThrownBy(() -> adapter.request(paymentRequest())).isInstanceOf(PgUnknownResultException.class);
+            assertThatThrownBy(() -> adapter.request(paymentRequest()))
+                .isInstanceOfSatisfying(PgUnknownResultException.class,
+                    e -> assertThat(e.getReason()).isEqualTo(PgUnknownResultException.Reason.UNREADABLE));
             assertThat(PG.transactionsCreated()).isEqualTo(1);
         }
 

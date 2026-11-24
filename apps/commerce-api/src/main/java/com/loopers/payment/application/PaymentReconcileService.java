@@ -24,7 +24,7 @@ public class PaymentReconcileService implements PaymentReconcileUseCase {
     @Override
     public PaymentInfo reconcile(Long userId, Long orderId) {
         PaymentInfo current = paymentQueryService.getMyPayment(userId, orderId);
-        paymentResultApplier.reconcile(current.paymentId());
+        paymentResultApplier.reconcile(current.paymentId(), PaymentResultSource.RECONCILE_API);
         return paymentQueryService.getMyPayment(userId, orderId);
     }
 
@@ -32,6 +32,6 @@ public class PaymentReconcileService implements PaymentReconcileUseCase {
     public void reconcileByCallback(String providerOrderId) {
         Payment payment = paymentPort.findByProviderOrderId(providerOrderId)
             .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "[orderId = " + providerOrderId + "] 결제를 찾을 수 없습니다."));
-        paymentResultApplier.reconcile(payment.getId());
+        paymentResultApplier.reconcile(payment.getId(), PaymentResultSource.CALLBACK);
     }
 }
