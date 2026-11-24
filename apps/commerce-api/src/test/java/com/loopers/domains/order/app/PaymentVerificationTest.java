@@ -4,6 +4,7 @@ import com.loopers.common.domain.Money;
 import com.loopers.domains.order.app.port.OrderConfirmedOutbox;
 import com.loopers.domains.order.app.port.OrderConfirmedPublisher;
 import com.loopers.domains.order.app.port.OrderRepository;
+import com.loopers.domains.order.app.port.PaymentOutcomeRecorder;
 import com.loopers.domains.order.domain.Order;
 import com.loopers.domains.order.domain.OrderItem;
 import com.loopers.domains.order.domain.Quantity;
@@ -32,10 +33,9 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
-import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
-import org.springframework.transaction.TransactionStatus;
-import org.springframework.transaction.support.SimpleTransactionStatus;
+import org.springframework.transaction.support.AbstractPlatformTransactionManager;
+import org.springframework.transaction.support.DefaultTransactionStatus;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -78,7 +78,7 @@ class PaymentVerificationTest {
             anomalies, Clock.fixed(Instant.EPOCH, ZoneOffset.UTC), mock(PaymentLookupScheduleRepository.class),
             new PaymentLookupPolicy(new LookupBackoff(Duration.ofSeconds(5), 2, Duration.ofMinutes(1)), maximum -> maximum, 12, 100),
             new PaymentExpiryPolicy(Duration.ofMinutes(2)), mock(OrderConfirmedPublisher.class),
-            mock(OrderConfirmedOutbox.class));
+            mock(OrderConfirmedOutbox.class), mock(PaymentOutcomeRecorder.class));
         clearInvocations(gateway);
     }
 
@@ -131,18 +131,23 @@ class PaymentVerificationTest {
         verifyNoInteractions(anomalies, products, gateway);
     }
 
-    private static class LocalTransactions implements PlatformTransactionManager {
+    // 결제 종결은 commit 뒤 동기화로 기록하므로 DB 없이도 트랜잭션 동기화를 여는 관리자를 쓴다.
+    private static class LocalTransactions extends AbstractPlatformTransactionManager {
         @Override
-        public TransactionStatus getTransaction(TransactionDefinition definition) {
-            return new SimpleTransactionStatus();
+        protected Object doGetTransaction() {
+            return new Object();
         }
 
         @Override
-        public void commit(TransactionStatus status) {
+        protected void doBegin(Object transaction, TransactionDefinition definition) {
         }
 
         @Override
-        public void rollback(TransactionStatus status) {
+        protected void doCommit(DefaultTransactionStatus status) {
+        }
+
+        @Override
+        protected void doRollback(DefaultTransactionStatus status) {
         }
     }
 }

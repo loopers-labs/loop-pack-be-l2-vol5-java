@@ -6,6 +6,8 @@ import com.loopers.domains.order.app.port.OrderConfirmedOutbox;
 import com.loopers.domains.order.app.port.OrderConfirmedPayload;
 import com.loopers.domains.order.app.port.OrderConfirmedPublisher;
 import com.loopers.domains.order.app.port.OrderRepository;
+import com.loopers.domains.order.app.port.PaymentOutcomeRecorder;
+import com.loopers.domains.order.app.port.PaymentOutcomeRecorder.Outcome;
 import com.loopers.domains.order.domain.Order;
 import com.loopers.domains.order.domain.OrderItem;
 import com.loopers.domains.order.domain.Quantity;
@@ -39,6 +41,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 // confirm은 PG 호출을 트랜잭션·잠금 밖에 두기 위해 경계를 둘로 나눈다(설계 23절). 같은 객체의 @Transactional 메서드
@@ -58,13 +62,14 @@ public class OrderApplicationService {
     private final PaymentExpiryPolicy paymentExpiryPolicy;
     private final OrderConfirmedPublisher orderConfirmedPublisher;
     private final OrderConfirmedOutbox orderConfirmedOutbox;
+    private final PaymentOutcomeRecorder paymentOutcomeRecorder;
 
     public OrderApplicationService(OrderRepository orderRepository, ProductRepository productRepository,
         PaymentRecordRepository paymentRecordRepository, PaymentGatewayRegistry paymentGatewayRegistry,
         TransactionTemplate transactionTemplate, PaymentAnomalyRepository paymentAnomalyRepository, Clock clock,
         PaymentLookupScheduleRepository paymentLookupScheduleRepository, PaymentLookupPolicy paymentLookupPolicy,
         PaymentExpiryPolicy paymentExpiryPolicy, OrderConfirmedPublisher orderConfirmedPublisher,
-        OrderConfirmedOutbox orderConfirmedOutbox) {
+        OrderConfirmedOutbox orderConfirmedOutbox, PaymentOutcomeRecorder paymentOutcomeRecorder) {
         this.orderRepository = orderRepository;
         this.productRepository = productRepository;
         this.paymentRecordRepository = paymentRecordRepository;
@@ -77,6 +82,7 @@ public class OrderApplicationService {
         this.paymentExpiryPolicy = paymentExpiryPolicy;
         this.orderConfirmedPublisher = orderConfirmedPublisher;
         this.orderConfirmedOutbox = orderConfirmedOutbox;
+        this.paymentOutcomeRecorder = paymentOutcomeRecorder;
     }
 
     public record ItemRequest(long productId, int quantity) { }
@@ -287,6 +293,7 @@ public class OrderApplicationService {
         paymentRecordRepository.save(payment);
         paymentAnomalyRepository.resolveTransient(orderId, now);
         paymentLookupScheduleRepository.delete(orderId);
+        afterCommit(() -> paymentOutcomeRecorder.record(Outcome.EXPIRED));
         log.info("결제 대기 상한이 지나 주문을 결제 만료로 종결했습니다. orderId={}", orderId);
     }
 
@@ -432,7 +439,11 @@ public class OrderApplicationService {
                 payment = paymentRecordRepository.save(payment);
                 paymentAnomalyRepository.resolveTransient(order.getId(), clock.instant());
                 paymentLookupScheduleRepository.delete(order.getId());
-                logClosed(order, report, source);
+                Outcome outcome = saved.getStatus() == Order.Status.CONFIRMED ? Outcome.CONFIRMED : Outcome.FAILED;
+                afterCommit(() -> {
+                    paymentOutcomeRecorder.record(outcome);
+                    logClosed(order, report, source);
+                });
             }
             case UNCHANGED -> {
                 if (order.getStatus() == Order.Status.PAYMENT_PENDING) {
@@ -458,6 +469,19 @@ public class OrderApplicationService {
             log.info("결제 실패로 종결했습니다. orderId={}, result={}, providerStatus={}, source={}",
                 order.getId(), report.outcome(), report.status(), source);
         }
+    }
+
+    // 종결 집계와 종결 INFO는 rollback된 종결을 세거나 알리지 않도록 commit 뒤에만 실행한다. 종결은 항상 잠금 트랜잭션 안이다.
+    private static void afterCommit(Runnable action) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            throw new IllegalStateException("결제 종결은 트랜잭션 안에서만 기록할 수 있습니다.");
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                action.run();
+            }
+        });
     }
 
     private void recordAnomaly(long orderId, Kind kind, String summary) {
