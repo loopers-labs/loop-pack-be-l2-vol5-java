@@ -12,6 +12,7 @@ import com.loopers.domains.payment.out.TestPgServer;
 import java.io.IOException;
 import java.net.URI;
 import java.time.Duration;
+import java.util.Set;
 import java.util.UUID;
 
 // 테스트마다 TestPgServer를 새로 띄우고, 실제 HTTP 어댑터(TestPgPaymentGateway)를 그 주소로 만들어 위임한다.
@@ -81,6 +82,22 @@ public class TestPgFixture {
 
     public void failLookupFor(String providerOrderId) {
         failingLookupOrder = providerOrderId;
+    }
+
+    public void loseResponseAfterSuccess(String providerOrderId) {
+        server().loseResponseAfterSuccess(providerOrderId);
+    }
+
+    public void clearOrderBehavior(String providerOrderId) {
+        server().clearOrderBehavior(providerOrderId);
+    }
+
+    public int createCalls(String providerOrderId) {
+        return server().createCalls(providerOrderId);
+    }
+
+    public Set<String> duplicateCreateOrderIds() {
+        return server().duplicateCreateOrderIds();
     }
 
     public void close() throws InterruptedException {

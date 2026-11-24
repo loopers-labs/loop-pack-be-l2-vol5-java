@@ -16,6 +16,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
@@ -136,6 +137,20 @@ public final class TestPgServer implements AutoCloseable {
 
     public long lookupCalls() {
         return requests.stream().filter(request -> request.method().equals("GET")).count();
+    }
+
+    public void loseResponseAfterSuccess(String providerOrderId) {
+    }
+
+    public void clearOrderBehavior(String providerOrderId) {
+    }
+
+    public int createCalls(String providerOrderId) {
+        return 0;
+    }
+
+    public Set<String> duplicateCreateOrderIds() {
+        return Set.of();
     }
 
     @Override
