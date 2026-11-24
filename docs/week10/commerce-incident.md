@@ -74,6 +74,7 @@
 - adapter는 호출한 스레드에서 동기로 돈다. 그래서 MDC를 그대로 물려받는다. adapter 시그니처는 바꾸지 않았다.
 - 확인 사실: HTTP 요청 스레드 MDC에는 `traceId`·`spanId`가 이미 들어 있다(테스트 실행으로 확인).
 - dev·qa·prd 로그는 logstash JSON(Boot structured logging)이다. MDC 키마다 최상위 JSON 필드로 나간다.
+- 저장된 거래 키가 없고 조회로 찾은 거래가 1건이면 매칭 확인 전에 그 키를 MDC `transactionKey`로 넣는다. 매칭이 불일치(TRANSACTION_MISMATCH)면 우리 것이 아닌 키가 붙을 수 있다.
 
 ## 4. 지표
 
@@ -84,12 +85,14 @@
 - DB를 주기 조회한다. 주기는 `commerce.payment.unresolved-metric.refresh-interval: 15s` **[임시]**다. 값은 주기만큼 늦다. test 프로필에서는 갱신 스케줄러가 꺼져 있다.
 - 첫 갱신 전 값은 NaN이다. 0이면 "미확인 없음"으로 읽히기 때문이다 **[구현 판단]**.
 - 갱신이 실패하면 마지막 값을 유지하고 WARN(causeType)을 남긴다 **[구현 판단]**.
+- 갱신 스케줄은 결제 조회·Outbox relay와 스케줄 풀(크기 2, 설계 28절)을 나눠 쓴다. 두 작업이 동시에 긴 회차(PG timeout 연속, relay broker 대기 최대 35초)에 들어가면 갱신이 주기보다 늦어질 수 있다(코드 추론, 실행 확인 안 함).
 - 인스턴스마다 같은 값을 낸다. 여러 인스턴스는 합하지 말고 max로 본다.
 - orderId·userId·traceId는 태그로 넣지 않는다.
 
 ### 4-2. 결제 종결 결과 counter `commerce.payment.outcome` [사용자 결정]
 
 - 태그 `result`: confirmed · failed · expired. 세 시계열을 시작부터 등록한다(0도 시계열이 있다). orderId는 태그로 넣지 않는다.
+- `failed`에는 PG FAILED뿐 아니라 모든 PG 미발송(ALL_NOT_SENT)·효과 없는 거절(REJECTED_NO_EFFECT)로 종결된 것도 들어간다(`PaymentReport.outcome`). 실패 종결 INFO도 같다.
 - 주문이 종결로 처음 바뀔 때만 1 늘린다. 같은 결과 재확인(UNCHANGED)·반대 결과(CONFLICT)·확인 필요 유지·재조회 반복은 세지 않는다.
 - commit 뒤에만 센다. rollback된 종결을 세지 않기 위해서다. 활성 트랜잭션 없이 부르면 예외로 막는다.
 - 차이: 만료 종결 INFO는 commit 뒤가 아니라 즉시 남긴다. 만료 TX가 rollback되면 만료 INFO만 남을 수 있다. counter는 commit 뒤에만 센다.
@@ -106,4 +109,6 @@
 
 - **[사용자 결정]** 분산 추적은 구현하지 않음. 요청 간·서비스 간 끊기는 구간은 확인하지 않았다.
 - 수동 reconcile·callback에서 반영 TX가 실패하면 전용 ERROR 줄이 없다. 공통 예외 처리(`ApiControllerAdvice`)의 ERROR로만 남는다. 이 줄은 예외 메시지와 스택을 함께 남긴다.
+- callback의 providerOrderId는 인증 없는 외부 입력이다. 형식·길이 검사 없이(빈 값만 거절) MDC에 들어간다. 메시지 본문에는 넣지 않는다.
+- 수동 reconcile·callback 반영 실패의 공통 ERROR는 Scope가 닫힌 뒤 찍힌다. 그래서 orderId MDC가 없고 traceId로만 잇는다.
 - `payment_records.provider_order_id`에는 인덱스가 없다. callback의 결제 기록 조회는 전체 탐색이 될 수 있다. 이번 단계에서는 고치지 않는다.
