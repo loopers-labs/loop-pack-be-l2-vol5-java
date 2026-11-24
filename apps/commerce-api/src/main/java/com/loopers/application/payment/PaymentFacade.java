@@ -45,6 +45,7 @@ public class PaymentFacade {
     private final OrderService orderService;
     private final Bulkhead createBulkhead;
     private final PaymentMetrics paymentMetrics;
+    private final PaymentLog paymentLog;
 
     public Payment confirm(PaymentConfirmCommand command, Instant now) {
         if (!createBulkhead.tryAcquirePermission()) {
@@ -68,6 +69,7 @@ public class PaymentFacade {
                 CreateObservation observation = paymentGateway.create(new PaymentCreation(
                     payment.getProviderOrderId(), command.cardType(), command.cardNumber(), payment.getAmount()));
                 paymentMetrics.created(observation);
+                paymentLog.created(payment, observation);
                 yield observeOrKeep(payment, observation, now);
             }
         };

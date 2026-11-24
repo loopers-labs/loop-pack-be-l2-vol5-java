@@ -35,10 +35,13 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.WebApplicationType;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -712,6 +715,27 @@ class PaymentFacadeIntegrationTest {
             paymentFacade.reconcile(USER, order.getId(), NOW.plusSeconds(10));
 
             assertThat(count("payment.observe", "to", "noop") - noop).isEqualTo(1);
+        }
+    }
+
+    @Nested
+    @ExtendWith(OutputCaptureExtension.class)
+    @DisplayName("결제 한 건의 경위는 paymentId 와 orderId 로 이어지는 로그로 남는다")
+    class Trail {
+
+        @DisplayName("생성 응답이 끊기면 그 결제와 주문의 id 로 결과를 모른다는 줄이 한 번 남는다")
+        @Test
+        void logsUnknownCreate(CapturedOutput output) {
+            Order order = place(2);
+            PG.dropNextCreateResponse();
+
+            Payment payment = confirm(order.getId(), "attempt-1");
+
+            assertThat(output.getOut().lines()
+                .filter(line -> line.contains("paymentId=" + payment.getId()))
+                .filter(line -> line.contains("orderId=" + order.getId()))
+                .filter(line -> line.contains("result=unknown")))
+                .hasSize(1);
         }
     }
 
