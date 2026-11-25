@@ -2,7 +2,7 @@
 // Prometheus는 지표를 직접 읽어 가지만(pull), Loki는 누가 보내 줘야 한다(push). 그 일을 Alloy가 한다.
 // 앱은 지금처럼 콘솔(→ run.sh가 파일로 받음)에 쓰기만 한다 — 앱 코드·logback 설정은 바꾸지 않는다.
 //
-// run.sh가 작업 폴더를 /logs로 읽기 전용 연결한다.
+// run.sh가 로그 사본 폴더(작업 폴더/loki — log-relay.py가 원본을 따라 씀)를 /logs로 읽기 전용 연결한다.
 //   label = 값 종류가 적은 것만: app(앱 이름) · level(INFO·WARN…)  — orderId·traceId를 label로 두면 stream이 끝없이 는다
 //   trace_id = structured metadata (줄에 붙은 값. 검색·trace 이동에 쓰고 stream은 늘리지 않는다)
 

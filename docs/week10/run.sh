@@ -260,11 +260,15 @@ docker run -d --name "$RUN-prometheus" --network "$NET" --network-alias promethe
   -v "$WORK/prometheus.yml:/etc/prometheus/prometheus.yml:ro" prom/prometheus:v3.1.0 \
   --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus \
   --web.enable-remote-write-receiver --enable-feature=exemplar-storage >/dev/null
-# 로그 (D-13 ②): Alloy가 작업 폴더의 api.log·streamer.log·pg-sim.log를 읽어(읽기 전용 연결) Loki로 보낸다
+# 로그 (D-13 ②): Alloy가 로그 사본 폴더(작업 폴더/loki, 읽기 전용 연결)를 읽어 Loki로 보낸다.
+# 앱이 연 채로 쓰는 원본은 macOS Docker 파일 공유가 바로 전하지 않는다 → log-relay.py가 사본에 "쓸 때마다 열고 닫는다"
+mkdir -p "$WORK/loki"
+python3 -I "$W10/log-relay.py" "$WORK/loki" "$WORK/api.log" "$WORK/streamer.log" "$WORK/pg-sim.log" &
+PIDS+=($!)
 docker run -d --name "$RUN-loki" --network "$NET" --network-alias loki -p "127.0.0.1:$LOKI_PORT:3100" \
   -v "$W10/loki.yaml:/etc/loki/loki.yaml:ro" grafana/loki:3.6.20 -config.file=/etc/loki/loki.yaml >/dev/null
 docker run -d --name "$RUN-alloy" --network "$NET" \
-  -v "$W10/alloy/config.alloy:/etc/alloy/config.alloy:ro" -v "$WORK:/logs:ro" \
+  -v "$W10/alloy/config.alloy:/etc/alloy/config.alloy:ro" -v "$WORK/loki:/logs:ro" \
   grafana/alloy:v1.21.3 run /etc/alloy/config.alloy --storage.path=/var/lib/alloy/data >/dev/null
 # 화면: 로그인 없이 Admin — 127.0.0.1에만 열고, 이 실행이 끝나면 지운다. data source·대시보드는 파일로 넣는다 (D-13 ①)
 docker run -d --name "$RUN-grafana" --network "$NET" -p "127.0.0.1:$GRAFANA_PORT:3000" \

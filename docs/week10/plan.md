@@ -558,6 +558,7 @@ docs/week10/results/w10-20261124-231516/
 
 - 결과는 모듈별 `build/test-results/test/TEST-*.xml`에서 테스트 수·실패·skip을 세어 PR에 적는다. 0건·skip·UP-TO-DATE는 통과가 아니다 (§8) → `--rerun-tasks`.
 - 고른 테스트만 돌리지 않고 세 앱 전부 돈다 — 고르는 판단이 틀릴 위험이 없다.
+- **결과 (11-25, 커밋 `bb82abe7`)**: commerce-api 610 · streamer 48 · batch 49 = 707개, 실패·오류·skip 0, Checkstyle 0, ArchitectureTest 3개 통과. 첫 실행의 OOM 29건은 D-4 gauge 수정으로 없어졌다 (변경 이력).
 
 **기능별 검증 범위** (PR에 그대로 옮긴다)
 
@@ -659,7 +660,7 @@ streamer      ├─ OTLP trace ────────────────
 | # | 할 것 | 상태 |
 |---|---|---|
 | ① | Grafana 대시보드 (JSON provisioning): 업무 지표 UNKNOWN·PENDING · health · 확정 요청 수·지연 · PG 호출 지연·오류 | 🔧 |
-| ② | Loki + Alloy: `api.log`·`streamer.log` → Loki. 로그 줄의 `[traceId-spanId]` → Tempo 링크, trace → 같은 traceId 로그 링크 | ✅ Alloy 11-25 · 링크 🔧 |
+| ② | Loki + Alloy: `api.log`·`streamer.log` → (`log-relay.py`가 사본에 쓸 때마다 열고 닫음) → Loki. 로그 줄의 `[traceId-spanId]` → Tempo 링크, trace → 같은 traceId 로그 링크 | ✅ Alloy 11-25 · 링크 🔧 |
 | ③ | Tempo metrics-generator: service graph · span 지표(요청 수·오류율·지연) → Prometheus. APM의 서비스 지도·구간 지연을 대신한다 (코드 단위 profiling은 없음) | 🔧 |
 | ④ | MCP: **Grafana MCP 서버 하나**(`grafana/mcp-grafana:2.3.0`, 읽기 전용 `--disable-write`)가 Grafana를 거쳐 Prometheus(PromQL)·Loki(LogQL)·Tempo(TraceQL)를 모두 조회한다 → Tempo 내장 MCP·버전 올림은 필요 없다. Grafana는 127.0.0.1의 로그인 없는 Admin이라 토큰을 만들지 않는다 | ✅ 11-25 저장소에는 `docs/week10/example.mcp.json` 틀만, 실제 등록은 로컬 설정(`claude mcp add --scope local grafana-w10 …`) |
 | ⑤ | run.sh 검사 추가: Prometheus 저장값 UNKNOWN 3 → 0 · PG 생성 호출 최대 지연 ≥ 2.9초(outcome=UNKNOWN) · Loki에서 응답 유실 주문의 로그 ②(주문 ID 글자로, trace_id로) · service graph commerce-api → commerce-streamer · span 지표 · Loki label에 orderId·traceId 없음 · Loki에 카드 번호·Spring Security 임시 비밀번호 0줄 · 대시보드·단계 표시(annotation). 결과 `5-monitoring/` | 🔧 |
@@ -721,3 +722,4 @@ streamer      ├─ OTLP trace ────────────────
 - 2026-11-24: run.sh 3·4번째 실행 실패 원인(trace를 너무 일찍 읽음 · 지난 jar를 고름)을 고쳐 5번째 실행에서 검사 135개 통과. 증거 `docs/week10/results/w10-20261124-231516/`.
 - 2026-11-25: 전체 회귀에서 commerce-api 테스트 JVM이 메모리 부족(OOM). 원인: 업무 지표 gauge의 람다가 `PaymentQueryService`를 강한 참조로 잡고, Spring Boot는 문맥마다 만든 registry를 전역 registry에 넣고 빼지 않는다 → `@DirtiesContext`로 닫힌 문맥이 회수되지 않고 쌓였다. 서비스를 weak reference로 넘기게 고쳤다 (D-4, 지표 동작은 같다).
 - 2026-11-25: D-13 추가 — Grafana 대시보드 · Loki+Alloy(로그 파일 수집) · Tempo service graph · MCP(저장소엔 `example.mcp.json` 틀, 등록은 로컬). 과제 밖 추가.
+- 2026-11-25: D-13 마지막 실행 첫 시도가 "Loki에 주문 12 로그 ②" 검사에서 멈췄다(`w10-20261125-191933`, 커밋 안 함). 앱이 로그 파일을 연 채로 덧붙이면 macOS Docker Desktop 파일 공유가 컨테이너(Alloy)에 바로 알리지 않는다 — 연 채로 1초마다 쓴 15줄이 0줄이다가 닫은 직후 한꺼번에 도착했다. 앞 실행(`w10-20261125-190752`)이 통과한 것은 우연이었다. `log-relay.py`가 원본을 따라 사본에 쓸 때마다 열고 닫게 해, 연 채로 써도 1~2초 안에 들어오는 것을 확인했다.
