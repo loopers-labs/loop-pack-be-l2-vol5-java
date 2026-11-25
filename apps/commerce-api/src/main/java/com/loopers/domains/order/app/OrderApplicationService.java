@@ -439,10 +439,10 @@ public class OrderApplicationService {
                 payment = paymentRecordRepository.save(payment);
                 paymentAnomalyRepository.resolveTransient(order.getId(), clock.instant());
                 paymentLookupScheduleRepository.delete(order.getId());
-                Outcome outcome = saved.getStatus() == Order.Status.CONFIRMED ? Outcome.CONFIRMED : Outcome.FAILED;
+                Outcome outcome = closingOutcome(saved, report);
                 afterCommit(() -> {
                     paymentOutcomeRecorder.record(outcome);
-                    logClosed(order, report, source);
+                    logClosed(order, outcome, report, source);
                 });
             }
             case UNCHANGED -> {
@@ -461,13 +461,25 @@ public class OrderApplicationService {
         return OrderResult.from(order, Optional.of(payment));
     }
 
+    // failed는 PG가 거래를 만들고 FAILED로 확정한 경우만이다. 거래가 생기기 전 거절·전체 미도달은 돈이 움직이지 않았으므로
+    // not_sent로 나눠, 거절 급증이 카드사·PG 판정 문제를 가리키게 한다.
+    private static Outcome closingOutcome(Order saved, PaymentReport report) {
+        if (saved.getStatus() == Order.Status.CONFIRMED) {
+            return Outcome.CONFIRMED;
+        }
+        if (report.status() == PaymentRecord.ProviderStatus.FAILED) {
+            return Outcome.FAILED;
+        }
+        return Outcome.NOT_SENT;
+    }
+
     // PG가 FAILED로 확정한 결제는 우리 시스템의 실패가 아닌 정상 종결이라 INFO다.
-    private static void logClosed(Order order, PaymentReport report, PaymentSource source) {
-        if (order.getStatus() == Order.Status.CONFIRMED) {
+    private static void logClosed(Order order, Outcome outcome, PaymentReport report, PaymentSource source) {
+        if (outcome == Outcome.CONFIRMED) {
             log.info("결제를 확정했습니다. orderId={}, source={}", order.getId(), source);
         } else {
             log.info("결제 실패로 종결했습니다. orderId={}, result={}, providerStatus={}, source={}",
-                order.getId(), report.outcome(), report.status(), source);
+                order.getId(), outcome, report.status(), source);
         }
     }
 
