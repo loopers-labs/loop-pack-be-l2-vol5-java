@@ -41,7 +41,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 // 시작 전 중단은 운영 조회 회로(PaymentCircuitBreakers 빈)의 상태를 본다. 테스트 레지스트리는 회로를 감싸지 않으므로
 // 이 클래스만 운영 빈으로 테스트 PG 게이트웨이를 감싼다. 열린 회로는 컨텍스트에 남으므로 이 클래스에는 테스트를 하나만 둔다.
-@SpringBootTest(properties = "payment.reconcile-batch.interval=0ms")
+// 같은 설정의 PaymentLookupCircuitIntegrationTest와 컨텍스트를 나누지만 그 테스트는 자기 회로를 따로 만들어 운영 빈 상태를 보지 않는다.
+@SpringBootTest
 @AutoConfigureMockMvc
 @Import(PaymentLookupScheduleIntegrationTest.TimeConfig.class)
 class PaymentReconcileBatchCircuitIntegrationTest {

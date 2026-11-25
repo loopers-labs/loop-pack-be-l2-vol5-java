@@ -38,9 +38,9 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-// 일괄 조회 확정은 사람이 고정한 orderId 목록만 기존 수동 reconcile 경로로 처리한다. 주문 사이 간격은 운영 동작이라 테스트는 0으로 둔다.
+// 일괄 조회 확정은 사람이 고정한 orderId 목록만 기존 수동 reconcile 경로로 처리한다. 주문 사이 간격은 운영 동작이라 test 프로필에서 0이다.
 // "연속 실패"가 무엇을 세는지 정해지기 전이라 혼합 목록은 멈춤·대상 아님이 두 건 넘게 이어지지 않게 배치한다.
-@SpringBootTest(properties = "payment.reconcile-batch.interval=0ms")
+@SpringBootTest
 @AutoConfigureMockMvc
 class PaymentReconcileBatchApiIntegrationTest {
     private static final String PATH = "/api-admin/v1/payments/reconcile-batch";

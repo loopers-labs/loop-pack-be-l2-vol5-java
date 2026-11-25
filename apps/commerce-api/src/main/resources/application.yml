@@ -93,6 +93,12 @@ payment:
       fixed-delay: PT1S
   expiry:
     timeout: 2m # 설계 26절 [임시]. 결제 시작 후 이 시간이 지나도 결과 미확정이면 결제 만료·재고 반환
+  # 관리자 일괄 조회 확정. 모두 [임시] 수치다. 조회 회로 창(20·최소 10)과 비교해 PG를 다시 몰아붙이지 않게 한 번 50건,
+  # PG 조회 사이 200ms(초당 5건), 조회 실패·회로 미호출이 연속 3건이면 나머지를 처리하지 않는다.
+  reconcile-batch:
+    max-orders: 50
+    interval: 200ms
+    consecutive-failure-limit: 3
 
 springdoc:
   use-fqn: true
@@ -165,6 +171,9 @@ payment:
   lookup:
     scheduler:
       enabled: false
+  # 일괄 조회 확정의 PG 조회 간격은 운영 속도 제한이라 테스트에서는 기다리지 않는다.
+  reconcile-batch:
+    interval: 0ms
 commerce:
   outbox:
     relay:

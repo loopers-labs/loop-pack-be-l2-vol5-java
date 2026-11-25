@@ -242,6 +242,11 @@ public class OrderApplicationService {
     }
 
     public OrderResult reconcilePayment(long orderId) {
+        return reconcileForOperator(orderId).result();
+    }
+
+    // 관리자 일괄 조회 확정용이다. 수동 reconcile과 같은 경로를 타고 판정을 함께 돌려준다. 회로가 막히면 같은 예외를 던진다.
+    public PaymentReconciliation reconcileForOperator(long orderId) {
         try (PaymentLogContext.Scope logContext = PaymentLogContext.open(orderId)) {
             orderRepository.findById(orderId).orElseThrow(OrderNotFoundException::new);
             PaymentRecord payment = paymentRecordRepository.findByOrderId(orderId)
@@ -302,7 +307,7 @@ public class OrderApplicationService {
         log.info("결제 대기 상한이 지나 주문을 결제 만료로 종결했습니다. orderId={}", orderId);
     }
 
-    private OrderResult verifyPayment(PaymentRecord requested, PaymentSource source, String callbackKey,
+    private PaymentReconciliation verifyPayment(PaymentRecord requested, PaymentSource source, String callbackKey,
         PaymentLogContext.Scope logContext) {
         logContext.transactionKey(requested.getTransactionKey());
         // callback 본문은 누구나 보낼 수 있는 신호다. 저장된 값으로 잠금·트랜잭션 밖에서 PG를 조회한다.
@@ -322,9 +327,9 @@ public class OrderApplicationService {
                 if (!payment.getProviderId().equals(requested.getProviderId())
                     || (source != PaymentSource.MANUAL
                         && payment.getProviderStatus() == PaymentRecord.ProviderStatus.NEEDS_REVIEW)) {
-                    return OrderResult.from(order, Optional.of(payment));
+                    return new PaymentReconciliation(OrderResult.from(order, Optional.of(payment)), null);
                 }
-                OrderResult result = applyLookupLocked(order, payment, lookup, source, callbackKey, logContext);
+                PaymentReconciliation result = applyLookupLocked(order, payment, lookup, source, callbackKey, logContext);
                 if (source == PaymentSource.AUTOMATIC) {
                     advanceLookupSchedule(order, payment, lookup);
                 }
@@ -348,13 +353,13 @@ public class OrderApplicationService {
         failure.addSuppressed(new AlreadyLogged());
     }
 
-    private OrderResult applyLookupLocked(Order order, PaymentRecord payment, PaymentTransactionsLookup lookup,
+    private PaymentReconciliation applyLookupLocked(Order order, PaymentRecord payment, PaymentTransactionsLookup lookup,
         PaymentSource source, String callbackKey, PaymentLogContext.Scope logContext) {
         PaymentLookupAssessment assessment = PaymentLookupAssessment.assess(payment, lookup);
         if (source == PaymentSource.CALLBACK) {
             recordCallbackKeyMismatch(order.getId(), assessment.callbackComparisonKey(), callbackKey);
         }
-        return switch (assessment) {
+        OrderResult result = switch (assessment) {
             case PaymentLookupAssessment.NotCalled notCalled -> OrderResult.from(order, Optional.of(payment));
             case PaymentLookupAssessment.Uncertain uncertain -> {
                 recordTransientAnomaly(order, uncertain, source, lookup);
@@ -375,6 +380,7 @@ public class OrderApplicationService {
                 yield applyLocked(order, Optional.of(payment), verified.report(), source);
             }
         };
+        return new PaymentReconciliation(result, assessment);
     }
 
     private void advanceLookupSchedule(Order order, PaymentRecord payment, PaymentTransactionsLookup lookup) {
@@ -621,6 +627,11 @@ public class OrderApplicationService {
     @Transactional(readOnly = true)
     public OrderResult getAdminOrder(long orderId) {
         return withPayment(orderRepository.findById(orderId).orElseThrow(OrderNotFoundException::new));
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<OrderResult> findAdminOrder(long orderId) {
+        return orderRepository.findById(orderId).map(this::withPayment);
     }
 
     @Transactional(readOnly = true)

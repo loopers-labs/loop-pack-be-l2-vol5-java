@@ -3,7 +3,7 @@ package com.loopers.domains.order.app;
 import java.util.List;
 
 public record ReconcileBatchResult(int requested, int processed, StopReason stopReason, List<Item> results) {
-    public enum StopReason { CONSECUTIVE_FAILURES, CIRCUIT_OPENED }
+    public enum StopReason { CONSECUTIVE_FAILURES }
 
     public enum Outcome { RESOLVED, STOPPED, ALREADY_CLOSED, NOT_APPLICABLE, SKIPPED }
 
