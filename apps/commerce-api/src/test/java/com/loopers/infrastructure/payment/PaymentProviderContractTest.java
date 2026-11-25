@@ -17,6 +17,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -28,6 +29,8 @@ import org.springframework.boot.autoconfigure.ssl.SslAutoConfiguration;
 import org.springframework.boot.autoconfigure.web.client.RestClientAutoConfiguration;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
@@ -180,6 +183,73 @@ class PaymentProviderContractTest {
 
             assertThat(gateway.create(creation(48L, 7000)))
                 .isEqualTo(new CreateObservation.CreateUnknown());
+        }
+    }
+
+    @Nested
+    @ExtendWith(OutputCaptureExtension.class)
+    @DisplayName("결과를 모르게 된 생성 호출은 왜 모르는지를 PG 주문 식별자와 함께 남긴다")
+    class UnknownCause {
+
+        @DisplayName("응답이 끊기면 연결이 끊겼다는 원인이 한 줄 남는다")
+        @Test
+        void connectionLost(CapturedOutput output) {
+            PG.dropNextCreateResponse();
+
+            gateway.create(creation(49L, 7000));
+
+            assertThat(linesOf(output, "LP-ORD-0000000049")).singleElement().asString()
+                .contains("cause=connection_lost");
+        }
+
+        @DisplayName("응답이 생성 timeout 보다 늦으면 timeout 이라는 원인이 한 줄 남는다")
+        @Test
+        void timeout(CapturedOutput output) {
+            PgFixture.HeldResponse held = PG.holdNextCreateResponse();
+            try {
+                gateway.create(creation(50L, 7000));
+            } finally {
+                held.release();
+            }
+
+            assertThat(linesOf(output, "LP-ORD-0000000050")).singleElement().asString()
+                .contains("cause=timeout");
+        }
+
+        @DisplayName("수락도 거절도 아닌 응답을 받으면 그 상태 코드와 함께 해석할 수 없는 응답이라는 원인이 한 줄 남는다")
+        @Test
+        void unexpectedResponse(CapturedOutput output) {
+            PG.respondNextCreateWith(500, "");
+
+            gateway.create(creation(51L, 7000));
+
+            assertThat(linesOf(output, "LP-ORD-0000000051")).singleElement().asString()
+                .contains("cause=unexpected_response", "status=500");
+        }
+
+        @DisplayName("접수된 생성 호출은 줄을 남기지 않는다")
+        @Test
+        void acceptedLeavesNoLine(CapturedOutput output) {
+            gateway.create(creation(52L, 7000));
+
+            assertThat(linesOf(output, "LP-ORD-0000000052")).isEmpty();
+        }
+
+        @DisplayName("PG-014: 원인을 남기는 줄에 카드 번호는 없다")
+        @Test
+        void noCardNumber(CapturedOutput output) {
+            PG.dropNextCreateResponse();
+
+            gateway.create(creation(53L, 7000));
+
+            assertThat(linesOf(output, "LP-ORD-0000000053")).isNotEmpty();
+            assertThat(output.getOut()).doesNotContain("0000-0000-0000-0000");
+        }
+
+        private List<String> linesOf(CapturedOutput output, String providerOrderId) {
+            return output.getOut().lines()
+                .filter(line -> line.contains("providerOrderId=" + providerOrderId))
+                .toList();
         }
     }
 

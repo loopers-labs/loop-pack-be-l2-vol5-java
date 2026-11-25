@@ -10,6 +10,7 @@ import com.loopers.domain.payment.ProviderOrderId;
 import com.loopers.domain.payment.TransactionKey;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.hc.core5.http.ConnectionRequestTimeoutException;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpStatus;
@@ -22,11 +23,13 @@ import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClientException;
 
 import java.io.IOException;
+import java.net.SocketTimeoutException;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.List;
 import java.util.function.Supplier;
 
+@Slf4j
 @Component
 class PgPaymentGateway implements PaymentGateway {
 
@@ -69,8 +72,22 @@ class PgPaymentGateway implements PaymentGateway {
             if (e.getCause() instanceof ConnectionRequestTimeoutException) {
                 return new CreateObservation.NotSent();
             }
-            return new CreateObservation.CreateUnknown();
+            return unknownWithoutResponse(creation, e);
         }
+    }
+
+    private static CreateObservation unknownWithoutResponse(PaymentCreation creation, ResourceAccessException e) {
+        String cause = e.getCause() instanceof SocketTimeoutException ? "timeout" : "connection_lost";
+        log.warn("PG 생성 호출의 응답을 받지 못했다: providerOrderId={}, cause={}",
+            creation.providerOrderId().value(), cause);
+        return new CreateObservation.CreateUnknown();
+    }
+
+    private static CreateObservation unknownResponse(PaymentCreation creation, ConvertibleClientHttpResponse response)
+        throws IOException {
+        log.warn("PG 생성 호출의 응답을 수락으로도 거절로도 읽을 수 없다: providerOrderId={}, cause={}, status={}",
+            creation.providerOrderId().value(), "unexpected_response", response.getStatusCode().value());
+        return new CreateObservation.CreateUnknown();
     }
 
     @Override
@@ -226,16 +243,16 @@ class PgPaymentGateway implements PaymentGateway {
                 if (isAcceptedAsRequested(creation, accepted)) {
                     return new CreateObservation.Accepted(new TransactionKey(accepted.transactionKey()));
                 }
-                return new CreateObservation.CreateUnknown();
+                return unknownResponse(creation, response);
             }
             if (response.getStatusCode().isSameCodeAs(HttpStatus.UNPROCESSABLE_ENTITY)
                 && isRejectedWithoutEffect(creation, response.bodyTo(RejectionResponse.class))) {
                 return new CreateObservation.RejectedNoEffect();
             }
         } catch (RestClientException | HttpMessageNotReadableException e) {
-            return new CreateObservation.CreateUnknown();
+            return unknownResponse(creation, response);
         }
-        return new CreateObservation.CreateUnknown();
+        return unknownResponse(creation, response);
     }
 
     private static boolean isAcceptedAsRequested(PaymentCreation creation, CreateResponse accepted) {
