@@ -3,6 +3,7 @@ package com.loopers.domain.activity;
 import com.loopers.domain.BaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 
@@ -12,10 +13,12 @@ import java.time.ZonedDateTime;
 /**
  * 상품 구매 활동: 확정 주문 하나의 상품별 구매 수량과 확정 시각. 주간 랭킹의 입력이 된다.
  * (order_id, product_id) 당 하나. productId 는 과거 주문의 식별자로 보존하며 현재 상품 행의 존재·가격에 의존하지 않는다.
+ * confirmed_at 인덱스: W9 주간 랭킹의 입력 고정(INSERT … SELECT)이 기간 범위만 읽고 잠그게 한다 (DR-67).
  */
 @Entity
-@Table(name = "product_purchase_activity", uniqueConstraints =
-    @UniqueConstraint(name = "ux_product_purchase_activity_order_product", columnNames = {"order_id", "product_id"}))
+@Table(name = "product_purchase_activity",
+    uniqueConstraints = @UniqueConstraint(name = "ux_product_purchase_activity_order_product", columnNames = {"order_id", "product_id"}),
+    indexes = @Index(name = "ix_product_purchase_activity_confirmed_at", columnList = "confirmed_at"))
 public class ProductPurchaseActivityModel extends BaseEntity {
 
     @Column(name = "order_id", nullable = false, updatable = false)

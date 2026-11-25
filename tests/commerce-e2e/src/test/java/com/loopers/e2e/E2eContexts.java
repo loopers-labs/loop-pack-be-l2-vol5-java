@@ -55,6 +55,25 @@ public final class E2eContexts {
             )));
     }
 
+    /**
+     * commerce-batch context. 자동 실행을 끄고 weeklyRanking job 만 만든다 (테스트가 JobLauncher 로 직접 실행). 스키마는 건드리지 않는다:
+     * JPA ddl-auto 는 끄고(api context 가 만든 표를 지우지 않게), Batch metadata 표는 test 프로필의 initialize-schema 로 처음 한 번 만든다.
+     * extraSources 는 이번 실행에만 넣을 구성 (예: 시계·실패 주입).
+     */
+    public static ConfigurableApplicationContext startBatch(Class<?>... extraSources) {
+        List<Class<?>> sources = new ArrayList<>(List.of(E2eBatchApplication.class));
+        sources.addAll(List.of(extraSources));
+        return new SpringApplicationBuilder(sources.toArray(Class<?>[]::new))
+            .web(WebApplicationType.NONE)
+            .run(asArgs(List.of(
+                "spring.config.name=e2e-commerce-batch",
+                "spring.application.name=commerce-batch",
+                "spring.jpa.hibernate.ddl-auto=none",
+                "spring.batch.job.enabled=false",
+                "spring.batch.job.name=weeklyRanking"
+            )));
+    }
+
     /** 명령행 인자로 넘긴다: yml(config data)보다 우선한다. builder.properties() 는 기본값이라 yml 에 덮인다. */
     private static String[] asArgs(List<String> properties) {
         return properties.stream().map(property -> "--" + property).toArray(String[]::new);

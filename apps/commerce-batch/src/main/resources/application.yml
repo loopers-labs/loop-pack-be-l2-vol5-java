@@ -17,6 +17,10 @@ spring:
     jdbc:
       initialize-schema: never
 
+ranking:
+  weekly:
+    chunk-size: 100 # 점수 계산 step 의 chunk (상품 수). 측정한 최적값이 아니다
+
 management:
   health:
     defaults:

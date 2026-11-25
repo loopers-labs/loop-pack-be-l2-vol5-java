@@ -75,6 +75,32 @@ public final class E2eDb {
         return jdbc.queryForList("select id, product_id, quantity from product_purchase_activity where order_id = ? order by product_id", orderId);
     }
 
+    /** 구매 활동 (product_id, quantity, confirmed_at 저장 문자열), product_id 순. */
+    public List<Map<String, Object>> activityWithTimeOfOrder(Long orderId) {
+        return jdbc.queryForList("select product_id, quantity, cast(confirmed_at as char) confirmed_at from product_purchase_activity "
+            + "where order_id = ? order by product_id", orderId);
+    }
+
+    public int activityCount() {
+        return jdbc.queryForObject("select count(*) from product_purchase_activity", Integer.class);
+    }
+
+    /** snapshot 입력 (order_id, product_id, quantity), 정렬. */
+    public List<List<Long>> rankingInputs(String snapshotId) {
+        return jdbc.query("select order_id, product_id, quantity from ranking_snapshot_input where snapshot_id = ? order by order_id, product_id",
+            (rs, n) -> List.of(rs.getLong("order_id"), rs.getLong("product_id"), rs.getLong("quantity")), snapshotId);
+    }
+
+    public Map<String, Object> rankingSnapshot(String snapshotId) {
+        return jdbc.queryForMap("select * from ranking_snapshot where snapshot_id = ?", snapshotId);
+    }
+
+    /** 완성 ranking (product_id, score, rank_no), rank 순. */
+    public List<List<Long>> ranking(String snapshotId) {
+        return jdbc.query("select product_id, score, rank_no from weekly_ranking where snapshot_id = ? order by rank_no",
+            (rs, n) -> List.of(rs.getLong("product_id"), rs.getLong("score"), rs.getLong("rank_no")), snapshotId);
+    }
+
     /** 소비 완료 기록 (id, event_id). */
     public List<Map<String, Object>> processedOfOrder(Long orderId) {
         return jdbc.queryForList("select id, event_id from processed_order_confirmation where order_id = ? order by id", orderId);
