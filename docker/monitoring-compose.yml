@@ -1,11 +1,34 @@
 version: '3'
 services:
   prometheus:
-    image: prom/prometheus
+    # 규칙 테스트(promtool)와 같은 버전으로 고정한다.
+    image: prom/prometheus:v3.5.0
     ports:
       - "9090:9090"
     volumes:
       - ./grafana/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./prometheus/rules:/etc/prometheus/rules:ro
+    depends_on:
+      - alertmanager
+
+  alertmanager:
+    image: prom/alertmanager:v0.28.1
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+    depends_on:
+      - fake-receiver
+
+  # 로컬 확인용 가짜 webhook 수신기. 받은 알림 본문은 `docker compose logs fake-receiver`로 본다.
+  fake-receiver:
+    image: python:3.12.11-slim
+    volumes:
+      - ./alertmanager/fake-receiver:/app:ro
+    command: ["python", "-u", "/app/receiver.py"]
 
   grafana:
     image: grafana/grafana

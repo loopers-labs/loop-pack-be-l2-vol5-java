@@ -1,0 +1,94 @@
+# 결제 사고 알림 규칙(10주차 4단계 4a). 모양은 payment_test.yml(promtool test rules)로 고정한다.
+# 원칙: 사람이 지금 손대야 할 것만 울린다. 자동 재조회로 풀리는 일시 증가는 대시보드에서만 본다.
+#   critical = 자동 회복이 안 먹힘 AND 당장 조치할 만큼 쌓임(사람을 깨운다).
+#   warning  = 한 건이라도 사람 확인이 필요하지만 아침에 봐도 되는 것.
+# 지표:
+#   commerce_payment_unresolved{status}            gauge. 인스턴스마다 같은 DB 값을 내므로 max로 본다.
+#   commerce_payment_started_total{provider}       PG 결제를 새로 시작한 수(commit 뒤).
+#   commerce_payment_unknown_entered_total{provider} 결제 기록이 처음 UNKNOWN이 된 수(commit 뒤, 재보고 제외).
+#   commerce_payment_outcome_total{result}         주문이 결제 종결로 처음 바뀐 수. counter는 sum으로 합한다.
+# label에는 orderId·userId를 넣지 않는다. 집계 결과는 alertname·severity만 남는다.
+# 수치는 모두 [임시]다. 운영하며 조정하고, 바꾸면 payment_test.yml도 함께 바꾼다.
+groups:
+  - name: commerce-payment
+    rules:
+      # [임시] X=0.2%, N=20, M=10m.
+      # - 비율 X: 피크 1만 건 중 50건(0.5%)은 울리고, 평소 결과 모름 유입(수 건/만 건)은 넘지 않게 잡았다.
+      # - 건수 N: 새벽 10건 중 2건처럼 비율만 높고 건수가 적으면 아침 확인으로 충분하다.
+      # - 지속 M: 자동 재조회(최대 12회, 수 분)로 풀리는 일시 증가를 거른다.
+      # 증가는 gauge가 아니라 유입 counter로 잰다. 만료(2분)가 미확인을 빼 가면 PG 장애가 길 때
+      # gauge가 높은 채 평평해져 deriv > 0이 거짓이 되기 때문이다(계획 2-8 수정 1).
+      - alert: PaymentUnresolvedPiling
+        expr: |
+          (
+            sum(increase(commerce_payment_unknown_entered_total[30m]))
+              / clamp_min(sum(increase(commerce_payment_started_total[30m])), 1)
+          ) > 0.002
+          and
+          max(commerce_payment_unresolved{status="unknown"}) >= 20
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: 결과 모름 결제가 새로 계속 생기고 20건 이상 쌓였습니다. 자동 재조회로 풀리지 않고 있습니다.
+          runbook_url: docs/runbook/week10.md#paymentunresolvedpiling
+          dashboard_url: http://localhost:3000/d/commerce-payment-incident
+
+      # [임시] K=5건/10분, 10분 지속.
+      # 만료는 돈이 움직였을 수 있는 주문을 우리가 포기한 것이다(5단계 환불과 연결). 10분에 5건이면 우연한 한두 건이 아니다.
+      # 미확인 gauge가 평평하거나 줄어도 그 이유가 만료라면 여기서 잡는다.
+      - alert: PaymentAbandonedPiling
+        expr: |
+          sum(increase(commerce_payment_outcome_total{result="expired"}[10m])) >= 5
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: 결과를 확인하지 못하고 만료로 종결한 결제가 10분에 5건 이상 계속됩니다.
+          runbook_url: docs/runbook/week10.md#paymentabandonedpiling
+          dashboard_url: http://localhost:3000/d/commerce-payment-incident
+
+      # [임시] 15m. needs_review는 자동으로 풀리지 않는 사람 확인 상태라 한 건도 남기되, 깨우지는 않는다.
+      - alert: PaymentNeedsReview
+        expr: |
+          max(commerce_payment_unresolved{status="needs_review"}) > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: 사람 확인이 필요한 결제가 15분 넘게 남아 있습니다.
+          runbook_url: docs/runbook/week10.md#paymentneedsreview
+          dashboard_url: http://localhost:3000/d/commerce-payment-incident
+
+      # [임시] 종결 중 failed 비율 > 30% AND 10분 10건 이상, 5분 지속.
+      # 카드사·PG 판정 이상(거절 급증)이다. 건수 조건은 소량 시간대의 우연한 거절 몇 건을 거른다.
+      - alert: PaymentDeclineSurge
+        expr: |
+          (
+            sum(increase(commerce_payment_outcome_total{result="failed"}[10m]))
+              / clamp_min(sum(increase(commerce_payment_outcome_total[10m])), 1)
+          ) > 0.3
+          and
+          sum(increase(commerce_payment_outcome_total{result="failed"}[10m])) >= 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 결제 거절(failed) 종결이 급증했습니다. 카드사·PG 판정을 확인하세요.
+          runbook_url: docs/runbook/week10.md#paymentdeclinesurge
+          dashboard_url: http://localhost:3000/d/commerce-payment-incident
+
+      # [임시] 10분 5건 이상, 5분 지속. not_sent는 PG에 요청이 닿지 않은 것이라 거절과 원인이 달라 규칙을 나눈다.
+      - alert: PaymentPgUnreachable
+        expr: |
+          sum(increase(commerce_payment_outcome_total{result="not_sent"}[10m])) >= 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: PG에 결제 요청을 보내지 못한 종결(not_sent)이 10분에 5건 이상입니다. PG 연결을 확인하세요.
+          runbook_url: docs/runbook/week10.md#paymentpgunreachable
+          dashboard_url: http://localhost:3000/d/commerce-payment-incident
+
+      # (5단계 자리) 환불 규칙: 고객에게 약속한 환불 기한까지 남은 시간으로 급한 정도를 정한다.
+      # 지표·규칙·테스트는 5단계에서 추가한다.

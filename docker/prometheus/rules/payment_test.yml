@@ -1,0 +1,285 @@
+# payment.yml 규칙 테스트(promtool test rules). 실행: scripts/ops/check-alerting.sh
+# 각 그룹은 계획의 장면 R1~R8 하나다. 수치는 payment.yml의 [임시] 값(X=0.2%, N=20, M=10m, K=5)에 맞췄다.
+# 시계열은 1분 간격이다. 'a+bxn'은 a에서 시작해 1분마다 b씩 n번 더한다.
+rule_files:
+  - payment.yml
+
+evaluation_interval: 1m
+
+tests:
+  # R1 새벽: 30분에 시작 약 15건, 그중 결과 모름 유입 약 3건(비율 20%), 서 있는 unknown 2건.
+  # 비율은 높지만 건수가 N(20) 미만이라 깨우지 않는다.
+  - name: R1 새벽 소량은 비율이 높아도 건수 미달로 critical 안 울림
+    interval: 1m
+    input_series:
+      - series: 'commerce_payment_started_total{provider="pg-a"}'
+        values: '0+0.5x60'
+      - series: 'commerce_payment_unknown_entered_total{provider="pg-a"}'
+        values: '0+0.1x60'
+      - series: 'commerce_payment_unresolved{status="unknown"}'
+        values: '2x60'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: PaymentUnresolvedPiling
+        exp_alerts: []
+      - eval_time: 60m
+        alertname: PaymentUnresolvedPiling
+        exp_alerts: []
+
+  # R2 피크: 30분에 시작 약 1만 건, 결과 모름 유입 약 60건(0.6%), unknown이 1분에 1건씩 늘어 50건을 넘는다.
+  # unknown이 20이 되는 20분부터 조건이 참이고 10분 지속한 30분부터 울린다.
+  - name: R2 피크에 유입 비율과 건수가 넘고 계속 늘면 critical 울림
+    interval: 1m
+    input_series:
+      - series: 'commerce_payment_started_total{provider="pg-a"}'
+        values: '0+333x60'
+      - series: 'commerce_payment_unknown_entered_total{provider="pg-a"}'
+        values: '0+2x60'
+      - series: 'commerce_payment_unresolved{status="unknown"}'
+        values: '0+1x60'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: PaymentUnresolvedPiling
+        exp_alerts: []
+      - eval_time: 50m
+        alertname: PaymentUnresolvedPiling
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations: &piling_annotations
+              summary: 결과 모름 결제가 새로 계속 생기고 20건 이상 쌓였습니다. 자동 재조회로 풀리지 않고 있습니다.
+              runbook_url: docs/runbook/week10.md#paymentunresolvedpiling
+              dashboard_url: http://localhost:3000/d/commerce-payment-incident
+
+  # R3 잠깐 튐: 10분부터 5분 동안 unknown이 30까지 올랐다가 자동 재조회로 0이 된다.
+  # 유입 비율(30/1만 = 0.3%)은 X를 넘지만 건수 조건이 M(10분)만큼 지속되지 않아 안 울린다.
+  - name: R3 잠깐 튀었다가 자동 재조회로 0이 되면 critical 안 울림
+    interval: 1m
+    input_series:
+      - series: 'commerce_payment_started_total{provider="pg-a"}'
+        values: '0+333x60'
+      - series: 'commerce_payment_unknown_entered_total{provider="pg-a"}'
+        values: '0x9 6 12 18 24 30 30x45'
+      - series: 'commerce_payment_unresolved{status="unknown"}'
+        values: '0x9 6 12 18 24 30 15 0x44'
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: PaymentUnresolvedPiling
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: PaymentUnresolvedPiling
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: PaymentUnresolvedPiling
+        exp_alerts: []
+
+  # R2b 피크 평소: unknown 25건이 서 있지만 유입은 30분에 약 9건(0.09%)으로 X 아래다.
+  # 자동 재조회가 따라잡는 정상 범위라 깨우지 않는다. 건수만으로는 울리지 않는다는 것을 고정한다.
+  - name: R2b 건수는 넘어도 유입 비율이 X 아래면 critical 안 울림
+    interval: 1m
+    input_series:
+      - series: 'commerce_payment_started_total{provider="pg-a"}'
+        values: '0+333x60'
+      - series: 'commerce_payment_unknown_entered_total{provider="pg-a"}'
+        values: '0+0.3x60'
+      - series: 'commerce_payment_unresolved{status="unknown"}'
+        values: '25x60'
+    alert_rule_test:
+      - eval_time: 40m
+        alertname: PaymentUnresolvedPiling
+        exp_alerts: []
+      - eval_time: 60m
+        alertname: PaymentUnresolvedPiling
+        exp_alerts: []
+
+  # R4 정체(새 정의): unknown 50건이 서 있지만 30분 넘게 새 유입이 없다.
+  # 새 유입이 없으면 자동 재조회·만료가 남은 건을 처리하는 중이라 깨우지 않는다. 만료가 쌓이면 PaymentAbandonedPiling이 잡는다.
+  - name: R4 새 유입 없이 unknown만 남아 있으면 critical 안 울림
+    interval: 1m
+    input_series:
+      - series: 'commerce_payment_started_total{provider="pg-a"}'
+        values: '0+333x60'
+      - series: 'commerce_payment_unknown_entered_total{provider="pg-a"}'
+        values: '50x60'
+      - series: 'commerce_payment_unresolved{status="unknown"}'
+        values: '50x60'
+    alert_rule_test:
+      - eval_time: 40m
+        alertname: PaymentUnresolvedPiling
+        exp_alerts: []
+      - eval_time: 60m
+        alertname: PaymentUnresolvedPiling
+        exp_alerts: []
+
+  # R5 needs_review 1건이 20분 남음 → 15분 지속 뒤 warning.
+  - name: R5a needs_review가 15분 넘게 남으면 warning 울림
+    interval: 1m
+    input_series:
+      - series: 'commerce_payment_unresolved{status="needs_review"}'
+        values: '0x5 1x20 0x30'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: PaymentNeedsReview
+        exp_alerts: []
+      - eval_time: 24m
+        alertname: PaymentNeedsReview
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: 사람 확인이 필요한 결제가 15분 넘게 남아 있습니다.
+              runbook_url: docs/runbook/week10.md#paymentneedsreview
+              dashboard_url: http://localhost:3000/d/commerce-payment-incident
+
+  # R5 needs_review 1건이 10분만 남았다가 사람이 처리해 0 → 안 울림.
+  - name: R5b needs_review가 10분만 남으면 warning 안 울림
+    interval: 1m
+    input_series:
+      - series: 'commerce_payment_unresolved{status="needs_review"}'
+        values: '0x5 1x10 0x40'
+    alert_rule_test:
+      - eval_time: 16m
+        alertname: PaymentNeedsReview
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: PaymentNeedsReview
+        exp_alerts: []
+
+  # R6 거절 급증: 10분부터 failed가 confirmed와 같은 속도(1분 10건)로 늘어 비율 50%. not_sent는 0.
+  # DeclineSurge만 울리고 PG 연결 규칙은 울리지 않는다.
+  - name: R6a failed 급증은 DeclineSurge만 울림
+    interval: 1m
+    input_series:
+      - series: 'commerce_payment_outcome_total{result="confirmed"}'
+        values: '0+10x40'
+      - series: 'commerce_payment_outcome_total{result="failed"}'
+        values: '0x10 0+10x30'
+      - series: 'commerce_payment_outcome_total{result="not_sent"}'
+        values: '0x40'
+      - series: 'commerce_payment_outcome_total{result="expired"}'
+        values: '0x40'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: PaymentDeclineSurge
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: 결제 거절(failed) 종결이 급증했습니다. 카드사·PG 판정을 확인하세요.
+              runbook_url: docs/runbook/week10.md#paymentdeclinesurge
+              dashboard_url: http://localhost:3000/d/commerce-payment-incident
+      - eval_time: 30m
+        alertname: PaymentPgUnreachable
+        exp_alerts: []
+
+  # R6 PG 연결 문제: 10분부터 not_sent가 1분 10건씩 는다(비율 50%). failed는 0.
+  # PgUnreachable만 울리고 거절 규칙은 울리지 않는다.
+  - name: R6b not_sent 급증은 PgUnreachable만 울림
+    interval: 1m
+    input_series:
+      - series: 'commerce_payment_outcome_total{result="confirmed"}'
+        values: '0+10x40'
+      - series: 'commerce_payment_outcome_total{result="failed"}'
+        values: '0x40'
+      - series: 'commerce_payment_outcome_total{result="not_sent"}'
+        values: '0x10 0+10x30'
+      - series: 'commerce_payment_outcome_total{result="expired"}'
+        values: '0x40'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: PaymentPgUnreachable
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: PG에 결제 요청을 보내지 못한 종결(not_sent)이 10분에 5건 이상입니다. PG 연결을 확인하세요.
+              runbook_url: docs/runbook/week10.md#paymentpgunreachable
+              dashboard_url: http://localhost:3000/d/commerce-payment-incident
+      - eval_time: 30m
+        alertname: PaymentDeclineSurge
+        exp_alerts: []
+
+  # R6 평소 거절: 처리량이 많아 failed가 10분 10건을 넘지만 비율은 약 9%다. 거절 급증이 아니다.
+  - name: R6c 처리량 많은 평소 거절 비율은 DeclineSurge 안 울림
+    interval: 1m
+    input_series:
+      - series: 'commerce_payment_outcome_total{result="confirmed"}'
+        values: '0+20x40'
+      - series: 'commerce_payment_outcome_total{result="failed"}'
+        values: '0+2x40'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: PaymentDeclineSurge
+        exp_alerts: []
+
+  # R7 평평한 고원: PG가 길게 죽어 결과 모름 유입(1분 5건)과 만료(1분 5건)가 같다. unknown은 50에서 움직이지 않는다.
+  # gauge 증가 조건이었다면 여기서 안 울렸다(수정 1). 유입 비율 1.5%와 건수 50으로 반드시 울리고, 만료 규칙도 함께 울린다.
+  - name: R7 유입과 만료가 같아 unknown이 평평해도 critical 울림
+    interval: 1m
+    input_series:
+      - series: 'commerce_payment_started_total{provider="pg-a"}'
+        values: '0+333x40'
+      - series: 'commerce_payment_unknown_entered_total{provider="pg-a"}'
+        values: '0+5x40'
+      - series: 'commerce_payment_unresolved{status="unknown"}'
+        values: '50x40'
+      - series: 'commerce_payment_outcome_total{result="expired"}'
+        values: '0+5x40'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: PaymentUnresolvedPiling
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations: *piling_annotations
+      - eval_time: 30m
+        alertname: PaymentAbandonedPiling
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations: &abandoned_annotations
+              summary: 결과를 확인하지 못하고 만료로 종결한 결제가 10분에 5건 이상 계속됩니다.
+              runbook_url: docs/runbook/week10.md#paymentabandonedpiling
+              dashboard_url: http://localhost:3000/d/commerce-payment-incident
+
+  # R8 만료 누적: 1분 1건씩(10분 약 10건) 만료가 계속된다 → 10분 지속 뒤 Abandoned 울림.
+  - name: R8a 만료가 10분 5건 이상 지속되면 critical 울림
+    interval: 1m
+    input_series:
+      - series: 'commerce_payment_outcome_total{result="expired"}'
+        values: '0+1x30'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: PaymentAbandonedPiling
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations: *abandoned_annotations
+
+  # R8 만료 2건: 우연한 두 건은 깨우지 않는다.
+  - name: R8b 만료가 2건뿐이면 critical 안 울림
+    interval: 1m
+    input_series:
+      - series: 'commerce_payment_outcome_total{result="expired"}'
+        values: '0x10 1x10 2x30'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: PaymentAbandonedPiling
+        exp_alerts: []
+      - eval_time: 50m
+        alertname: PaymentAbandonedPiling
+        exp_alerts: []
+
+  # R8 만료가 10분 약 4건씩 계속된다(K 바로 아래). 경계 아래는 울리지 않는다.
+  - name: R8c 만료가 10분 4건으로 K 미만이면 critical 안 울림
+    interval: 1m
+    input_series:
+      - series: 'commerce_payment_outcome_total{result="expired"}'
+        values: '0+0.4x50'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: PaymentAbandonedPiling
+        exp_alerts: []
+      - eval_time: 50m
+        alertname: PaymentAbandonedPiling
+        exp_alerts: []
