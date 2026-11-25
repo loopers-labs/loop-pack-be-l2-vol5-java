@@ -1,10 +1,9 @@
 package com.loopers.domains.order.in;
 
 import com.loopers.common.in.ApiResponse;
+import com.loopers.common.in.RequestValues;
 import com.loopers.domains.order.app.UnresolvedPaymentQueryService;
-import com.loopers.domains.order.app.UnresolvedPaymentView;
 import java.util.List;
-import java.util.Set;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -18,9 +17,12 @@ public class AdminUnresolvedPaymentController {
     }
 
     @GetMapping("/api-admin/v1/payments/unresolved")
-    public ApiResponse<List<UnresolvedPaymentView>> list(@RequestParam(required = false) List<String> status,
+    public ApiResponse<List<UnresolvedPaymentResponse>> list(@RequestParam(required = false) List<String> status,
         @RequestParam(defaultValue = "0") long minAgeSeconds, @RequestParam(defaultValue = "0") int page,
         @RequestParam(defaultValue = "20") int size) {
-        return ApiResponse.success(unresolvedPaymentQueryService.list(Set.of(), minAgeSeconds, page, size));
+        RequestValues.page(page, size);
+        return ApiResponse.success(unresolvedPaymentQueryService.list(status, minAgeSeconds, page, size).stream()
+            .map(UnresolvedPaymentResponse::from)
+            .toList());
     }
 }
