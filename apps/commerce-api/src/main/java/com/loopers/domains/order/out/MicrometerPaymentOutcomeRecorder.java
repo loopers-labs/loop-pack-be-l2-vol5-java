@@ -8,7 +8,7 @@ import java.util.Locale;
 import java.util.Map;
 import org.springframework.stereotype.Component;
 
-// 세 결과를 시작 시 모두 등록해 아직 0인 결과도 시계열로 보이게 한다. 주문 수만큼 늘어나지 않도록 orderId는 태그로 넣지 않는다.
+// 네 결과를 시작 시 모두 등록해 아직 0인 결과도 시계열로 보이게 한다. 주문 수만큼 늘어나지 않도록 orderId는 태그로 넣지 않는다.
 @Component
 public class MicrometerPaymentOutcomeRecorder implements PaymentOutcomeRecorder {
     static final String METRIC_NAME = "commerce.payment.outcome";

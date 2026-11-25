@@ -4,6 +4,6 @@ public interface PaymentOutcomeRecorder {
     void record(Outcome outcome);
 
     enum Outcome {
-        CONFIRMED, FAILED, EXPIRED
+        CONFIRMED, FAILED, NOT_SENT, EXPIRED
     }
 }

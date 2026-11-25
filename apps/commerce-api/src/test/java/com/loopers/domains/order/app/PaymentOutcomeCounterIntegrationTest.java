@@ -24,6 +24,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -41,6 +43,7 @@ class PaymentOutcomeCounterIntegrationTest {
     private static final String METRIC_NAME = "commerce.payment.outcome";
     private static final String SERVICE_LOGGER = OrderApplicationService.class.getName();
     private static final String CONFIRMED_LOG = "결제를 확정";
+    private static final String FAILED_LOG = "결제 실패로 종결";
 
     @Autowired private BrandApplicationService brands;
     @Autowired private ProductApplicationService products;
@@ -82,10 +85,11 @@ class PaymentOutcomeCounterIntegrationTest {
     }
 
     @Test
-    @DisplayName("확정·결제 실패·만료로 주문이 처음 종결되면 confirmed·failed·expired counter가 각각 1씩 늘어난다")
+    @DisplayName("확정·PG 결제 실패·만료로 주문이 처음 종결되면 confirmed·failed·expired counter가 각각 1씩 늘고 not_sent는 늘지 않는다")
     void countsEachOutcomeOnceWhenOrderFirstCloses() {
         double confirmedBefore = outcome("confirmed");
         double failedBefore = outcome("failed");
+        double notSentBefore = outcome("not_sent");
         double expiredBefore = outcome("expired");
         long confirmedOrder = newOrder();
         long failedOrder = newOrder();
@@ -106,6 +110,49 @@ class PaymentOutcomeCounterIntegrationTest {
         assertThat(outcome("confirmed") - confirmedBefore).as("confirmed 증가분").isEqualTo(1.0);
         assertThat(outcome("failed") - failedBefore).as("failed 증가분").isEqualTo(1.0);
         assertThat(outcome("expired") - expiredBefore).as("expired 증가분").isEqualTo(1.0);
+        assertThat(outcome("not_sent") - notSentBefore).as("not_sent 증가분").isEqualTo(0.0);
+    }
+
+    @ParameterizedTest(name = "{0} → {1}")
+    @CsvSource({"ACCEPT_FAILED, failed, not_sent, FAILED, FAILED",
+        "REJECT_BEFORE_CREATE, not_sent, failed, NOT_SENT, REJECTED_NO_EFFECT"})
+    @DisplayName("PG가 거래를 만들고 FAILED로 확정하면 failed, 거래를 만들기 전에 거절하면 not_sent로 1번만 세고 실패 종결 INFO의 result도 같다")
+    void countsCreateRejectionByWhetherTransactionWasCreated(CreateBehavior behavior, String counted, String notCounted,
+        String loggedResult, String providerStatus) {
+        double countedBefore = outcome(counted);
+        double notCountedBefore = outcome(notCounted);
+        long orderId = newOrder();
+        server.createBehavior(behavior);
+        logs.list.clear();
+
+        orders.confirm(1, orderId, TestPgFixture.command());
+
+        assertThat(orderStatus(orderId)).isEqualTo("PAYMENT_FAILED");
+        assertThat(outcome(counted) - countedBefore).as("%s 증가분", counted).isEqualTo(1.0);
+        assertThat(outcome(notCounted) - notCountedBefore).as("%s 증가분", notCounted).isEqualTo(0.0);
+        assertThat(failedClosingLog().getFormattedMessage())
+            .contains("orderId=" + orderId + ", result=" + loggedResult + ", providerStatus=" + providerStatus);
+    }
+
+    @Test
+    @DisplayName("모든 PG에 결제 생성 요청이 닿지 못해 결제 실패로 종결되면 not_sent counter가 1 늘고 failed는 늘지 않으며 실패 종결 INFO의 result는 NOT_SENT다")
+    void countsAllNotSentAsNotSent() throws Exception {
+        double notSentBefore = outcome("not_sent");
+        double failedBefore = outcome("failed");
+        long orderId = newOrder();
+        // 서버를 먼저 닫아 연결 거절로 요청이 나가지 못하게 한다. 등록된 PG는 test-pg 하나라 미발송이 곧 전체 미발송이다.
+        server.close();
+        logs.list.clear();
+
+        orders.confirm(1, orderId, TestPgFixture.command());
+
+        assertThat(orderStatus(orderId)).isEqualTo("PAYMENT_FAILED");
+        assertThat(jdbc.queryForObject("select provider_status from payment_records where order_id = ?", String.class, orderId))
+            .isEqualTo("ALL_NOT_SENT");
+        assertThat(outcome("not_sent") - notSentBefore).as("not_sent 증가분").isEqualTo(1.0);
+        assertThat(outcome("failed") - failedBefore).as("failed 증가분").isEqualTo(0.0);
+        assertThat(failedClosingLog().getFormattedMessage())
+            .contains("orderId=" + orderId + ", result=NOT_SENT, providerStatus=ALL_NOT_SENT");
     }
 
     @Test
@@ -131,10 +178,11 @@ class PaymentOutcomeCounterIntegrationTest {
     }
 
     @Test
-    @DisplayName("이미 확정된 주문에 PG가 FAILED를 보고해 반대 결과로 거절되면 confirmed·failed counter 모두 확정 때 이후 더 늘지 않는다")
+    @DisplayName("이미 확정된 주문에 PG가 FAILED를 보고해 반대 결과로 거절되면 confirmed·failed·not_sent counter 모두 확정 때 이후 더 늘지 않는다")
     void doesNotCountConflictingResultOnClosedOrder() {
         double confirmedBefore = outcome("confirmed");
         double failedBefore = outcome("failed");
+        double notSentBefore = outcome("not_sent");
         long orderId = newOrder();
         server.createBehavior(CreateBehavior.ACCEPT_SUCCESS);
         orders.confirm(1, orderId, TestPgFixture.command());
@@ -149,6 +197,7 @@ class PaymentOutcomeCounterIntegrationTest {
             Long.class, orderId)).as("반대 결과 이상 기록").isEqualTo(1L);
         assertThat(outcome("confirmed") - confirmedBefore).as("confirmed 증가분").isEqualTo(1.0);
         assertThat(outcome("failed") - failedBefore).as("failed 증가분").isEqualTo(0.0);
+        assertThat(outcome("not_sent") - notSentBefore).as("not_sent 증가분").isEqualTo(0.0);
     }
 
     @Test
@@ -178,6 +227,14 @@ class PaymentOutcomeCounterIntegrationTest {
 
     private long newOrder() {
         return orders.create(1, List.of(new OrderApplicationService.ItemRequest(productId, 1))).id();
+    }
+
+    private ILoggingEvent failedClosingLog() {
+        List<ILoggingEvent> found = logs.list.stream()
+            .filter(event -> event.getLevel() == Level.INFO && event.getFormattedMessage().contains(FAILED_LOG))
+            .toList();
+        assertThat(found).as("실패 종결 INFO").hasSize(1);
+        return found.get(0);
     }
 
     private String orderStatus(long orderId) {
