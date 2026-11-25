@@ -47,6 +47,12 @@ public final class E2eDb {
             "select status, cast(confirmed_at as char) confirmed_at, transaction_key from orders where id = ?", orderId);
     }
 
+    /** 주문의 결제 기록: status·payment_attempt_key·transaction_key·total_amount·paid_amount·payment_started_at·confirmed_at (시각은 저장 문자열). */
+    public Map<String, Object> orderPayment(Long orderId) {
+        return jdbc.queryForMap("select id, status, payment_attempt_key, transaction_key, total_amount, paid_amount, "
+            + "cast(payment_started_at as char) payment_started_at, cast(confirmed_at as char) confirmed_at from orders where id = ?", orderId);
+    }
+
     /** 주문의 재고 원장 (product_id, type, quantity), id 순. */
     public List<Map<String, Object>> ledgerOfOrder(Long orderId) {
         return jdbc.queryForList("select product_id, type, quantity from product_stock_ledger where order_id = ? order by id", orderId);
