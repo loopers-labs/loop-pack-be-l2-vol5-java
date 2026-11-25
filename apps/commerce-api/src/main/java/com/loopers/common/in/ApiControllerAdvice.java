@@ -3,6 +3,7 @@ package com.loopers.common.in;
 import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.exc.InvalidFormatException;
 import com.fasterxml.jackson.databind.exc.MismatchedInputException;
+import com.loopers.common.error.AlreadyLogged;
 import com.loopers.common.in.error.CoreException;
 import com.loopers.common.in.error.ErrorType;
 import java.util.Arrays;
@@ -108,7 +109,10 @@ public class ApiControllerAdvice {
 
     @ExceptionHandler
     public ResponseEntity<ApiResponse<?>> handle(Throwable e) {
-        log.error("Exception : {}", e.getMessage(), e);
+        // 업무 열쇠와 함께 이미 기록한 오류를 열쇠 없이 다시 남기면 같은 사건이 두 번 찍힌다.
+        if (!AlreadyLogged.isMarked(e)) {
+            log.error("Exception : {}", e.getMessage(), e);
+        }
         return failureResponse(ErrorType.INTERNAL_ERROR, null);
     }
 

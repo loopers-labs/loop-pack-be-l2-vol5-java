@@ -1,5 +1,6 @@
 package com.loopers.domains.order.app;
 
+import com.loopers.common.error.AlreadyLogged;
 import com.loopers.common.error.InvalidValueException;
 import com.loopers.common.error.RuleViolationException;
 import com.loopers.domains.order.app.port.OrderConfirmedOutbox;
@@ -310,19 +311,37 @@ public class OrderApplicationService {
                 throw new PaymentLookupNotCalledException();
             }
         }
-        return transactionTemplate.execute(status -> {
-            Order order = orderRepository.findByIdForUpdate(requested.getOrderId()).orElseThrow(OrderNotFoundException::new);
-            PaymentRecord payment = paymentRecordRepository.findByOrderId(order.getId()).orElseThrow();
-            if (!payment.getProviderId().equals(requested.getProviderId())
-                || (source != PaymentSource.MANUAL && payment.getProviderStatus() == PaymentRecord.ProviderStatus.NEEDS_REVIEW)) {
-                return OrderResult.from(order, Optional.of(payment));
-            }
-            OrderResult result = applyLookupLocked(order, payment, lookup, source, callbackKey, logContext);
-            if (source == PaymentSource.AUTOMATIC) {
-                advanceLookupSchedule(order, payment, lookup);
-            }
-            return result;
-        });
+        try {
+            return transactionTemplate.execute(status -> {
+                Order order = orderRepository.findByIdForUpdate(requested.getOrderId()).orElseThrow(OrderNotFoundException::new);
+                PaymentRecord payment = paymentRecordRepository.findByOrderId(order.getId()).orElseThrow();
+                if (!payment.getProviderId().equals(requested.getProviderId())
+                    || (source != PaymentSource.MANUAL
+                        && payment.getProviderStatus() == PaymentRecord.ProviderStatus.NEEDS_REVIEW)) {
+                    return OrderResult.from(order, Optional.of(payment));
+                }
+                OrderResult result = applyLookupLocked(order, payment, lookup, source, callbackKey, logContext);
+                if (source == PaymentSource.AUTOMATIC) {
+                    advanceLookupSchedule(order, payment, lookup);
+                }
+                return result;
+            });
+        } catch (RuntimeException e) {
+            logApplyFailure(requested.getOrderId(), source, e);
+            throw e;
+        }
+    }
+
+    // 수동 reconcile·callback의 반영 실패는 Scope가 닫힌 뒤 advice가 주문 열쇠 없이 원문·스택으로 다시 남긴다.
+    // 같은 사건이 두 번 찍히지 않게 여기서 주문 열쇠와 함께 원문 없이 한 번 남기고, advice가 건너뛰도록 표식을 붙인다.
+    // 자동 재조회는 호출부가 건별 ERROR를 이미 남기므로 여기서 남기지 않는다.
+    private static void logApplyFailure(long orderId, PaymentSource source, RuntimeException failure) {
+        if (source != PaymentSource.MANUAL && source != PaymentSource.CALLBACK) {
+            return;
+        }
+        log.error("결제 결과 반영 실패. orderId={}, source={}, causeType={}", orderId, source,
+            failure.getClass().getSimpleName());
+        failure.addSuppressed(new AlreadyLogged());
     }
 
     private OrderResult applyLookupLocked(Order order, PaymentRecord payment, PaymentTransactionsLookup lookup,

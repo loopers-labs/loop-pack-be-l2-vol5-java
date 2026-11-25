@@ -1,5 +1,6 @@
 package com.loopers.common.in;
 
+import com.loopers.common.error.AlreadyLogged;
 import com.loopers.common.error.CapacityExceededException;
 import com.loopers.common.error.InvalidValueException;
 import com.loopers.common.error.NotFoundException;
@@ -54,7 +55,10 @@ public class CommerceExceptionAdvice {
     // 잠금 대기 시간 초과·교착은 업무 거절(409·404)이 아닌 일시적 기술 실패다. 원인은 로그로 남기고 응답에는 노출하지 않는다.
     @ExceptionHandler(PessimisticLockingFailureException.class)
     public ResponseEntity<ApiResponse<Object>> lockFailure(PessimisticLockingFailureException exception) {
-        log.warn("행 잠금 획득 실패", exception);
+        // 업무 열쇠와 함께 이미 기록한 오류를 열쇠 없이 다시 남기면 같은 사건이 두 번 찍힌다.
+        if (!AlreadyLogged.isMarked(exception)) {
+            log.warn("행 잠금 획득 실패", exception);
+        }
         return ResponseEntity.status(503).body(ApiResponse.fail("Service Unavailable", "잠시 후 다시 시도해 주세요."));
     }
 }
