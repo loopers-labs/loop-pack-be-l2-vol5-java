@@ -1,3 +1,5 @@
+import org.springframework.boot.gradle.tasks.run.BootRun
+
 plugins {
     checkstyle
 }
@@ -106,4 +108,10 @@ tasks.register<JavaExec>("runTestPg") {
     group = "rehearsal"
     classpath = sourceSets.test.get().runtimeClasspath
     mainClass.set("com.loopers.domains.payment.out.TestPgServerMain")
+}
+
+// local 프로필 JSON 로그 파일의 기본 경로(logs/commerce-api.json)는 작업 디렉터리 기준이다. 모니터링 Alloy가 저장소 루트 logs/를
+// 읽으므로 bootRun도 저장소 루트에서 실행한다(10주차 리허설 B1). 앱 설정의 다른 경로는 classpath라 영향이 없다.
+tasks.named<BootRun>("bootRun") {
+    workingDir = rootProject.projectDir
 }
