@@ -21,7 +21,6 @@ class OrderConfirmedProducerConfigTest extends OrderEventsIntegrationSupport {
     @Autowired private KafkaTemplate<String, String> orderEventsKafkaTemplate;
     @Autowired private ApplicationContext applicationContext;
     @Autowired private KafkaListenerEndpointRegistry kafkaListenerEndpointRegistry;
-    @Autowired private ThreadPoolTaskScheduler taskScheduler;
     @Value("${commerce.outbox.relay.send-timeout}") private Duration relaySendTimeout;
 
     // C1: relay는 broker 확인을 send-timeout까지 기다린다. producer가 그보다 먼저 delivery timeout으로 결론을 내야
@@ -40,11 +39,18 @@ class OrderConfirmedProducerConfigTest extends OrderEventsIntegrationSupport {
         assertThat(config.getBoolean(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG)).isTrue();
     }
 
-    // C3: relay가 broker 장애로 최대 35초 기다려도 결제 재조회·만료 스케줄이 다른 스레드에서 돌게 한다(참모 보강 14:18).
+    // C3: 스케줄 작업마다 전용 단일 스레드 스케줄러를 둬 한 작업이 길게 막혀도 다른 작업이 기다리지 않는다(w10s1b 1-3, 8주차 28절 풀 2 대체).
+    // 실제로 막힌 작업 옆에서 다른 작업이 도는지는 ScheduledJobIsolationTest가 본다.
     @Test
-    @DisplayName("스케줄러 스레드 풀은 2개라 relay와 결제 스케줄 작업이 같은 스레드 하나를 두고 기다리지 않는다")
-    void schedulerPoolHasTwoThreads() {
-        assertThat(taskScheduler.getScheduledThreadPoolExecutor().getCorePoolSize()).isEqualTo(2);
+    @DisplayName("스케줄러는 결제 재조회·relay·미확인 gauge 갱신마다 작업 이름이 붙은 단일 스레드 하나씩이다")
+    void eachScheduledJobHasDedicatedSingleThreadScheduler() {
+        assertThat(applicationContext.getBeansOfType(ThreadPoolTaskScheduler.class).values())
+            .extracting(ThreadPoolTaskScheduler::getThreadNamePrefix,
+                scheduler -> scheduler.getScheduledThreadPoolExecutor().getCorePoolSize())
+            .containsExactlyInAnyOrder(
+                tuple("sched-payment-lookup-", 1),
+                tuple("sched-outbox-relay-", 1),
+                tuple("sched-unresolved-metric-", 1));
     }
 
     @Test
