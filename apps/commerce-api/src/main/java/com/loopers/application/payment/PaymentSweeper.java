@@ -29,6 +29,7 @@ public class PaymentSweeper {
     private final PaymentTransactions paymentTransactions;
     private final PaymentGateway paymentGateway;
     private final PaymentMetrics paymentMetrics;
+    private final PaymentLog paymentLog;
 
     public int sweepOnce(Instant now) {
         List<Payment> due = paymentTransactions.pickDueForCheck(
@@ -46,7 +47,9 @@ public class PaymentSweeper {
             return;
         }
         try {
-            paymentTransactions.observe(payment.getId(), observation, PaymentDiscrepancy.Source.LOOKUP, now);
+            Payment observed = paymentTransactions.observe(
+                payment.getId(), observation, PaymentDiscrepancy.Source.LOOKUP, now);
+            paymentLog.changed(payment.getStatus(), observed, "sweeper");
         } catch (DataAccessException e) {
             log.warn("sweeper 가 조회 결과를 반영하지 못했다. 다음 주기에 다시 본다: paymentId={}", payment.getId(), e);
         }

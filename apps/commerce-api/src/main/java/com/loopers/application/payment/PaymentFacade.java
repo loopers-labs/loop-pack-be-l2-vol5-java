@@ -102,8 +102,9 @@ public class PaymentFacade {
         return switch (result) {
             case LookupResult.Unavailable unavailable -> CallbackResult.LOOKUP_UNAVAILABLE;
             case LookupResult.Observation observation -> {
-                paymentTransactions.observe(
+                Payment observed = paymentTransactions.observe(
                     payment.get().getId(), observation, PaymentDiscrepancy.Source.CALLBACK, now);
+                paymentLog.changed(payment.get().getStatus(), observed, "callback");
                 yield CallbackResult.APPLIED;
             }
         };

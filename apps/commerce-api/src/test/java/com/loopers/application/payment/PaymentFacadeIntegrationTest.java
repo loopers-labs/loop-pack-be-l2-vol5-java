@@ -765,6 +765,35 @@ class PaymentFacadeIntegrationTest {
             assertThat(changedLines(output, payment)).isEmpty();
         }
 
+        @DisplayName("callback 이 조회 결과로 상태를 바꾸면 callback 이 바꿨다는 줄이 한 줄 남는다")
+        @Test
+        void logsStatusChangedByCallback(CapturedOutput output) {
+            Order order = place(2);
+            Payment payment = confirm(order.getId(), "attempt-1");
+            PG.changeStatus(
+                PG.transactionsOf(payment.getProviderOrderId().value()).get(0).transactionKey(), PgFixture.Status.SUCCESS);
+
+            paymentFacade.onCallback(payment.getProviderOrderId(), NOW.plusSeconds(1));
+
+            assertThat(changedLines(output, payment)).singleElement().asString()
+                .contains("orderId=" + order.getId(), "source=callback", "from=PENDING", "to=SUCCESS");
+        }
+
+        @DisplayName("sweeper 가 조회 결과로 상태를 바꾸면 sweeper 가 바꿨다는 줄이 한 줄 남는다")
+        @Test
+        void logsStatusChangedBySweeper(CapturedOutput output) {
+            Order order = place(2);
+            PG.dropNextCreateResponse();
+            Payment payment = confirm(order.getId(), "attempt-1");
+            PG.changeStatus(
+                PG.transactionsOf(payment.getProviderOrderId().value()).get(0).transactionKey(), PgFixture.Status.FAILED);
+
+            paymentSweeper.sweepOnce(NOW.plusSeconds(11));
+
+            assertThat(changedLines(output, payment)).singleElement().asString()
+                .contains("orderId=" + order.getId(), "source=sweeper", "from=UNKNOWN", "to=FAILED");
+        }
+
         private List<String> changedLines(CapturedOutput output, Payment payment) {
             return output.getOut().lines()
                 .filter(line -> line.contains("paymentId=" + payment.getId()))
