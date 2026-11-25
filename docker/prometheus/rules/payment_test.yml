@@ -283,3 +283,50 @@ tests:
       - eval_time: 50m
         alertname: PaymentAbandonedPiling
         exp_alerts: []
+
+  # for 고정: 아래 세 장면은 각 규칙의 조건이 막 참이 된 직후, for가 끝나기 전 시점에 아직 안 울리는 것을 본다.
+  # for를 지우거나 줄이면 이 시점에 울려 실패한다. 입력은 R8a·R6a·R6b와 같다.
+  # R8a 입력: 5분부터 10분 만료 5건 이상(조건 참) → for 10m이라 15분 전에는 안 울림.
+  - name: R8d 만료 조건이 막 성립한 7분에는 for 10m 전이라 critical 안 울림
+    interval: 1m
+    input_series:
+      - series: 'commerce_payment_outcome_total{result="expired"}'
+        values: '0+1x30'
+    alert_rule_test:
+      - eval_time: 7m
+        alertname: PaymentAbandonedPiling
+        exp_alerts: []
+
+  # R6a 입력: 16분부터 failed 비율 30% 초과·10건 이상(조건 참) → for 5m이라 21분 전에는 안 울림.
+  - name: R6d failed 급증 조건이 막 성립한 17분에는 for 5m 전이라 DeclineSurge 안 울림
+    interval: 1m
+    input_series:
+      - series: 'commerce_payment_outcome_total{result="confirmed"}'
+        values: '0+10x40'
+      - series: 'commerce_payment_outcome_total{result="failed"}'
+        values: '0x10 0+10x30'
+      - series: 'commerce_payment_outcome_total{result="not_sent"}'
+        values: '0x40'
+      - series: 'commerce_payment_outcome_total{result="expired"}'
+        values: '0x40'
+    alert_rule_test:
+      - eval_time: 17m
+        alertname: PaymentDeclineSurge
+        exp_alerts: []
+
+  # R6b 입력: 12분부터 10분 not_sent 5건 이상(조건 참) → for 5m이라 17분 전에는 안 울림.
+  - name: R6e not_sent 조건이 막 성립한 14분에는 for 5m 전이라 PgUnreachable 안 울림
+    interval: 1m
+    input_series:
+      - series: 'commerce_payment_outcome_total{result="confirmed"}'
+        values: '0+10x40'
+      - series: 'commerce_payment_outcome_total{result="failed"}'
+        values: '0x40'
+      - series: 'commerce_payment_outcome_total{result="not_sent"}'
+        values: '0x10 0+10x30'
+      - series: 'commerce_payment_outcome_total{result="expired"}'
+        values: '0x40'
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: PaymentPgUnreachable
+        exp_alerts: []
