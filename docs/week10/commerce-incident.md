@@ -42,6 +42,7 @@
 | 반영: 이미 같은 결과(UNCHANGED) | 줄 없음 | create·판정 줄이 이미 남긴다 |
 | 반영: 종결 주문에 반대 결과(CONFLICT) | WARN | orderId, status, providerStatus |
 | confirm 반영 TX 실패 | ERROR | orderId, providerStatus, causeType |
+| 수동 reconcile(본인·관리자)·callback 반영 TX 실패 | ERROR(Scope 안) | orderId, source(MANUAL·CALLBACK), causeType. 원문·스택 없음 |
 | 조회 판정 Verified | INFO | orderId, source, providerStatus |
 | 조회 판정 Uncertain | WARN | orderId, source, kind, summary, reason(조회 실패일 때) |
 | 조회 판정 Review | WARN | orderId, source, kind, summary |
@@ -55,6 +56,7 @@
 - **[구현 판단]** adapter 줄의 이름은 `providerOrderId={}`다. 값이 PG 주문 번호이기 때문이다.
 - **[구현 판단]** 메시지 안 `orderId={}`는 MDC와 별도로 유지한다. local·test 콘솔 패턴은 업무 MDC 키를 보여 주지 않는다.
 - 예외는 종류(SimpleName)만 남긴다. 카드 번호·인증 헤더·예외 원문은 남기지 않는다.
+- **[사용자 승인 w10s1b-1 안 B]** 수동 reconcile·callback의 반영 TX(조회 판정 뒤 잠금·저장) 실패는 Scope 안에서 위 ERROR 한 줄로 남긴다. 그 뒤 같은 예외에 `common.error.AlreadyLogged` 표식을 suppressed로 붙여 그대로 다시 던진다. `ApiControllerAdvice`의 일반 ERROR와 `CommerceExceptionAdvice`의 잠금 실패 WARN은 표식이 있을 때만 로그를 건너뛴다. 같은 사건을 두 번 찍지 않기 위해서다. 응답 코드·본문과 예외 타입은 그대로다. 표식 없는 다른 오류는 지금처럼 advice가 원문·스택과 함께 남긴다. 자동 재조회는 기존 건별 ERROR만 남긴다. PG 조회 실패처럼 반영 TX 전에 끝나는 경우는 이 줄을 남기지 않는다.
 
 ## 3. MDC 업무 열쇠 [사용자 결정]
 
@@ -110,9 +112,8 @@
 ## 6. 한계
 
 - **[사용자 결정]** 분산 추적은 구현하지 않음. 요청 간·서비스 간 끊기는 구간은 확인하지 않았다.
-- 수동 reconcile·callback에서 반영 TX가 실패하면 전용 ERROR 줄이 없다. 공통 예외 처리(`ApiControllerAdvice`)의 ERROR로만 남는다. 이 줄은 예외 메시지와 스택을 함께 남긴다.
+- 수동 reconcile·callback의 반영 TX 실패는 Scope 안 ERROR 한 줄(orderId MDC, source, causeType, 원문·스택 없음)로 남는다. `AlreadyLogged` 표식 때문에 두 advice는 같은 사건을 다시 기록하지 않는다. 응답·예외 타입은 그대로이고, 표식 없는 오류는 기존대로 기록된다(2-2, w10s1b-1 안 B). 그래서 원문·스택은 이 경로의 로그에 없다.
 - callback의 providerOrderId는 인증 없는 외부 입력이다. 형식·길이 검사 없이(빈 값만 거절) MDC에 들어간다. 메시지 본문에는 넣지 않는다.
-- 수동 reconcile·callback 반영 실패의 공통 ERROR는 Scope가 닫힌 뒤 찍힌다. 그래서 orderId MDC가 없고 traceId로만 잇는다.
 - `payment_records.provider_order_id`에는 인덱스가 없다. callback의 결제 기록 조회는 전체 탐색이 될 수 있다. 이번 단계에서는 고치지 않는다.
 
 ## 7. 스케줄 작업 스레드 [사용자 결정]
