@@ -24,4 +24,14 @@ public interface OrderJpaRepository extends JpaRepository<OrderModel, Long> {
     @QueryHints(@QueryHint(name = "jakarta.persistence.lock.timeout", value = "-2"))
     Optional<OrderModel> findFirstByStatusAndPaymentStartedAtLessThanEqualOrderByPaymentStartedAtAsc(
         OrderStatus status, ZonedDateTime startedBefore);
+
+    /** status 인 주문 수와 그중 거래 키가 있는 수. count(column) 은 null 을 세지 않는다. */
+    @Query("select count(o) as total, count(o.transactionKey) as withTransactionKey from OrderModel o where o.status = :status")
+    StatusCountRow countByStatusWithTransactionKey(@Param("status") OrderStatus status);
+
+    interface StatusCountRow {
+        Long getTotal();
+
+        Long getWithTransactionKey();
+    }
 }

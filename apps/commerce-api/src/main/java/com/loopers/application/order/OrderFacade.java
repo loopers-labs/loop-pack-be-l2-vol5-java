@@ -57,11 +57,23 @@ public class OrderFacade {
             return started.order();
         }
         OrderInfo order = started.order();
+        long requestStartedAt = System.nanoTime();
         PaymentGatewayResult result = paymentRequestGuard.run(order.id(), () -> {
             paymentLookupScheduler.schedule(order.userId(), order.id());
             return paymentGateway.request(order.userId(), order.id(), cardType, cardNo, order.totalAmount());
         });
-        return orderPaymentProcessor.applyResult(order.id(), result);
+        long elapsedMs = (System.nanoTime() - requestStartedAt) / 1_000_000;
+        log.atInfo()
+            .setMessage("PG 결제 요청 결과 [orderId = {}, attemptKey = {}, outcome = {}, transactionKey = {}, elapsedMs = {}]")
+            .addArgument(order.id()).addArgument(paymentAttemptKey).addArgument(result.outcome()).addArgument(result.transactionKey()).addArgument(elapsedMs)
+            .addKeyValue("event", "payment.request.result")
+            .addKeyValue("orderId", order.id())
+            .addKeyValue("attemptKey", paymentAttemptKey)
+            .addKeyValue("outcome", result.outcome().name())
+            .addKeyValue("transactionKey", result.transactionKey())
+            .addKeyValue("elapsedMs", elapsedMs)
+            .log();
+        return apply(PaymentSource.REQUEST, order.id(), result);
     }
 
     /**
@@ -74,7 +86,8 @@ public class OrderFacade {
             return order;
         }
         PaymentGatewayResult result = paymentGateway.find(order.userId(), order.id());
-        return orderPaymentProcessor.applyResult(order.id(), result);
+        logLookup(PaymentSource.RESOLVE, order.id(), result);
+        return apply(PaymentSource.RESOLVE, order.id(), result);
     }
 
     /**
@@ -88,10 +101,62 @@ public class OrderFacade {
             return order;
         }
         PaymentGatewayResult actual = paymentGateway.find(order.userId(), order.id());
+        logLookup(PaymentSource.CALLBACK, order.id(), actual);
         if (claimed.outcome() != actual.outcome()
             || (claimed.transactionKey() != null && actual.transactionKey() != null && !claimed.transactionKey().equals(actual.transactionKey()))) {
             log.warn("PG callback 과 거래 조회 결과가 다름, 조회 결과 반영 [orderId = {}, claimed = {}, actual = {}]", order.id(), claimed, actual);
         }
-        return orderPaymentProcessor.applyResult(order.id(), actual);
+        return apply(PaymentSource.CALLBACK, order.id(), actual);
+    }
+
+    /** 결제 결과가 어느 경로로 왔는지 (경계 로그의 source). */
+    private enum PaymentSource { REQUEST, RESOLVE, CALLBACK }
+
+    /**
+     * 결과 반영 트랜잭션(applyResult)을 부르고 그 결말을 경계 로그로 남긴다. 반환되면 커밋된 것(COMMITTED, 이미 결론난 주문이라 바꾼 것이 없어도),
+     * 예외면 rollback 된 것(ROLLED_BACK)이다. 예외는 그대로 다시 던진다.
+     */
+    private OrderInfo apply(PaymentSource source, Long orderId, PaymentGatewayResult result) {
+        OrderInfo applied;
+        try {
+            applied = orderPaymentProcessor.applyResult(orderId, result);
+        } catch (RuntimeException e) {
+            log.atWarn()
+                .setMessage("결제 결과 반영 실패, rollback [orderId = {}, source = {}, outcome = {}, error = {}]")
+                .addArgument(orderId).addArgument(source).addArgument(result.outcome()).addArgument(e.getClass().getSimpleName())
+                .addKeyValue("event", "payment.apply")
+                .addKeyValue("orderId", orderId)
+                .addKeyValue("source", source.name())
+                .addKeyValue("outcome", result.outcome().name())
+                .addKeyValue("tx", "ROLLED_BACK")
+                .addKeyValue("error", e.getClass().getSimpleName())
+                .log();
+            throw e;
+        }
+        log.atInfo()
+            .setMessage("결제 결과 반영 [orderId = {}, source = {}, outcome = {}, status = {}]")
+            .addArgument(orderId).addArgument(source).addArgument(result.outcome()).addArgument(applied.status())
+            .addKeyValue("event", "payment.apply")
+            .addKeyValue("orderId", orderId)
+            .addKeyValue("source", source.name())
+            .addKeyValue("outcome", result.outcome().name())
+            .addKeyValue("tx", "COMMITTED")
+            .addKeyValue("status", applied.status())
+            .log();
+        return applied;
+    }
+
+    /** PG 거래 조회(권위 조회) 결과 경계 로그. 조회는 읽기만 한다. */
+    private void logLookup(PaymentSource source, Long orderId, PaymentGatewayResult result) {
+        log.atInfo()
+            .setMessage("PG 거래 조회 결과 [orderId = {}, source = {}, outcome = {}, transactionKey = {}, amount = {}]")
+            .addArgument(orderId).addArgument(source).addArgument(result.outcome()).addArgument(result.transactionKey()).addArgument(result.amount())
+            .addKeyValue("event", "payment.lookup.result")
+            .addKeyValue("orderId", orderId)
+            .addKeyValue("source", source.name())
+            .addKeyValue("outcome", result.outcome().name())
+            .addKeyValue("transactionKey", result.transactionKey())
+            .addKeyValue("amount", result.amount())
+            .log();
     }
 }

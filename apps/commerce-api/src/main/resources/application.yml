@@ -51,6 +51,11 @@ pg:
     wait-duration-in-open-state: 10s
     permitted-number-of-calls-in-half-open-state: 3
 
+commerce:
+  metrics:
+    payment-awaiting:
+      refresh-interval: 5s # commerce.payment.awaiting gauge 를 DB 에서 다시 세는 주기. 지표는 최대 이만큼 늦다
+
 coupon-issue:
   limiter: # 쿠폰 발급 TX(CouponIssueProcessor.issue) 동시 실행 제한. Redisson 세마포어를 async 로 부른다, 프로모션마다 따로 센다 (DR-63)
     permits: 200 # 프로모션 하나의 동시 발급 TX 수 (앱 전체 합). 앱 3대 × 커넥션 풀 100 = 300 보다 작게

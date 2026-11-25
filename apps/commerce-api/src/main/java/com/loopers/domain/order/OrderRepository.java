@@ -18,6 +18,9 @@ public interface OrderRepository {
      */
     Optional<OrderModel> findExpiredAwaitingForUpdate(ZonedDateTime startedBefore);
 
+    /** 업무 지표용: 지금 AWAITING_PAYMENT 인 주문 수를 PG 거래 키 유무로 나눠 한 쿼리로 센다. 락 없음. */
+    AwaitingPaymentCounts countAwaitingPayment();
+
     /** TB-14 도 이 Repository 가 맡는다 (포함 개념, DR-36·38 과 같은 이유). 저장은 즉시 insert 한다: event_id 중복은 확정 트랜잭션 안에서 드러난다. */
     OrderEventOutboxModel saveOutbox(OrderEventOutboxModel outbox);
 
