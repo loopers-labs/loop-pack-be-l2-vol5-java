@@ -1,0 +1,181 @@
+{
+  "stage" : "DIAGNOSIS",
+  "observedAt" : "2026-11-25T07:49:29.695627Z",
+  "hypotheses" : [ {
+    "claim" : "PG 처리 자체가 지연",
+    "id" : "PG_DELAYED",
+    "check" : "해당 거래 조회",
+    "expected" : "권위 조회 PENDING"
+  }, {
+    "claim" : "PG 성공 응답 유실",
+    "id" : "RESPONSE_LOST",
+    "check" : "거래 조회·payment.request.result·PgClient 로그·payment.apply",
+    "expected" : "PG SUCCESS·내부 결제 대기(거래 키 없음)·요청 결과 UNKNOWN·PgClient 본문 없음 기록·rollback 없음"
+  }, {
+    "claim" : "성공 결과의 내부 반영 실패",
+    "id" : "APPLY_FAILED",
+    "check" : "payment.apply tx·예약·Outbox",
+    "expected" : "PG SUCCESS·payment.apply ROLLED_BACK·예약/Outbox 그대로"
+  } ],
+  "rule" : "PG SUCCESS 와 결제 대기의 조합만으로 판정하지 않는다. 경계 기록이 모두 맞지 않으면 UNDETERMINED",
+  "readOnlyLookup" : "api 의 PaymentGateway.find 만 직접 불렀다 (결과를 적용하지 않음)",
+  "orders" : [ {
+    "orderId" : 13,
+    "lookup" : {
+      "amount" : "1000",
+      "transactionKey" : "pg-tx-f5e0aa27-1c6c-4803-9223-082d552398f8",
+      "outcome" : "SUCCESS"
+    },
+    "facts" : {
+      "requestOutcomeUnknown" : true,
+      "pgClientEmptyBody" : true,
+      "applyRolledBack" : false,
+      "lookupPending" : false,
+      "lookupSuccess" : true
+    },
+    "boundaryLogs" : [ {
+      "event" : "payment.request.result",
+      "orderId" : 13,
+      "attemptKey" : "attempt-13",
+      "outcome" : "UNKNOWN",
+      "transactionKey" : null,
+      "elapsedMs" : 2
+    }, {
+      "event" : "payment.apply",
+      "orderId" : 13,
+      "source" : "REQUEST",
+      "outcome" : "UNKNOWN",
+      "tx" : "COMMITTED",
+      "status" : "AWAITING_PAYMENT"
+    } ],
+    "verdict" : "RESPONSE_LOST",
+    "stateBefore" : {
+      "id" : 13,
+      "status" : "AWAITING_PAYMENT",
+      "payment_attempt_key" : "attempt-13",
+      "transaction_key" : null,
+      "total_amount" : 1000,
+      "paid_amount" : null,
+      "payment_started_at" : "2026-11-25 07:49:29.067253",
+      "confirmed_at" : null
+    },
+    "stateAfter" : {
+      "id" : 13,
+      "status" : "AWAITING_PAYMENT",
+      "payment_attempt_key" : "attempt-13",
+      "transaction_key" : null,
+      "total_amount" : 1000,
+      "paid_amount" : null,
+      "payment_started_at" : "2026-11-25 07:49:29.067253",
+      "confirmed_at" : null
+    },
+    "stateUnchanged" : true
+  }, {
+    "orderId" : 16,
+    "lookup" : {
+      "amount" : "1000",
+      "transactionKey" : "pg-tx-d9afa902-c9ad-4bdd-9cb0-577cf4fd0199",
+      "outcome" : "SUCCESS"
+    },
+    "facts" : {
+      "requestOutcomeUnknown" : true,
+      "pgClientEmptyBody" : true,
+      "applyRolledBack" : false,
+      "lookupPending" : false,
+      "lookupSuccess" : true
+    },
+    "boundaryLogs" : [ {
+      "event" : "payment.request.result",
+      "orderId" : 16,
+      "attemptKey" : "attempt-16",
+      "outcome" : "UNKNOWN",
+      "transactionKey" : null,
+      "elapsedMs" : 1
+    }, {
+      "event" : "payment.apply",
+      "orderId" : 16,
+      "source" : "REQUEST",
+      "outcome" : "UNKNOWN",
+      "tx" : "COMMITTED",
+      "status" : "AWAITING_PAYMENT"
+    } ],
+    "verdict" : "RESPONSE_LOST",
+    "stateBefore" : {
+      "id" : 16,
+      "status" : "AWAITING_PAYMENT",
+      "payment_attempt_key" : "attempt-16",
+      "transaction_key" : null,
+      "total_amount" : 1000,
+      "paid_amount" : null,
+      "payment_started_at" : "2026-11-25 07:49:29.115646",
+      "confirmed_at" : null
+    },
+    "stateAfter" : {
+      "id" : 16,
+      "status" : "AWAITING_PAYMENT",
+      "payment_attempt_key" : "attempt-16",
+      "transaction_key" : null,
+      "total_amount" : 1000,
+      "paid_amount" : null,
+      "payment_started_at" : "2026-11-25 07:49:29.115646",
+      "confirmed_at" : null
+    },
+    "stateUnchanged" : true
+  }, {
+    "orderId" : 19,
+    "lookup" : {
+      "amount" : "1000",
+      "transactionKey" : "pg-tx-09f46fe9-1c88-4c3b-a91c-eaebed7ebafd",
+      "outcome" : "SUCCESS"
+    },
+    "facts" : {
+      "requestOutcomeUnknown" : true,
+      "pgClientEmptyBody" : true,
+      "applyRolledBack" : false,
+      "lookupPending" : false,
+      "lookupSuccess" : true
+    },
+    "boundaryLogs" : [ {
+      "event" : "payment.request.result",
+      "orderId" : 19,
+      "attemptKey" : "attempt-19",
+      "outcome" : "UNKNOWN",
+      "transactionKey" : null,
+      "elapsedMs" : 1
+    }, {
+      "event" : "payment.apply",
+      "orderId" : 19,
+      "source" : "REQUEST",
+      "outcome" : "UNKNOWN",
+      "tx" : "COMMITTED",
+      "status" : "AWAITING_PAYMENT"
+    } ],
+    "verdict" : "RESPONSE_LOST",
+    "stateBefore" : {
+      "id" : 19,
+      "status" : "AWAITING_PAYMENT",
+      "payment_attempt_key" : "attempt-19",
+      "transaction_key" : null,
+      "total_amount" : 1000,
+      "paid_amount" : null,
+      "payment_started_at" : "2026-11-25 07:49:29.160274",
+      "confirmed_at" : null
+    },
+    "stateAfter" : {
+      "id" : 19,
+      "status" : "AWAITING_PAYMENT",
+      "payment_attempt_key" : "attempt-19",
+      "transaction_key" : null,
+      "total_amount" : 1000,
+      "paid_amount" : null,
+      "payment_started_at" : "2026-11-25 07:49:29.160274",
+      "confirmed_at" : null
+    },
+    "stateUnchanged" : true
+  } ],
+  "metricFromPrometheus" : {
+    "known" : 0.0,
+    "missing" : 3.0
+  },
+  "foreignUserResolve" : "403 NOT_OWNER, PG 조회 증가 0, 주문 상태 그대로"
+}
