@@ -1,6 +1,6 @@
 # Week 10 — 결제 사고 관측
 
-이 문서는 10주차 결제 사고 대응의 결정을 적는다. 1~7절은 1단계(관측과 테스트 PG fixture 사고 제어), 8절은 사고 연결 테스트, 9절은 4단계 4a 운영 도구다.
+이 문서는 10주차 결제 사고 대응의 결정을 적는다. 1~7절은 1단계(관측과 테스트 PG fixture 사고 제어), 8절은 사고 연결 테스트, 9절은 4단계 4a 운영 도구, 10절은 4b 운영 도구 확장이다.
 나머지 설계(1~29절)는 `docs/week8/commerce-coupon.md`를 따른다.
 
 - **[사용자 결정]**: 사용자가 정한 것(결정 기록 week10). 바꾸려면 승인이 필요하다.
@@ -174,7 +174,7 @@
 
 | severity | 수신처 | repeat_interval [임시] |
 | --- | --- | --- |
-| critical | `guide-webhook`(지금은 가짜 수신기 `/guide`, 4b에서 가이드 서버로 교체) | 1h |
+| critical | `guide-webhook`(가이드 서버) + `slack`(원본, `continue`) 둘 다(4b, 10-4) | 1h |
 | warning | `slack`(로컬은 가짜 수신기 `/slack`) | 4h |
 | 없음 | `slack`(기본 수신처) **[구현 판단: 깨우지 않는 쪽]** | 4h |
 
@@ -261,11 +261,11 @@
 ### 9-8. 한계
 
 - 수집 대상은 api 하나(`host.docker.internal:8081`)다 **[PL 결정 P2]**. 세 앱의 management 포트가 모두 8081이고(공통 `monitoring.yml`), streamer의 `spring.application.name`이 `commerce-api`다. 앱별 정리는 범위 밖이다.
-- runbook(`docs/runbook/week10.md`)은 규칙별 앵커와 뜻만 있다. 대응 본문은 아직 없다.
+- runbook(`docs/runbook/week10.md`)에는 규칙별 앵커, 가이드 메시지 읽는 법, 주문 번호로 경계 로그 찾기, AI 질문 예시가 있다(4b). 규칙별 대응 본문은 아직 짧다.
 - `runbook_url`은 저장소 상대 경로, `dashboard_url`은 `http://localhost:3000` 고정이다.
 - 실제 Slack은 연결하지 않았다. Alertmanager는 설정 파일에서 환경 변수를 펼치지 않으므로 운영은 `slack_configs`의 `api_url_file`로 비밀 파일을 읽는 방식이다. 주석만 있고 구현하지 않았다.
-- 새 counter 두 개가 실제 앱에서 Prometheus로 수집되는지는 앱을 연결해 확인하지 않았다. `unknown_entered`의 PENDING→UNKNOWN 경로 테스트가 없다.
-- 래퍼 `admin-curl.sh`는 실제 앱에 붙여 실행하지 않았다. 문법 확인(`bash -n`)과 가짜 로컬 서버로 쿠키·헤더 흐름만 확인했다. 실제 체인의 쿠키·헤더 흐름은 통합 테스트가 확인한다(9-4).
+- ~~새 counter 두 개가 실제 앱에서 Prometheus로 수집되는지는 앱을 연결해 확인하지 않았다.~~ → 4b 리허설에서 확인(10-7). `unknown_entered`의 PENDING→UNKNOWN 경로 테스트가 없는 것은 그대로다.
+- ~~래퍼 `admin-curl.sh`는 실제 앱에 붙여 실행하지 않았다.~~ → 4b 리허설에서 실제 앱에 붙여 GET 목록·POST 일괄(XSRF 쿠키 토큰) 모두 성공(10-7).
 - 목록 쿼리 계획 **[구현 판단]**: 깨끗한 HEAD 복사본의 임시 테스트(MySQL 8.0.46, analyze 후)에서 확인했다. 주문 1만 건(결제 대기 100건·나머지 확정), 결제 기록 1만, schedule 100, 이상 234(미해결 34)다. 실제 `JdbcUnresolvedPaymentFinder` SQL, page 0·size 20.
 
 | 표 | type | key | rows | Extra |
@@ -279,3 +279,100 @@
   - 필터 없음과 `status=UNKNOWN`의 계획이 같다. 상태 조건은 p를 고유 키로 읽은 뒤 거른다. 실측 0.7ms·0.3ms다.
   - 80건 규모에서 보였던 payment_records 전체 탐색은 1만 건 규모에서 사라졌다. orders 상태 인덱스 선두 경로가 나온다.
   - 정렬(temporary·filesort)은 결제 대기 주문 전체 위에서 한다. 비용은 전체 주문 수가 아니라 결제 대기 건수와 page 깊이에 비례한다. 대기 건수가 수만 건으로 늘 때의 계획은 확인하지 않았다.
+
+## 10. 운영 도구 확장(4단계 4b)
+
+원칙 **[사용자 결정]**: critical은 근거를 밀어 주고(push), warning은 사람이 당겨 쓴다(pull). 가이드가 실패해도 원본 알림은 간다. 근거 수집은 결정적이고, LLM은 키가 있을 때만 쓴다. 비밀값은 저장소 밖에 둔다.
+
+### 10-1. 고리에서 4b 장치의 칸
+
+| 칸 | 4b 장치 |
+| --- | --- |
+| ② 안내 | critical 가이드 서버(10-4): 원본 알림에 근거를 붙인 두 번째 메시지 |
+| ③ 진단 | local JSON 로그(10-2) → Alloy → Loki(10-3), 대시보드 패널 "주문 번호로 경계 로그", Grafana MCP(10-5), runbook 4b 절 |
+| ① 감지(보조) | `GuideServerDown`(warning), 대시보드 패널 "가이드 서버 가동" |
+| 리허설 수단 | test-pg 실행(10-6), 리허설 오버레이·`scripts/ops/rehearsal.sh`(10-7) |
+
+### 10-2. local JSON 로그 파일
+
+- `local`·`local-dev` 프로필에서만 JSON 파일 appender를 더한다. 콘솔은 그대로다. 다른 프로필은 바꾸지 않았다(`supports/logging/.../logback/logback.xml`).
+- 형식: Boot structured logging `logstash`. MDC 키(orderId 등)는 최상위 필드로 나간다.
+- 경로: 기본 `logs/<spring.application.name>.json`(api는 `logs/commerce-api.json`). `logging.file.name`이 있으면 그것을 쓴다. `logs/`는 git 무시다.
+- 롤링 **[임시]**: 파일 10MB, 보관 3개, 합계 100MB. `logging.logback.rollingpolicy.*`가 있으면 그것을 쓴다(`appenders/json-file-appender.xml`).
+- **[구현 판단, PL 결정]** `bootRun` 작업 폴더를 저장소 루트로 둔다(`apps/commerce-api/build.gradle.kts`, `workingDir = rootProject.projectDir`). 기본 경로가 상대 경로라 원래는 `apps/commerce-api/logs/`에 쌓여 Alloy가 못 읽었다(리허설 B1). 앱 설정의 다른 경로는 classpath라 영향이 없다.
+
+### 10-3. Loki·Alloy
+
+- **[PL 결정 P1]** 수집은 local JSON 파일 + Alloy다. logback Loki appender(앱 의존성 추가)는 쓰지 않는다.
+- Alloy(`grafana/alloy:v1.10.1`, `docker/alloy/config.alloy`): 저장소 `logs/`를 읽기 전용으로 붙여 `*.json`을 읽는다.
+  - label은 **`app`(파일 이름)·`level`만** 둔다. 값이 유한해야 색인이 늘지 않는다. `filename` label은 지운다.
+  - **[PL 결정 P2]** structured metadata 4키: `orderId`·`providerOrderId`·`attemptKey`·`transactionKey`. label이 아니다. 찾기: `{app="commerce-api"} | orderId="11"`.
+  - 로그 줄 본문은 바꾸지 않는다.
+- Loki(`grafana/loki:3.5.3`, `docker/loki/loki.yml`): 단일 바이너리, 로컬 파일 저장, `127.0.0.1:3100`에만 연다.
+  - 보존 **[임시] 72h**(compactor가 지운다). 로컬 진단용이라 사고 하루 뒤까지 되짚으면 충분하다.
+  - Loki 3 기본의 `service_name` label·`detected_level` 자동 추가를 끈다. label을 app·level로 묶어 두기 위해서다.
+  - 사용 통계 보고를 끈다.
+- Grafana에 Loki 데이터소스(uid `loki`)를 provisioning했다. 대시보드에 "주문 번호로 경계 로그" 패널을 더했다.
+- 검사: `check-alerting.sh`에 Alloy `validate` + label이 app·level뿐인지, Loki `-verify-config`를 더했다.
+
+### 10-4. critical 가이드 서버
+
+- **[PL 결정 P3]** `docker/guide/guide.py`. Python 표준 라이브러리만 쓴다(`python:3.12.11-slim`). 새 앱 모듈이 아니다. 호스트에 포트를 열지 않는다.
+- 흐름: Alertmanager critical webhook(`guide:8080/alert`) → 근거를 결정적으로 수집 → (키가 있으면) LLM 요약 → Slack 자리(로컬은 가짜 수신기 `/slack`)로 전송.
+  - Prometheus: 미확인 상태별, 결과 모름 유입 비율(30분), 만료 증가(10분). 규칙과 같은 창이다.
+  - Loki: 지난 30분 `OrderApplicationService`의 WARN·ERROR 경계 로그. 종류별 건수와 대표 줄(최대 3줄). 카드·비밀값은 가린다.
+  - 대시보드·runbook 링크.
+- **원본 보장:** 근거 수집이 실패하거나 제한 시간 **[임시] 10s**를 넘으면 받은 원본 본문을 그대로, 실패 표시 한 줄과 함께 보낸다. 깨진 webhook 본문은 400이고 원본 전달을 시도한다.
+- **[PL 결정 P4]** critical은 Alertmanager가 가이드와 Slack 자리 **둘 다**로 보낸다(`continue: true`). 가이드가 죽거나 늦어도 사람은 원본을 받는다. 4a 9-2의 critical 수신처(가짜 수신기 `/guide`)는 이것으로 바뀌었다.
+  - 그래서 가이드가 실패하면 Slack 자리에 원본이 두 번 간다(Alertmanager 원본 + 가이드의 실패 표시 원본).
+- **LLM [사용자 결정 w10s4b-1]:** 내부 식별자는 외부로 보내지 않는다. LLM에는 집계와 패턴만 보낸다.
+  - 보내는 것: 알림 이름·상태·severity·건수, 지표 값, 경계 로그 종류별 건수와 대표 문구(값이 유한한 분류 키만 남기고 나머지 값은 가림), 볼 곳(패널 이름·runbook 앵커·Loki 쿼리 예시).
+  - 보내지 않는 것: orderId·providerOrderId·attemptKey·transactionKey·userId·카드·비밀값, 로그 원문.
+  - 전송 직전 확인: `LP-ORD-…`, `TR-…`, UUID, 식별자 키=값, 6자리 이상 숫자, 카드 형태, API 키 형태가 하나라도 남으면 LLM을 부르지 않는다(fail closed, `guide_llm_blocked_total`).
+  - `ANTHROPIC_API_KEY`가 없으면 LLM을 부르지 않고 결정적 요약만 보낸다. 키는 셸 환경 변수로만 받는다. LLM 호출 실패도 결정적 요약은 간다.
+  - 사람에게 가는 결정적 메시지의 대표 줄에는 주문 번호가 보일 수 있다(LLM에는 가지 않음).
+- 생존 감시: `GET /metrics`가 `guide_up`과 처리·실패 counter(수신·근거 전송·원본 전송·잘못된 요청·Slack 실패·LLM 요청·실패·차단)를 낸다. Prometheus job `guide`가 수집한다.
+  - `GuideServerDown`(warning, `up{job="guide"} == 0`, for **[임시] 5m**). `payment.yml`의 `commerce-ops` 그룹이다. critical 원본은 따로 가므로 깨우지 않는다.
+- 테스트(`docker/guide/test_guide.py`, `check-alerting.sh`에서 실행, 0건·skip이면 실패): G1 정상 근거, G2 Prometheus 오류 → 원본, G3 제한 시간 → 원본, G4 키 없음 → LLM 0, G5 카드·비밀값 가림, G6 깨진 본문 400, G7 LLM이 받은 본문에 식별자 형태 없음, G7b 식별자가 남으면 미호출, `/metrics`. promtool에 `GuideServerDown` 케이스를 더했다.
+
+### 10-5. Grafana MCP (warning = 당겨 쓰기)
+
+- **[사용자 결정 w10s4b-2]** 다운로드는 허가, 단 가장 작은 공식 수단. 공식 `grafana/mcp-grafana` GitHub 릴리스 단일 바이너리 **v2.3.0**을 쓴다(`scripts/ops/mcp-grafana.sh`).
+  - 크기 비교: 바이너리 tar.gz 17.97MB(선택) / Docker alpine 21.6MB / Docker 기본 63.5MB.
+  - **[구현 판단]** v2.4.0은 2026-11-24 공개라 제외했다(공개 2주 지난 버전).
+  - 처음 실행할 때만 `build/tools/` 아래로 받는다. OS·CPU별 고정 SHA-256과 다르면 실행하지 않는다.
+- **[사용자 결정]** 읽기 전용(`--disable-write`, 읽는 도구 범주만 켬), 사용 통계 끔(`--usage-stats=disabled`), 토큰은 Grafana 서비스 계정 **Viewer** 토큰을 환경 변수 `GRAFANA_SERVICE_ACCOUNT_TOKEN`으로만 받는다.
+- 사실: 사용 통계가 기본 켜짐인 것을 알기 전에 더미 토큰으로 `tools/list` 시험 실행을 1회 했다. 종료 때 Grafana Labs로 익명 보고 1건이 나갔을 수 있다(Grafana 주소·토큰 값은 보고 대상 아님). 이후 끔으로 고정했다.
+- runbook "AI에게 이렇게 물어라" 절에 질문 예시를 두었다.
+
+### 10-6. test-pg 실행 수단 [사용자 결정 w10s4b-3 ①]
+
+- Gradle `:apps:commerce-api:runTestPg`(`JavaExec`, test 런타임 classpath, `TestPgServerMain`). test 소스의 `TestPgServer`를 그대로 띄운다. 같은 계약을 다시 만들지 않는다.
+  - 결제 `127.0.0.1:8082`(앱 local 설정의 test-pg 주소), 제어 `127.0.0.1:8083`. 환경 변수로 포트·사용자 ID·유실 지연(기본 5s)을 바꿀 수 있다.
+  - 제어 endpoint(인증 없음, loopback에만 묶음): `/control/status`, `/control/create-behavior`(전역 동작), `/control/lost-responses/{providerOrderId}`(유실 지정 PUT·해제 DELETE).
+  - 래퍼 `scripts/ops/test-pg.sh`: `start`·`lose`·`clear`·`behavior`·`status`.
+- 운영 classpath 비포함 확인(사실): bootJar에서 `TestPg` 이름이 맞는 항목은 기존 운영 어댑터 2개(`TestPgPaymentGateway`·`TestPgProperties`)뿐이고 테스트 클래스·라이브러리는 0건이다. `runtimeClasspath` 차이 없음.
+
+### 10-7. 사람 흐름 리허설 1회
+
+- 기록: `docs/week10/rehearsal.md`(캡처 `docs/week10/rehearsal/`). 2026-11-25 23:44~23:53 KST, 맥북에어 로컬, 1회. 자동 테스트가 아니다.
+- **[PL 결정 P5]** 짧은 값은 오버레이로 분리했다. 운영 값 파일은 그대로다.
+  - 규칙 `docker/prometheus/rules/rehearsal/payment-rehearsal.yml`(창 5m, unknown ≥ 3, for 1m, `rehearsal="true"`), `docker/prometheus/prometheus.rehearsal.yml`, `docker/monitoring-compose.rehearsal.yml`, 단계별 명령 `scripts/ops/rehearsal.sh`.
+  - 앱은 자동 재조회 스케줄러를 끄고(만료도 같이 멈춤) gauge 갱신을 5s로 줄였다. 켜 두면 test-pg 조회가 정상이라 몇 초 안에 회복돼 사고가 재현되지 않는다.
+- 결과 요약:
+  - 응답 유실 4건 → 알림 firing → 가짜 수신기에 원본 + `[가이드]` 근거(unknown=4, 유입 비율 57.14%, Loki WARN 4줄). 사고 시작 → 근거 붙은 알림 1m46s(리허설 값 기준).
+  - 대시보드 unknown=4 → Loki에서 주문 번호로 경계 로그 3줄(structured metadata 확인) → 관리자 목록 4건 → 일괄 확정 4건 모두 RESOLVED(1.05s), create 증가 0 → 지표 0, 알림 해제, resolved 2건.
+  - 4a 미검증 확인: 래퍼를 실제 앱에 붙임, 새 counter 실제 수집(`started` 3 → 7, `unknown_entered` 0 → 4), 실제 JSON 로그로 Loki 질의.
+- 막힌 지점 B1(로그 경로)은 고쳤다(10-2). B2~B5는 10-8과 `rehearsal.md`에 있다.
+
+### 10-8. 한계
+
+- streamer의 `spring.application.name`이 `commerce-api`라(기존 결함, 범위 밖) streamer를 local로 띄우면 api와 같은 로그 파일에 쓴다. 롤링 충돌과 `app` 구분 섞임이 생길 수 있다.
+- 만료 경로(`PaymentAbandonedPiling`)는 리허설하지 않았다. 리허설에서 스케줄러를 꺼 만료도 멈췄다.
+- `runbook_url`이 저장소 상대 경로라 Grafana·Slack에서 눌러 열리지 않는다(B4). `generatorURL`도 컨테이너 호스트명이다.
+- resolved 알림은 해제 뒤 최대 5분 늦게 온다(group_interval 5m). resolved 가이드 메시지에도 30분 창 유입 비율이 높게 보여 헷갈릴 수 있다.
+- 고객 사용자를 만드는 API가 없다. 리허설에서는 DB에 직접 넣었다(B3).
+- 실제 LLM 호출과 Viewer 토큰으로 한 Grafana MCP 질의는 하지 않았다. Viewer 토큰 생성(접근 키 생성)은 승인 대상이라 범위 밖으로 뒀다.
+- B1 수정 뒤에는 기본 경로 파일 생성만 확인했고, Loki 수집까지 다시 돌리지는 않았다.
+- Grafana 이미지(`grafana/grafana`)는 버전을 고정하지 않았다(범위 밖).
+- 실제 Slack은 여전히 연결하지 않았다.
