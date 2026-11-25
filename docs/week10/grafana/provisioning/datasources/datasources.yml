@@ -1,4 +1,10 @@
-# W10 run.sh의 Grafana — 업무 지표(Prometheus)와 trace(Tempo)를 한 화면에서 본다. KEEP=1로 실행하면 끝난 뒤에도 남는다.
+# W10 run.sh의 Grafana data source (plan.md D-12 · D-13). Grafana는 저장하지 않고, 아래 주소로 질의해 보여 주기만 한다.
+#   지표 → Prometheus · trace → Tempo · 로그 → Loki
+# 서로 잇는 링크:
+#   로그 줄의 [traceId-spanId]   → Tempo에서 그 trace 열기   (Loki derivedFields)
+#   trace의 span                → 같은 traceId 로그 보기      (Tempo tracesToLogsV2)
+#   Tempo service graph         → Prometheus의 traces_service_graph_* 지표
+# 값 안의 $는 provisioning이 환경 변수로 바꾸므로 글자 그대로 쓰려면 $$로 쓴다.
 apiVersion: 1
 datasources:
   - name: Prometheus
@@ -7,8 +13,42 @@ datasources:
     access: proxy
     url: http://prometheus:9090
     isDefault: true
+    jsonData:
+      exemplarTraceIdDestinations:
+        - name: trace_id
+          datasourceUid: tempo
   - name: Tempo
     uid: tempo
     type: tempo
     access: proxy
     url: http://tempo:3200
+    jsonData:
+      serviceMap:
+        datasourceUid: prometheus
+      nodeGraph:
+        enabled: true
+      tracesToLogsV2:
+        datasourceUid: loki
+        spanStartTimeShift: '-1m'
+        spanEndTimeShift: '1m'
+        filterByTraceID: true
+        tags:
+          - key: service.name
+            value: app
+      tracesToMetrics:
+        datasourceUid: prometheus
+      lokiSearch:
+        datasourceUid: loki
+  - name: Loki
+    uid: loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    jsonData:
+      maxLines: 1000
+      derivedFields:
+        - name: traceId
+          datasourceUid: tempo
+          matcherRegex: '\[([0-9a-f]{32})-[0-9a-f]{16}\]'
+          url: '$${__value.raw}'
+          urlDisplayLabel: 'Tempo에서 trace 열기'

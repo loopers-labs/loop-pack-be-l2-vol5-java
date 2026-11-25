@@ -1,0 +1,33 @@
+# W10 run.sh의 Loki — 한 프로세스, 컨테이너 안 파일 저장 (plan.md D-13 ②).
+# Alloy가 앱 로그 파일을 읽어 3100으로 보내고(push), Grafana·run.sh가 3100으로 조회한다.
+auth_enabled: false
+server:
+  http_listen_port: 3100
+  log_level: warn
+common:
+  instance_addr: 127.0.0.1
+  path_prefix: /tmp/loki
+  storage:
+    filesystem:
+      chunks_directory: /tmp/loki/chunks
+      rules_directory: /tmp/loki/rules
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+schema_config:
+  configs:
+    - from: 2024-01-01
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+limits_config:
+  allow_structured_metadata: true   # traceId는 label이 아니라 줄에 붙은 값(structured metadata)으로 둔다
+  volume_enabled: true
+pattern_ingester:
+  enabled: true                     # 비슷한 로그 줄 묶음 (Grafana MCP의 query_loki_patterns)
+analytics:
+  reporting_enabled: false

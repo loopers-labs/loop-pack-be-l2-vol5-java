@@ -257,6 +257,7 @@ flowchart TB
 | D-10 | **runbook** (`docs/runbook/week10.md`) 구성 | ✅ 11-24 |
 | D-11 | **회귀 범위와 정리** — 기능별 확인·미검증 위험 표, 자기 자원만 정리 | ✅ 11-24 |
 | D-12 | **분산 추적 (선택 과제, 도전)** — Tempo(OpenTelemetry · OTLP), (가) 설정·1줄로 HTTP·발송 풀·PG·Kafka 잇기 → 끝나면 (나) Outbox 문맥 저장 | ✅ 11-24 |
+| D-13 | **관측 화면과 AI 진단 (과제 밖 추가)** — Grafana 대시보드 · Loki+Alloy 로그 · Tempo service graph · MCP로 AI가 같은 저장소를 조회 | ✅ 11-25 (세부 🔧) |
 
 ### D-1. 연결 방식 ✅ 11-23
 
@@ -356,6 +357,7 @@ GET /actuator/prometheus  (run.sh curl · 운영에서는 Prometheus 서버가 �
 - 서버가 여러 대면 모든 서버가 같은 전체 숫자를 보고한다 → 합(sum)이 아니라 최댓값(max)으로 본다. 지표 description에 적는다.
 - 기대: baseline 뒤 UNKNOWN 0 · fault 뒤 3 · recovery 뒤 0 (health는 세 번 모두 UP).
 - JUnit: 결제 상태별 행을 만든 뒤 지표 값이 그 개수와 같은지 (평소 `./gradlew test`).
+- 함수에 서비스를 넘기는 방식: `Gauge.builder(이름, 서비스, 서비스 -> 개수)` — Micrometer가 서비스를 **weak reference**로 잡는다. 람다 안에서 서비스를 직접 부르면(강한 참조) 전역 registry(`Metrics.globalRegistry`)를 거쳐 닫힌 테스트 Spring 문맥이 메모리에서 빠지지 않는다 (11-25 회귀 OOM, 변경 이력).
 - 선택 실험: 저장소의 `docker/monitoring-compose.yml`(Prometheus :9090, 5초마다 `host.docker.internal:8081` 수집 + Grafana :3000)을 띄워 3 → 0을 그래프로 본다. 과제 필수는 아니다.
 
 ### D-5. 경계 로그 ✅ 11-23
@@ -632,6 +634,41 @@ commerce-api /actuator/prometheus ◀── Prometheus ──┘
 
 **(나) (가)가 끝나면** — Outbox에 trace 문맥 저장: 주문 확정 때 `order_outbox`에 `traceparent`를 같이 저장하고, relay가 그 문맥을 부모로 발행한다 → [결과 반영(reconcile) → Outbox → Kafka → streamer]가 한 trace. 비용: 컬럼 추가 · relay 코드 · 테스트.
 
+### D-13. 관측 화면과 AI 진단 (과제 밖 추가) ✅ 11-25
+
+**목적**: 과제 체크리스트는 D-1~D-12의 증거 파일(`prometheus.txt` · 로그 grep · trace JSON)로 이미 채웠다. 여기서는 ① 사람이 **화면**에서 "health UP인데 UNKNOWN 3"을 보고 로그 ↔ trace를 오가게 하고, ② AI가 **같은 저장소를 MCP로 조회**해 가설을 판정하게 한다. 과제 §4 "AI에게 원문 기록과 가설을 주고 비교시킬 수 있다 — AI의 확신으로 원인을 확정하지 않는다"를 실제로 해 보고 기술 글 주제로 쓴다.
+
+```
+commerce-api ─┬─ /actuator/prometheus ◀── 읽어 감 ── Prometheus ◀── span 지표 ─┐
+streamer      ├─ OTLP trace ──────────────────────▶ Tempo ── metrics-generator ─┘
+              └─ 로그 파일 ──▶ Alloy ──▶ Loki
+                                        │      │      │
+                                        ▼      ▼      ▼
+                       Grafana: 대시보드 · Explore · 로그 ↔ trace 이동
+                                        ▲
+                     Claude Code ── MCP ┘  (PromQL · LogQL · TraceQL)
+```
+
+| 종류 | 저장소 | 누가 넣나 |
+|---|---|---|
+| 지표 | Prometheus | Prometheus가 `/actuator/prometheus`를 주기적으로 읽어 간다 (pull) |
+| trace | Tempo | 앱이 OTLP로 보낸다 (push, D-12) |
+| 로그 | Loki | **Alloy**가 run.sh의 로그 파일을 읽어 보낸다 (push) — 앱 코드·의존성 변경 없음 ✅ 11-25 |
+| 화면 | Grafana | 위 셋을 data source로 연결해 조회만 한다. 자기는 저장하지 않는다 |
+
+| # | 할 것 | 상태 |
+|---|---|---|
+| ① | Grafana 대시보드 (JSON provisioning): 업무 지표 UNKNOWN·PENDING · health · 확정 요청 수·지연 · PG 호출 지연·오류 | 🔧 |
+| ② | Loki + Alloy: `api.log`·`streamer.log` → Loki. 로그 줄의 `[traceId-spanId]` → Tempo 링크, trace → 같은 traceId 로그 링크 | ✅ Alloy 11-25 · 링크 🔧 |
+| ③ | Tempo metrics-generator: service graph · span 지표(요청 수·오류율·지연) → Prometheus. APM의 서비스 지도·구간 지연을 대신한다 (코드 단위 profiling은 없음) | 🔧 |
+| ④ | MCP: **Grafana MCP 서버 하나**(`grafana/mcp-grafana:2.3.0`, 읽기 전용 `--disable-write`)가 Grafana를 거쳐 Prometheus(PromQL)·Loki(LogQL)·Tempo(TraceQL)를 모두 조회한다 → Tempo 내장 MCP·버전 올림은 필요 없다. Grafana는 127.0.0.1의 로그인 없는 Admin이라 토큰을 만들지 않는다 | ✅ 11-25 저장소에는 `docs/week10/example.mcp.json` 틀만, 실제 등록은 로컬 설정(`claude mcp add --scope local grafana-w10 …`) |
+| ⑤ | run.sh 검사 추가: Prometheus 저장값 UNKNOWN 3 → 0 · PG 생성 호출 최대 지연 ≥ 2.9초(outcome=UNKNOWN) · Loki에서 응답 유실 주문의 로그 ②(주문 ID 글자로, trace_id로) · service graph commerce-api → commerce-streamer · span 지표 · Loki label에 orderId·traceId 없음 · Loki에 카드 번호·Spring Security 임시 비밀번호 0줄 · 대시보드·단계 표시(annotation). 결과 `5-monitoring/` | 🔧 |
+| ⑥ | AI 진단 절차: run.sh가 fault 증거 보존 뒤 멈출 수 있게 하고(예: `PAUSE_AFTER_FAULT=1`), AI에게 가설 표와 주문 ID만 준다 → MCP로 조회해 예상·실제·판정 작성 → run.sh의 `hypotheses.tsv`(증거 판정)와 대조. AI 판정을 그대로 결론으로 쓰지 않는다 | 🔧 |
+
+- Alloy가 Spring Security 임시 비밀번호 줄을 `[가림]`으로 바꿔 넣는다 (증거 파일 `copy_logs`와 같은 규칙). MCP로 AI가 로그를 읽으면 그 내용이 LLM 제공자에게 간다 — 합성 주문뿐이고 카드 번호·계정값은 로그에 없다는 검사를 같이 둔다.
+- 새 포트는 모두 `127.0.0.1`에만 연다. Grafana 로그인 값은 run.sh 안에서만 쓰는 로컬 값이다. 관리 endpoint를 밖에 열지 않는 규칙은 그대로다.
+- 과제 범위 밖 추가다. PR에는 "체크리스트 근거는 D-1~D-12, D-13은 관측 화면·AI 진단 실험"으로 나눠 적는다.
+
 ## 실행 결과 (2026-11-24, `docs/week10/results/w10-20261124-231516/`)
 
 **검사 135개 중 135개 통과** — `bash docs/week10/run.sh` 한 번, jar는 커밋 `f00c01f1`.
@@ -682,3 +719,5 @@ commerce-api /actuator/prometheus ◀── Prometheus ──┘
 - 2026-11-24: D-3 브랜드·상품을 관리자 API → SQL(`docs/week10/sql/seed.sql`)로 바꿨다 — 관리자 API는 ADMIN 인증이 있어 진짜 프로세스에서 부를 수 없다.
 - 2026-11-24: run.sh 첫 두 실행은 준비 단계에서 멈췄다 — ① Redis replica 목록을 명령줄로 주면 항목이 통째로 바뀌어 host가 빠졌다 ② `shedlock` 테이블(엔티티 아님)이 없어 relay가 돌지 않았다 → W7·W9·W10 DDL 파일을 차례로 적용하게 고쳤다.
 - 2026-11-24: run.sh 3·4번째 실행 실패 원인(trace를 너무 일찍 읽음 · 지난 jar를 고름)을 고쳐 5번째 실행에서 검사 135개 통과. 증거 `docs/week10/results/w10-20261124-231516/`.
+- 2026-11-25: 전체 회귀에서 commerce-api 테스트 JVM이 메모리 부족(OOM). 원인: 업무 지표 gauge의 람다가 `PaymentQueryService`를 강한 참조로 잡고, Spring Boot는 문맥마다 만든 registry를 전역 registry에 넣고 빼지 않는다 → `@DirtiesContext`로 닫힌 문맥이 회수되지 않고 쌓였다. 서비스를 weak reference로 넘기게 고쳤다 (D-4, 지표 동작은 같다).
+- 2026-11-25: D-13 추가 — Grafana 대시보드 · Loki+Alloy(로그 파일 수집) · Tempo service graph · MCP(저장소엔 `example.mcp.json` 틀, 등록은 로컬). 과제 밖 추가.

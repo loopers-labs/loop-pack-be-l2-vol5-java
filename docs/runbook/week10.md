@@ -70,6 +70,27 @@ curl -s http://127.0.0.1:33200/api/traces/<traceId>
 - DB만 보면 가설 2와 3은 똑같다 (`UNKNOWN` · 거래 키 NULL · PG `SUCCESS`). 로그 ②⑤와 trace로만 가른다.
 - 2든 3이든 **조치는 같다** — reconcile은 조회 뒤 반영이라 어느 쪽이든 안전하다.
 
+### 2-1. 같은 진단을 화면으로 (Grafana — `KEEP=1` 또는 `PAUSE_AFTER_FAULT=1`로 run.sh 실행)
+
+```
+지표 → Prometheus   trace → Tempo   로그 → (Alloy가 파일을 읽어) Loki      ← 저장
+                 └──────── Grafana가 셋에 질의해 한 화면에 ────────┘          ← 보기만
+```
+
+대시보드 http://127.0.0.1:33000/d/w10-incident — 위에서 아래로 ① 증상 → ② 어디서 기다렸나 → ③ 어느 주문인가.
+
+| 질문 | 어디서 | 질의 |
+|---|---|---|
+| 결과 모르는 결제가 있나 | Prometheus | `max by (status) (commerce_payment_unresolved)` |
+| PG 생성 호출이 느렸나 | Prometheus | `max by (uri, outcome) (http_client_requests_seconds_max{uri=~"/api/v1/payments.*"})` |
+| 어느 주문인가 | Loki | `{app="commerce-api"} \|= "result=UNKNOWN"` |
+| 그 주문에 무슨 일이 | Loki | ``{app="commerce-api"} \|~ `payment\.[a-z.]+ orderId=12( \|$)` `` |
+| 어디서 기다렸나 | Tempo | 로그 줄을 펼쳐 `traceId` 링크 → trace. 또는 TraceQL `{ kind = client && duration > 2s }` |
+| 누가 누구를 불렀나 | Tempo service graph | 대시보드 "서비스 지도" (commerce-api → localhost(PG) · commerce-api → commerce-streamer) |
+
+- Loki label은 `app`·`level`(값 종류가 적은 것)만이다. `orderId`·`traceId`는 줄 안의 글자 · 줄에 붙은 값(structured metadata)으로 찾는다 — 지표 label에 orderId를 넣지 않는 것과 같은 이유.
+- AI에게 맡길 때는 Grafana MCP(읽기 전용, `docs/week10/example.mcp.json`)로 같은 저장소를 조회하게 하고, **판정표의 "실제" 칸은 사람이 질의 결과로 다시 확인한다.** AI의 확신으로 원인을 정하지 않는다.
+
 ## 3. 조치 전제 (하나라도 아니면 5로)
 
 - [ ] 영향 목록(①)을 파일로 고정했다. 조치는 **이 목록 안의 주문만** 한다

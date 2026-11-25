@@ -1,5 +1,9 @@
-# W10 run.sh의 Tempo — 한 프로세스, 로컬 저장소 (plan.md D-12).
+# W10 run.sh의 Tempo — 한 프로세스, 로컬 저장소 (plan.md D-12 · D-13).
 # commerce-api·streamer가 OTLP HTTP(4318)로 보내고, run.sh와 Grafana가 3200으로 조회한다.
+# metrics-generator: 받은 span에서 지표를 만들어 Prometheus로 보낸다 (D-13 ③)
+#   service-graphs → traces_service_graph_*  (누가 누구를 불렀나 — 서비스 지도)
+#   span-metrics   → traces_spanmetrics_*    (구간별 호출 수·오류·지연)
+#   local-blocks   → TraceQL 지표 조회 (Grafana MCP의 query_tempo_metrics)
 stream_over_http_enabled: true
 server:
   http_listen_port: 3200
@@ -12,6 +16,24 @@ distributor:
           endpoint: 0.0.0.0:4318   # 2.7부터 기본이 localhost라 컨테이너 밖에서 못 보낸다 → 명시
 ingester:
   max_block_duration: 5m
+metrics_generator:
+  registry:
+    external_labels:
+      source: tempo
+  storage:
+    path: /tmp/tempo/generator/wal
+    remote_write:
+      - url: http://prometheus:9090/api/v1/write
+        send_exemplars: true
+  traces_storage:
+    path: /tmp/tempo/generator/traces
+  processor:
+    service_graphs:
+      # 받는 쪽 span이 없는 호출(pg-sim은 trace를 보내지 않는다)은 이 속성 값으로 상대 이름을 짓는다
+      peer_attributes: [peer.service, db.name, db.system, client.name]
+    local_blocks:
+      filter_server_spans: false
+      flush_to_storage: true
 storage:
   trace:
     backend: local
@@ -19,3 +41,7 @@ storage:
       path: /tmp/tempo/wal
     local:
       path: /tmp/tempo/blocks
+overrides:
+  defaults:
+    metrics_generator:
+      processors: [service-graphs, span-metrics, local-blocks]
