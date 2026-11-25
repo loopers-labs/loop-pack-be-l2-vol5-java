@@ -9,13 +9,15 @@ import org.springframework.stereotype.Component;
 @Component
 @ConditionalOnProperty(name = "commerce.outbox.relay.enabled", havingValue = "true")
 public class OrderOutboxRelayScheduler {
+    public static final String TASK_SCHEDULER = "outboxRelayTaskScheduler";
+
     private final OrderOutboxRelay orderOutboxRelay;
 
     public OrderOutboxRelayScheduler(OrderOutboxRelay orderOutboxRelay) {
         this.orderOutboxRelay = orderOutboxRelay;
     }
 
-    @Scheduled(fixedDelayString = "${commerce.outbox.relay.fixed-delay:PT1S}")
+    @Scheduled(fixedDelayString = "${commerce.outbox.relay.fixed-delay:PT1S}", scheduler = TASK_SCHEDULER)
     public void runOnce() {
         orderOutboxRelay.runOnce();
     }

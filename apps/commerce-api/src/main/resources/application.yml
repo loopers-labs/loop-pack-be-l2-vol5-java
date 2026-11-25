@@ -18,10 +18,6 @@ spring:
     name: commerce-api
   profiles:
     active: local
-  task:
-    scheduling:
-      pool:
-        size: 2 # 결제 조회와 Outbox relay 스케줄러가 서로의 긴 회차에 밀리지 않게 한다
   config:
     import:
       - jpa.yml
