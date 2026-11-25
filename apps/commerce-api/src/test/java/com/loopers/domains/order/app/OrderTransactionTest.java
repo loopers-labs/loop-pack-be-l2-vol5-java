@@ -5,6 +5,7 @@ import com.loopers.domains.order.app.port.OrderConfirmedOutbox;
 import com.loopers.domains.order.app.port.OrderConfirmedPublisher;
 import com.loopers.domains.order.app.port.OrderRepository;
 import com.loopers.domains.order.app.port.PaymentOutcomeRecorder;
+import com.loopers.domains.order.app.port.PaymentProgressRecorder;
 import com.loopers.domains.order.domain.Order;
 import com.loopers.domains.order.out.OrderPersistenceAdapter;
 import com.loopers.domains.payment.app.PaymentExpiryPolicy;
@@ -90,6 +91,9 @@ class OrderTransactionTest {
 
     @Autowired
     private PaymentOutcomeRecorder paymentOutcomeRecorder;
+
+    @Autowired
+    private PaymentProgressRecorder paymentProgressRecorder;
 
     @Autowired
     private PaymentLookupScheduleRepository paymentLookupScheduleRepository;
@@ -282,7 +286,8 @@ class OrderTransactionTest {
             failingPaymentRecordRepository,
             new PaymentGatewayRegistry(List.of(testPgFixture.newClient()), List.of(TestPgFixture.PROVIDER_ID)),
             transactionTemplate, paymentAnomalyRepository, clock, paymentLookupScheduleRepository, paymentLookupPolicy,
-            paymentExpiryPolicy, orderConfirmedPublisher, orderConfirmedOutbox, paymentOutcomeRecorder);
+            paymentExpiryPolicy, orderConfirmedPublisher, orderConfirmedOutbox, paymentOutcomeRecorder,
+            paymentProgressRecorder);
         OrderResult afterRestart = restarted.confirm(1, orderId, TestPgFixture.command(attemptKey));
 
         assertThat(afterRestart.status()).isEqualTo("PAYMENT_PENDING");

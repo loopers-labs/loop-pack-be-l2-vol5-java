@@ -5,6 +5,7 @@ import com.loopers.domains.order.app.port.OrderConfirmedOutbox;
 import com.loopers.domains.order.app.port.OrderConfirmedPublisher;
 import com.loopers.domains.order.app.port.OrderRepository;
 import com.loopers.domains.order.app.port.PaymentOutcomeRecorder;
+import com.loopers.domains.order.app.port.PaymentProgressRecorder;
 import com.loopers.domains.order.domain.Order;
 import com.loopers.domains.order.domain.OrderItem;
 import com.loopers.domains.order.domain.Quantity;
@@ -78,7 +79,8 @@ class PaymentVerificationTest {
             anomalies, Clock.fixed(Instant.EPOCH, ZoneOffset.UTC), mock(PaymentLookupScheduleRepository.class),
             new PaymentLookupPolicy(new LookupBackoff(Duration.ofSeconds(5), 2, Duration.ofMinutes(1)), maximum -> maximum, 12, 100),
             new PaymentExpiryPolicy(Duration.ofMinutes(2)), mock(OrderConfirmedPublisher.class),
-            mock(OrderConfirmedOutbox.class), mock(PaymentOutcomeRecorder.class));
+            mock(OrderConfirmedOutbox.class), mock(PaymentOutcomeRecorder.class),
+            mock(PaymentProgressRecorder.class));
         clearInvocations(gateway);
     }
 

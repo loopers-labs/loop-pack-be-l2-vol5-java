@@ -9,6 +9,7 @@ import com.loopers.domains.order.app.port.OrderConfirmedPublisher;
 import com.loopers.domains.order.app.port.OrderRepository;
 import com.loopers.domains.order.app.port.PaymentOutcomeRecorder;
 import com.loopers.domains.order.app.port.PaymentOutcomeRecorder.Outcome;
+import com.loopers.domains.order.app.port.PaymentProgressRecorder;
 import com.loopers.domains.order.domain.Order;
 import com.loopers.domains.order.domain.OrderItem;
 import com.loopers.domains.order.domain.Quantity;
@@ -64,13 +65,15 @@ public class OrderApplicationService {
     private final OrderConfirmedPublisher orderConfirmedPublisher;
     private final OrderConfirmedOutbox orderConfirmedOutbox;
     private final PaymentOutcomeRecorder paymentOutcomeRecorder;
+    private final PaymentProgressRecorder paymentProgressRecorder;
 
     public OrderApplicationService(OrderRepository orderRepository, ProductRepository productRepository,
         PaymentRecordRepository paymentRecordRepository, PaymentGatewayRegistry paymentGatewayRegistry,
         TransactionTemplate transactionTemplate, PaymentAnomalyRepository paymentAnomalyRepository, Clock clock,
         PaymentLookupScheduleRepository paymentLookupScheduleRepository, PaymentLookupPolicy paymentLookupPolicy,
         PaymentExpiryPolicy paymentExpiryPolicy, OrderConfirmedPublisher orderConfirmedPublisher,
-        OrderConfirmedOutbox orderConfirmedOutbox, PaymentOutcomeRecorder paymentOutcomeRecorder) {
+        OrderConfirmedOutbox orderConfirmedOutbox, PaymentOutcomeRecorder paymentOutcomeRecorder,
+        PaymentProgressRecorder paymentProgressRecorder) {
         this.orderRepository = orderRepository;
         this.productRepository = productRepository;
         this.paymentRecordRepository = paymentRecordRepository;
@@ -84,6 +87,7 @@ public class OrderApplicationService {
         this.orderConfirmedPublisher = orderConfirmedPublisher;
         this.orderConfirmedOutbox = orderConfirmedOutbox;
         this.paymentOutcomeRecorder = paymentOutcomeRecorder;
+        this.paymentProgressRecorder = paymentProgressRecorder;
     }
 
     public record ItemRequest(long productId, int quantity) { }
@@ -454,8 +458,7 @@ public class OrderApplicationService {
                     OrderConfirmedPayload payload = OrderConfirmedPayloadFactory.create(saved);
                     orderConfirmedOutbox.append(payload);
                 }
-                payment.applyProviderReport(report.status(), report.transactionKey());
-                payment = paymentRecordRepository.save(payment);
+                payment = applyProviderReport(payment, report);
                 paymentAnomalyRepository.resolveTransient(order.getId(), clock.instant());
                 paymentLookupScheduleRepository.delete(order.getId());
                 Outcome outcome = closingOutcome(saved, report);
@@ -466,8 +469,7 @@ public class OrderApplicationService {
             }
             case UNCHANGED -> {
                 if (order.getStatus() == Order.Status.PAYMENT_PENDING) {
-                    payment.applyProviderReport(report.status(), report.transactionKey());
-                    payment = paymentRecordRepository.save(payment);
+                    payment = applyProviderReport(payment, report);
                 }
             }
             case CONFLICT -> {
@@ -478,6 +480,18 @@ public class OrderApplicationService {
             case ANOMALY -> throw new IllegalStateException("DRAFT 결과는 앞에서 처리해야 합니다.");
         }
         return OrderResult.from(order, Optional.of(payment));
+    }
+
+    // 결과 모름 유입은 UNKNOWN이 아닌 상태에서 UNKNOWN으로 처음 바뀐 반영만 센다. 이미 UNKNOWN인 기록의 재보고는 유입이 아니다.
+    private PaymentRecord applyProviderReport(PaymentRecord payment, PaymentReport report) {
+        boolean wasUnknown = payment.getProviderStatus() == PaymentRecord.ProviderStatus.UNKNOWN;
+        payment.applyProviderReport(report.status(), report.transactionKey());
+        PaymentRecord saved = paymentRecordRepository.save(payment);
+        if (!wasUnknown && payment.getProviderStatus() == PaymentRecord.ProviderStatus.UNKNOWN) {
+            String providerId = payment.getProviderId();
+            afterCommit(() -> paymentProgressRecorder.unknownEntered(providerId));
+        }
+        return saved;
     }
 
     // failed는 PG가 거래를 만들고 FAILED로 확정한 경우만이다. 거래가 생기기 전 거절·전체 미도달은 돈이 움직이지 않았으므로
@@ -502,10 +516,11 @@ public class OrderApplicationService {
         }
     }
 
-    // 종결 집계와 확정·실패 종결 INFO는 rollback된 종결을 세거나 알리지 않도록 commit 뒤에만 실행한다. 종결은 항상 잠금 트랜잭션 안이다.
+    // 결제 집계(시작·결과 모름 유입·종결)와 확정·실패 종결 INFO는 rollback된 변경을 세거나 알리지 않도록 commit 뒤에만 실행한다.
+    // 모두 잠금 트랜잭션 안에서 일어난다.
     private static void afterCommit(Runnable action) {
         if (!TransactionSynchronizationManager.isSynchronizationActive()) {
-            throw new IllegalStateException("결제 종결은 트랜잭션 안에서만 기록할 수 있습니다.");
+            throw new IllegalStateException("결제 집계는 트랜잭션 안에서만 기록할 수 있습니다.");
         }
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
@@ -548,6 +563,7 @@ public class OrderApplicationService {
             throw new RuleViolationException("다른 주문에 사용한 결제 시도 키입니다.", e);
         }
         paymentLookupScheduleRepository.save(new Schedule(orderId, paymentLookupPolicy.nextAt(now, 0), 0, now, now));
+        afterCommit(() -> paymentProgressRecorder.started(providerId));
         return new PaymentStart(null, payment);
     }
 
