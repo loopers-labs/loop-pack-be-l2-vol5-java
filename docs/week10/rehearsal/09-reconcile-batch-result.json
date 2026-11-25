@@ -1,0 +1,52 @@
+{
+    "meta": {
+        "result": "SUCCESS"
+    },
+    "data": {
+        "requested": 4,
+        "processed": 4,
+        "stopReason": null,
+        "results": [
+            {
+                "orderId": 4,
+                "beforeStatus": "PAYMENT_PENDING",
+                "afterStatus": "CONFIRMED",
+                "beforeProviderStatus": "UNKNOWN",
+                "afterProviderStatus": "SUCCESS",
+                "assessment": "VERIFIED",
+                "outcome": "RESOLVED",
+                "reason": null
+            },
+            {
+                "orderId": 5,
+                "beforeStatus": "PAYMENT_PENDING",
+                "afterStatus": "CONFIRMED",
+                "beforeProviderStatus": "UNKNOWN",
+                "afterProviderStatus": "SUCCESS",
+                "assessment": "VERIFIED",
+                "outcome": "RESOLVED",
+                "reason": null
+            },
+            {
+                "orderId": 6,
+                "beforeStatus": "PAYMENT_PENDING",
+                "afterStatus": "CONFIRMED",
+                "beforeProviderStatus": "UNKNOWN",
+                "afterProviderStatus": "SUCCESS",
+                "assessment": "VERIFIED",
+                "outcome": "RESOLVED",
+                "reason": null
+            },
+            {
+                "orderId": 7,
+                "beforeStatus": "PAYMENT_PENDING",
+                "afterStatus": "CONFIRMED",
+                "beforeProviderStatus": "UNKNOWN",
+                "afterProviderStatus": "SUCCESS",
+                "assessment": "VERIFIED",
+                "outcome": "RESOLVED",
+                "reason": null
+            }
+        ]
+    }
+}
