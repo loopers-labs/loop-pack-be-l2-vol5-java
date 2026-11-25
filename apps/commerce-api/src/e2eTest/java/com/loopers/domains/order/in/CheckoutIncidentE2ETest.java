@@ -116,6 +116,7 @@ class CheckoutIncidentE2ETest {
     private static final String CREATE_RESULT = "PG 결제 생성 시도 결과";
     private static final String LOOKUP_JUDGMENT = "PG 조회 판정";
     private static final String CARD_DIGITS = TestPgFixture.CARD_NO.replace("-", "");
+    private static final int FAILURE_MESSAGE_LIMIT = 500;
 
     @LocalServerPort private int port;
     @LocalManagementPort private int managementPort;
@@ -146,6 +147,7 @@ class CheckoutIncidentE2ETest {
     private Level adapterLevel;
     private long productId;
     private int logCursor;
+    private String currentStage = "START";
     private double confirmedAtStart;
     private Map<Long, JsonNode> pointsAtStart;
     private Map<Long, JsonNode> couponsAtStart;
@@ -183,7 +185,11 @@ class CheckoutIncidentE2ETest {
                     testPgFixture.close();
                 }
             } finally {
-                ConsumeObservation.CONSUMED.clear();
+                try {
+                    ConsumeObservation.CONSUMED.clear();
+                } finally {
+                    httpClient.close();
+                }
             }
         }
     }
@@ -193,23 +199,65 @@ class CheckoutIncidentE2ETest {
         + "본인 reconcile이 create 추가 없이 같은 주문을 한 번씩 확정해 구매 활동 20건·주간 랭킹 점수 20으로 이어진다")
     void checkoutIncidentLifecycle() throws Exception {
         attachLogCapture();
+        Throwable primary = null;
         try {
+            currentStage = "PREPARE";
             prepare();
+            currentStage = "BASELINE";
             baseline();
+            currentStage = "FAULT";
             fault();
+            currentStage = "PRESERVE";
             String faultSha256 = preserveFaultEvidence();
+            currentStage = "DIAGNOSIS";
             diagnose(faultSha256);
+            currentStage = "RECOVERY";
             recover(faultSha256);
+            currentStage = "REPEAT";
             repeatAndProtect();
+            currentStage = "FOLLOWUP";
             followUp();
 
+            currentStage = "EVIDENCE_CHECK";
             assertThat(evidence.sha256("fault")).as("복구·후속 뒤에도 fault.json이 S3 때와 같다").isEqualTo(faultSha256);
             for (Path file : evidence.files()) {
                 assertNoCardNumber(Files.readString(file), file.getFileName().toString());
             }
+        } catch (Throwable failure) {
+            primary = failure;
+            recordFailure(failure);
+            throw failure;
         } finally {
-            releaseOwnInjections();
+            releaseOwnInjections(primary);
         }
+    }
+
+    // 단계 진행 중 실패하면 그 시점 상태를 단계 파일과 같은 구성으로 failure.json에 남긴다.
+    // 증거 쓰기가 실패해도 원래 예외를 가리지 않도록 suppressed로만 붙인다.
+    private void recordFailure(Throwable failure) {
+        if (evidence == null) {
+            return;
+        }
+        try {
+            Map<String, Object> summary = new LinkedHashMap<String, Object>();
+            summary.put("failedStage", currentStage);
+            summary.put("exceptionClass", failure.getClass().getName());
+            summary.put("message", failureMessage(failure));
+            evidence.write("failure", stage("FAILURE", scrape(managementPort), Map.of("failure", summary)));
+        } catch (Throwable writeFailure) {
+            failure.addSuppressed(writeFailure);
+        }
+    }
+
+    // 단언 메시지(설명·기대값·실제값)를 한 줄로 합쳐 앞부분만 남기고, 혹시 섞인 카드번호는 가린다.
+    private static String failureMessage(Throwable failure) {
+        String message = String.valueOf(failure.getMessage()).strip()
+            .replace(TestPgFixture.CARD_NO, "[card]").replace(CARD_DIGITS, "[card]");
+        String oneLine = String.join(" / ", message.lines().map(String::strip).filter(line -> !line.isEmpty()).toList());
+        if (oneLine.length() > FAILURE_MESSAGE_LIMIT) {
+            return oneLine.substring(0, FAILURE_MESSAGE_LIMIT) + "…";
+        }
+        return oneLine;
     }
 
     // 준비: 사용자 1(정상 10)·2(장애 10)·3(타인), 공개 상품 1개 재고 30. 포인트·쿠폰·outcome counter 시작값을 기록한다.
@@ -257,6 +305,8 @@ class CheckoutIncidentE2ETest {
         assertThat(normal).allSatisfy(order -> assertThat(orderRow(order.orderId()))
             .containsEntry("status", "CONFIRMED").containsEntry("provider_status", "SUCCESS"));
         assertThat(normal).noneMatch(order -> "UNKNOWN".equals(orderRow(order.orderId()).get("provider_status")));
+        assertThat(normal).allSatisfy(order -> assertThat(confirmedInstant(order.orderId()))
+            .as("confirmedAt order=%d", order.orderId()).isEqualTo(BASELINE_AT));
         assertPgSuccessOncePerOrder(normal);
         assertThat(server.transactions()).as("누적 PG 거래").hasSize(ORDERS_PER_SET);
         assertThat(server.createCalls()).as("누적 create").isEqualTo(ORDERS_PER_SET);
@@ -274,6 +324,7 @@ class CheckoutIncidentE2ETest {
     private void fault() throws Exception {
         clock.set(FAULT_AT);
         server.createBehavior(CreateBehavior.ACCEPT_SUCCESS);
+        long lookupsBefore = server.lookupCalls();
         for (int index = 0; index < ORDERS_PER_SET; index++) {
             boolean lose = index < LOST;
             TrackedOrder order = placeOrder(lose ? "fault-lost" : "fault-confirmed", FAULT_USER);
@@ -297,6 +348,11 @@ class CheckoutIncidentE2ETest {
         assertThat(set("fault-lost")).hasSize(LOST).allSatisfy(order -> assertThat(orderRow(order.orderId()))
             .containsEntry("status", "PAYMENT_PENDING").containsEntry("provider_status", "UNKNOWN")
             .containsEntry("transaction_key", null));
+        assertThat(set("fault-confirmed")).allSatisfy(order -> assertThat(confirmedInstant(order.orderId()))
+            .as("confirmedAt order=%d", order.orderId()).isEqualTo(FAULT_AT));
+        assertThat(set("fault-lost")).allSatisfy(order -> assertThat(confirmedAt(order.orderId()))
+            .as("미확정 confirmedAt order=%d", order.orderId()).isNull());
+        assertThat(server.lookupCalls()).as("FAULT 구간에는 callback·자동 조회가 보류되어 PG 조회가 없다").isEqualTo(lookupsBefore);
         assertPgSuccessOncePerOrder(faultSet);
         assertThat(server.transactions()).as("누적 PG 거래").hasSize(2 * ORDERS_PER_SET);
         assertThat(server.createCalls()).as("누적 create").isEqualTo(2 * ORDERS_PER_SET);
@@ -339,6 +395,10 @@ class CheckoutIncidentE2ETest {
         Map<Long, Map<String, Object>> before = ledger();
         long createsBefore = server.createCalls();
         List<Map<String, Object>> judgments = new ArrayList<Map<String, Object>>();
+        // 요약은 주문별 판정에서 모은다: 채택·기각 → 가설 ID → 그 판정을 받은 주문 ID.
+        Map<String, Map<String, List<Long>>> verdict = new LinkedHashMap<String, Map<String, List<Long>>>();
+        verdict.put("adopted", new LinkedHashMap<String, List<Long>>());
+        verdict.put("rejected", new LinkedHashMap<String, List<Long>>());
         for (TrackedOrder order : set("fault-lost")) {
             PaymentTransactionsLookup lookup = testPgFixture.newClient().verifyOrder(order.providerOrderId(), null);
             assertThat(lookup).isInstanceOf(PaymentTransactionsLookup.Found.class);
@@ -385,23 +445,33 @@ class CheckoutIncidentE2ETest {
             judgment.put("orderId", order.orderId());
             judgment.put("providerOrderId", order.providerOrderId());
             judgment.put("observed", observed);
-            judgment.put("hypotheses", List.of(
+            List<Map<String, Object>> hypotheses = List.of(
                 hypothesis("H1", "응답 유실: PG는 성공했지만 create 응답을 받지 못했다",
                     "create Unknown WARN(HttpTimeoutException) 1, 반영 ERROR 0, PG 조회 SUCCESS·금액 일치", h1),
                 hypothesis("H2", "내부 반영 실패: PG 결과를 받거나 조회했지만 우리 DB 반영이 실패했다",
                     "create Accepted INFO 또는 조회 Verified INFO가 있고 반영 ERROR가 있다", h2),
                 hypothesis("H3", "PG 실패·미발송: 돈이 움직이지 않았다",
-                    "PG 거래가 없거나 FAILED, 또는 create NotSent WARN", h3)));
+                    "PG 거래가 없거나 FAILED, 또는 create NotSent WARN", h3));
+            for (Map<String, Object> hypothesis : hypotheses) {
+                String bucket = "ADOPTED".equals(hypothesis.get("verdict")) ? "adopted" : "rejected";
+                verdict.get(bucket).computeIfAbsent((String) hypothesis.get("id"), id -> new ArrayList<Long>())
+                    .add(order.orderId());
+            }
+            judgment.put("hypotheses", hypotheses);
             judgment.put("boundaryLogs", orderLogs.stream().map(CheckoutIncidentE2ETest::logMap).toList());
             judgments.add(judgment);
         }
         assertThat(ledger()).as("진단 조회 전후 commerce 상태가 같다").isEqualTo(before);
         assertThat(server.createCalls()).as("진단은 create를 보내지 않는다").isEqualTo(createsBefore);
+        List<Long> lostIds = set("fault-lost").stream().map(TrackedOrder::orderId).toList();
+        assertThat(verdict).as("판정 요약").isEqualTo(Map.of(
+            "adopted", Map.of("H1", lostIds),
+            "rejected", Map.of("H2", lostIds, "H3", lostIds)));
 
         Map<String, Object> extra = new LinkedHashMap<String, Object>();
         extra.put("faultSha256", faultSha256);
         extra.put("diagnosisMethod", "TestPgFixture.newClient().verifyOrder(providerOrderId, null) + MDC orderId로 거른 경계 로그");
-        extra.put("verdict", Map.of("adopted", List.of("H1"), "rejected", List.of("H2", "H3")));
+        extra.put("verdict", verdict);
         extra.put("judgments", judgments);
         evidence.write("diagnosis", stage("DIAGNOSIS", scrape(managementPort), extra));
     }
@@ -417,6 +487,7 @@ class CheckoutIncidentE2ETest {
         assertThat(evidence.sha256("fault")).isEqualTo(faultSha256);
         long createsBefore = server.createCalls();
         double confirmedBefore = confirmedCounter(scrape(managementPort));
+        Map<Long, Map<String, Object>> ledgerBefore = ledger();
 
         for (TrackedOrder order : set("fault-lost")) {
             HttpResult reconciled = reconcile(order.orderId(), FAULT_USER);
@@ -445,6 +516,26 @@ class CheckoutIncidentE2ETest {
             Instant confirmedAt = Instant.parse(confirmedAt(order.orderId()));
             assertThat(confirmedAt).isEqualTo(RECOVERY_AT).isAfterOrEqualTo(weekStart).isBefore(weekEnd);
         });
+
+        // 복구는 유실 3건만 바꾼다. 나머지 17건(기준선 10·장애 확정 7)의 상태·confirmedAt·Outbox는 복구 전 장부와 같다.
+        Map<Long, Map<String, Object>> ledgerAfter = ledger();
+        assertThat(ledgerAfter.keySet()).as("장부 주문 집합").isEqualTo(ledgerBefore.keySet());
+        assertThat(tracked).hasSize(2 * ORDERS_PER_SET).filteredOn(order -> !order.lost()).allSatisfy(order ->
+            assertThat(ledgerAfter.get(order.orderId())).as("복구 대상이 아닌 주문 order=%d", order.orderId())
+                .isEqualTo(ledgerBefore.get(order.orderId())));
+        assertThat(ledgerAfter.get(0L)).as("가용 수량").isEqualTo(ledgerBefore.get(0L));
+        Map<Long, Instant> expectedConfirmedAt = new LinkedHashMap<Long, Instant>();
+        for (TrackedOrder order : tracked) {
+            expectedConfirmedAt.put(order.orderId(), switch (order.set()) {
+                case "normal" -> BASELINE_AT;
+                case "fault-confirmed" -> FAULT_AT;
+                default -> RECOVERY_AT;
+            });
+        }
+        Map<Long, Instant> actualConfirmedAt = new LinkedHashMap<Long, Instant>();
+        tracked.forEach(order -> actualConfirmedAt.put(order.orderId(), confirmedInstant(order.orderId())));
+        assertThat(actualConfirmedAt).as("20건 confirmedAt: 기준선 BASELINE_AT, 장애 확정 FAULT_AT, 유실 RECOVERY_AT")
+            .isEqualTo(expectedConfirmedAt);
         confirmedAtAfterRecovery = confirmedAtOfAll();
 
         Map<String, Object> extra = new LinkedHashMap<String, Object>();
@@ -545,22 +636,45 @@ class CheckoutIncidentE2ETest {
     }
 
     // 자기가 켠 것만 푼다: 남은 응답 유실 지정, 로그 appender·레벨, streamer·batch 컨텍스트. 거래·증거는 지우지 않는다.
-    private void releaseOwnInjections() {
-        try {
+    // 한 단계가 실패해도 나머지 단계는 돈다. 정리 예외는 모아서, 본 실패가 있으면 그 suppressed로 붙이고 없으면 던진다.
+    private void releaseOwnInjections(Throwable primary) {
+        List<Throwable> errors = new ArrayList<Throwable>();
+        releaseStep(errors, () -> {
             if (pgStarted) {
                 for (String providerOrderId : List.copyOf(armedLosses)) {
                     testPgFixture.clearOrderBehavior(providerOrderId);
                 }
             }
             armedLosses.clear();
-            detachLogCapture();
+        });
+        releaseStep(errors, this::detachLogCapture);
+        releaseStep(errors, () -> {
             if (streamer != null) {
                 streamer.close();
             }
-        } finally {
+        });
+        releaseStep(errors, () -> {
             if (batch != null) {
                 batch.close();
             }
+        });
+        if (errors.isEmpty()) {
+            return;
+        }
+        if (primary != null) {
+            errors.forEach(primary::addSuppressed);
+            return;
+        }
+        IllegalStateException released = new IllegalStateException("사고 테스트 정리 실패 " + errors.size() + "건", errors.get(0));
+        errors.subList(1, errors.size()).forEach(released::addSuppressed);
+        throw released;
+    }
+
+    private static void releaseStep(List<Throwable> errors, Runnable step) {
+        try {
+            step.run();
+        } catch (Throwable error) {
+            errors.add(error);
         }
     }
 
@@ -754,6 +868,10 @@ class CheckoutIncidentE2ETest {
 
     private String confirmedAt(long orderId) {
         return (String) orderRow(orderId).get("confirmed_at");
+    }
+
+    private Instant confirmedInstant(long orderId) {
+        return Instant.parse(confirmedAt(orderId));
     }
 
     private Map<Long, String> confirmedAtOfAll() {

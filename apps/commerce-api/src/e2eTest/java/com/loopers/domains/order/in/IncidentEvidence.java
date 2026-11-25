@@ -18,10 +18,11 @@ import java.util.UUID;
 import java.util.stream.Stream;
 
 // 사고 연결 테스트의 단계별 증거를 실행마다 새 폴더(build/incident-evidence/<runId>/)에 JSON 하나씩 남긴다.
-// 같은 이름 파일은 만들지 않고(CREATE_NEW) 지우지도 않는다. 실패한 실행도 그때까지 쓴 파일이 남는다.
+// 같은 이름 파일은 만들지 않고(CREATE_NEW) 지우지도 않는다. 실패한 실행도 그때까지 쓴 파일과 failure.json이 남는다.
 final class IncidentEvidence {
     private static final Path ROOT = Path.of("build", "incident-evidence");
-    private static final DateTimeFormatter RUN_TIME = DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'").withZone(ZoneOffset.UTC);
+    private static final DateTimeFormatter RUN_TIME = DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'")
+        .withZone(ZoneOffset.UTC);
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final String runId;
