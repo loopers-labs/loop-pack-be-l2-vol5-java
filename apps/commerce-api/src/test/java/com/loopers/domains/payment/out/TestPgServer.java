@@ -89,6 +89,7 @@ public final class TestPgServer implements AutoCloseable {
     private final AtomicInteger keySequence = new AtomicInteger();
     private final Map<String, OrderBehavior> orderBehaviors = new ConcurrentHashMap<>();
     private final Map<String, AtomicInteger> createCallsByOrder = new ConcurrentHashMap<>();
+    private final Set<String> lookupErrorOrderIds = ConcurrentHashMap.newKeySet();
     private volatile CreateBehavior createBehavior = CreateBehavior.ACCEPT_PENDING;
     private volatile LookupBehavior lookupBehavior = LookupBehavior.NORMAL;
 
@@ -148,6 +149,11 @@ public final class TestPgServer implements AutoCloseable {
 
     public void loseResponseAfterSuccess(String providerOrderId) {
         orderBehaviors.put(providerOrderId, OrderBehavior.LOSE_RESPONSE_AFTER_SUCCESS);
+    }
+
+    // 주문 번호 조회만 그 주문에 대해 500으로 답한다. 한 요청 안에서 주문마다 조회 결과가 달라야 하는 장면에 쓴다.
+    public void lookupErrorFor(String providerOrderId) {
+        lookupErrorOrderIds.add(providerOrderId);
     }
 
     public void clearOrderBehavior(String providerOrderId) {
@@ -299,6 +305,10 @@ public final class TestPgServer implements AutoCloseable {
             return;
         }
         String orderId = queryParameter(uri.getRawQuery(), "orderId");
+        if (lookupErrorOrderIds.contains(orderId)) {
+            send(exchange, 500, null);
+            return;
+        }
         ArrayNode array = objectMapper.createArrayNode();
         transactions.values().stream()
             .filter(stored -> stored.orderId().equals(orderId))
