@@ -198,6 +198,7 @@
 - local·dev 프로필에서만 `commerce.admin.basic-auth.enabled: true`다. 계정은 환경 변수 `COMMERCE_ADMIN_USERNAME`·`COMMERCE_ADMIN_PASSWORD`로만 받고 기본값이 없다.
 - 계정이 비어 있으면 인증 수단을 붙이지 않는다. 관리자 API는 전부 403이다.
 - 비밀번호는 시작 때 bcrypt(Spring 위임 인코더 기본)로 인코딩해 메모리에 둔다. 부모 AuthenticationManager는 두지 않는다. Boot 기본 사용자로 관리자 인증이 넘어가지 않게 하기 위해서다.
+- **[구현 판단]** Boot 기본 `UserDetailsServiceAutoConfiguration`은 commerce-api에서 제외한다(`CommerceApiApplication`). 시작 로그에 생성 비밀번호(`Using generated security password`)가 찍히지 않게 하기 위해서다(비밀값 출력 금지). 테스트로 고정한다.
 - 응답: 헤더 없음 → 403, 틀린 자격 증명 → 401, 맞는 자격 증명 → 통과. 고객 API에는 영향이 없다.
 - prd·qa 프로필에서 `enabled`가 켜지면 시작이 실패한다(`IllegalStateException`).
 - CSRF는 그대로다. 그래서 사람이 Basic만으로 관리자 POST(일괄 확정)를 보내는 방법은 **미정**이다(questions w10s4-5 대기). GET 목록은 Basic만으로 된다.
