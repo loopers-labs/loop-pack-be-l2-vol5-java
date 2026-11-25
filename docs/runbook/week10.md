@@ -3,6 +3,12 @@
 알림의 `runbook_url`이 가리키는 자리다. 규칙은 `docker/prometheus/rules/payment.yml`, 대시보드는 Grafana `commerce-payment-incident`다.
 각 절의 대응 본문은 범위 밖이다(다음 단계에서 쓴다).
 
+## 관리자 도구
+
+- local·dev에서만 쓴다. 계정은 환경 변수 `COMMERCE_ADMIN_USERNAME`·`COMMERCE_ADMIN_PASSWORD`로 넣는다. 변경 요청의 CSRF 토큰은 래퍼가 알아서 붙인다(설계 문서 9-4).
+- 미확인 목록: `scripts/ops/admin-curl.sh GET '/api-admin/v1/payments/unresolved?status=UNKNOWN&minAgeSeconds=300'`
+- 일괄 확정(목록에서 고른 orderId만, 1~50건): `scripts/ops/admin-curl.sh POST /api-admin/v1/payments/reconcile-batch '{"orderIds":[101,102]}'`
+
 ## PaymentUnresolvedPiling
 
 - severity: critical

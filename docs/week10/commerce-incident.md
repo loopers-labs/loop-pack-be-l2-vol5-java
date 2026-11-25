@@ -201,8 +201,20 @@
 - **[구현 판단]** Boot 기본 `UserDetailsServiceAutoConfiguration`은 commerce-api에서 제외한다(`CommerceApiApplication`). 시작 로그에 생성 비밀번호(`Using generated security password`)가 찍히지 않게 하기 위해서다(비밀값 출력 금지). 테스트로 고정한다.
 - 응답: 헤더 없음 → 403, 틀린 자격 증명 → 401, 맞는 자격 증명 → 통과. 고객 API에는 영향이 없다.
 - prd·qa 프로필에서 `enabled`가 켜지면 시작이 실패한다(`IllegalStateException`).
-- CSRF는 그대로다. 그래서 사람이 Basic만으로 관리자 POST(일괄 확정)를 보내는 방법은 **미정**이다(questions w10s4-5 대기). GET 목록은 Basic만으로 된다.
-- 위치: `common/config/AdminBoundaryConfig`, `AdminBasicAuthProperties`, `application.yml` local·dev 블록.
+- **CSRF [사용자 결정 A, w10s4-5]:** 관리자 체인만 `CookieCsrfTokenRepository.withHttpOnlyFalse()`를 쓴다. CSRF 확인 자체는 그대로다.
+  - 관리자 GET 응답이 `XSRF-TOKEN` 쿠키(HttpOnly 아님)를 준다. 변경 요청은 그 값을 쿠키와 `X-XSRF-TOKEN` 헤더로 같이 보내야 통과한다.
+  - 토큰이 없거나 헤더만 빠지거나 값이 다르면 맞는 Basic이어도 403이고 저장하지 않는다. 테스트로 고정한다(`AdminBasicAuthIntegrationTest$CookieCsrfTokenFlow`).
+  - 처리기는 Spring Security 문서의 Single-Page Applications 권장 방식이다(`SpaCsrfTokenRequestHandler`, 6.4에는 `csrf.spa()`가 없다). 헤더 값은 쿠키 원값으로 비교하고, 그 밖의 토큰 노출·비교는 XOR(BREACH 방어)이다. 지연 토큰은 처리기에서 로드해 조회 응답에 쿠키를 싣는다.
+  - Basic은 요청마다 인증하지만 인증 때 토큰을 다시 만들지 않는다. GET으로 받은 토큰을 다음 요청의 POST에 그대로 쓸 수 있다(테스트로 확인).
+  - 쿠키 속성은 기본값이다 **[PL 결정]**: Path는 기본(컨텍스트 경로), SameSite 미지정, 로컬 http라 Secure 없음.
+  - 별도 토큰 발급 API는 만들지 않았다(사용자 이유: 특정 상황만을 위한 API를 늘리지 않음).
+  - 고객 API는 관리자 체인 밖이라 바뀌지 않는다. 응답에 `XSRF-TOKEN` 쿠키가 생기지 않고 CSRF 토큰 없이 그대로 동작한다.
+- **래퍼 `scripts/ops/admin-curl.sh`:** 계정은 `COMMERCE_ADMIN_USERNAME`·`COMMERCE_ADMIN_PASSWORD`에서만 읽고 출력하지 않는다(curl 설정을 표준 입력으로 넘겨 프로세스 목록에도 남기지 않는다). 주소는 `COMMERCE_API_URL`(기본 `http://localhost:8080`).
+  - GET은 Basic으로 그대로 보낸다. 변경 요청은 임시 쿠키 jar로 관리자 GET(`/api-admin/v1/payments/unresolved?size=1`)을 먼저 보내 토큰을 받고, 헤더와 쿠키로 붙여 보낸다. jar는 끝나면 지운다.
+  - `/api-admin/` 밖의 경로는 거절한다.
+  - 예: `scripts/ops/admin-curl.sh GET '/api-admin/v1/payments/unresolved?status=UNKNOWN&minAgeSeconds=300'`
+  - 예: `scripts/ops/admin-curl.sh POST /api-admin/v1/payments/reconcile-batch '{"orderIds":[101,102]}'`
+- 위치: `common/config/AdminBoundaryConfig`, `SpaCsrfTokenRequestHandler`, `AdminBasicAuthProperties`, `application.yml` local·dev 블록.
 
 ### 9-5. 관리자 미확인 결제 목록 API
 
@@ -253,7 +265,7 @@
 - `runbook_url`은 저장소 상대 경로, `dashboard_url`은 `http://localhost:3000` 고정이다.
 - 실제 Slack은 연결하지 않았다. Alertmanager는 설정 파일에서 환경 변수를 펼치지 않으므로 운영은 `slack_configs`의 `api_url_file`로 비밀 파일을 읽는 방식이다. 주석만 있고 구현하지 않았다.
 - 새 counter 두 개가 실제 앱에서 Prometheus로 수집되는지는 앱을 연결해 확인하지 않았다. `unknown_entered`의 PENDING→UNKNOWN 경로 테스트가 없다.
-- 관리자 POST를 사람이 보내는 방법(CSRF)이 미정이다(9-4).
+- 래퍼 `admin-curl.sh`는 실제 앱에 붙여 실행하지 않았다. 문법 확인(`bash -n`)과 가짜 로컬 서버로 쿠키·헤더 흐름만 확인했다. 실제 체인의 쿠키·헤더 흐름은 통합 테스트가 확인한다(9-4).
 - 목록 쿼리 계획 **[구현 판단]**: 깨끗한 HEAD 복사본의 임시 테스트(MySQL 8.0.46, analyze 후)에서 확인했다. 주문 1만 건(결제 대기 100건·나머지 확정), 결제 기록 1만, schedule 100, 이상 234(미해결 34)다. 실제 `JdbcUnresolvedPaymentFinder` SQL, page 0·size 20.
 
 | 표 | type | key | rows | Extra |
