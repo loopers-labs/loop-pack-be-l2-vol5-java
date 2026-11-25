@@ -16,6 +16,7 @@ import org.springframework.security.crypto.factory.PasswordEncoderFactories;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.provisioning.InMemoryUserDetailsManager;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 
 @Configuration
 @EnableConfigurationProperties(AdminBasicAuthProperties.class)
@@ -28,6 +29,9 @@ public class AdminBoundaryConfig {
         rejectBasicAuthInForbiddenProfiles(basicAuth, environment);
         http.securityMatcher("/api-admin/**")
             .authorizeHttpRequests(rules -> rules.anyRequest().hasRole("ADMIN"))
+            // 운영자 스크립트가 조회 응답의 쿠키를 읽어 변경 요청 헤더로 되돌려 보내야 하므로 HttpOnly를 끈다. CSRF 확인 자체는 유지한다.
+            .csrf(csrf -> csrf.csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
+                .csrfTokenRequestHandler(new SpaCsrfTokenRequestHandler()))
             .exceptionHandling(errors -> errors.authenticationEntryPoint(
                 (request, response, exception) -> response.sendError(403)));
         // 계정이 없으면 인증 수단을 아예 붙이지 않아 지금처럼 모든 관리자 요청이 403이다.
