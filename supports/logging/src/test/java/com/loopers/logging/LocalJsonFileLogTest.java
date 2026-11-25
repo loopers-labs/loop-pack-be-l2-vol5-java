@@ -6,6 +6,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -28,6 +29,11 @@ class LocalJsonFileLogTest {
         "orderId", "attemptKey", "providerOrderId", "transactionKey", "traceId", "spanId"
     );
 
+    // appender는 마스킹하지 않는다. 넣은 MDC 키 외에 logstash 기본 필드만 쓰는지(다른 값을 끌어오지 않는지)를 본다.
+    private static final List<String> LOGSTASH_FIELDS = List.of(
+        "@timestamp", "@version", "message", "logger_name", "thread_name", "level", "level_value"
+    );
+
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final LogbackLoggingSystem loggingSystem = new LogbackLoggingSystem(getClass().getClassLoader());
 
@@ -43,7 +49,7 @@ class LocalJsonFileLogTest {
         System.clearProperty("LOG_PATH");
     }
 
-    @DisplayName("local 프로필에서 MDC가 있는 로그 1건을 쓰면 지정 파일에 JSON 한 줄이 생기고 최상위에 MDC 키·level·message가 있으며 카드번호는 없다")
+    @DisplayName("local 프로필에서 MDC가 있는 로그 1건을 쓰면 지정 파일에 JSON 한 줄이 생기고 최상위에 MDC 키·level·message가 있고 그 밖에는 logstash 기본 필드만 있다")
     @Test
     void writesJsonLineWithMdcAtTopLevel_whenLocalProfile() throws IOException {
         Path logFile = tempDir.resolve("commerce-api.json");
@@ -61,7 +67,11 @@ class LocalJsonFileLogTest {
         for (String key : MDC_KEYS) {
             assertThat(json.path(key).asText()).as(key).isEqualTo(key + "-value");
         }
-        assertThat(lines.get(0)).doesNotContainPattern("\\d{4}-?\\d{4}-?\\d{4}-?\\d{4}");
+        List<String> fieldNames = new ArrayList<>();
+        json.fieldNames().forEachRemaining(fieldNames::add);
+        List<String> expectedFieldNames = new ArrayList<>(LOGSTASH_FIELDS);
+        expectedFieldNames.addAll(MDC_KEYS);
+        assertThat(fieldNames).containsExactlyInAnyOrderElementsOf(expectedFieldNames);
     }
 
     @DisplayName("test 프로필에서는 로그를 써도 JSON 파일이 생기지 않는다")
