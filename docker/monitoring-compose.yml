@@ -1,10 +1,12 @@
 version: '3'
+# 포트는 127.0.0.1에만 연다(로컬 확인용). 컨테이너끼리는 기본 네트워크의 서비스 이름으로 통신한다.
+# fake-receiver는 alertmanager만 부르므로 호스트에 포트를 열지 않는다.
 services:
   prometheus:
     # 규칙 테스트(promtool)와 같은 버전으로 고정한다.
     image: prom/prometheus:v3.5.0
     ports:
-      - "9090:9090"
+      - "127.0.0.1:9090:9090"
     volumes:
       - ./grafana/prometheus.yml:/etc/prometheus/prometheus.yml
       - ./prometheus/rules:/etc/prometheus/rules:ro
@@ -14,7 +16,7 @@ services:
   alertmanager:
     image: prom/alertmanager:v0.28.1
     ports:
-      - "9093:9093"
+      - "127.0.0.1:9093:9093"
     volumes:
       - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
     command:
@@ -33,7 +35,7 @@ services:
   grafana:
     image: grafana/grafana
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning
     environment:
