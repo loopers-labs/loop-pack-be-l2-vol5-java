@@ -154,6 +154,13 @@ public final class TestPgServer implements AutoCloseable {
         orderBehaviors.remove(providerOrderId);
     }
 
+    public Set<String> lostResponseOrderIds() {
+        return orderBehaviors.entrySet().stream()
+            .filter(entry -> entry.getValue() == OrderBehavior.LOSE_RESPONSE_AFTER_SUCCESS)
+            .map(Map.Entry::getKey)
+            .collect(Collectors.toUnmodifiableSet());
+    }
+
     public int createCalls(String providerOrderId) {
         AtomicInteger calls = createCallsByOrder.get(providerOrderId);
         if (calls == null) {
