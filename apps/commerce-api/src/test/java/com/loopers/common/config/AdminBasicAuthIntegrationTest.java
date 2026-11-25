@@ -5,6 +5,7 @@ import com.loopers.domains.product.app.ProductApplicationService;
 import com.loopers.domains.user.out.UserJpaEntity;
 import com.loopers.domains.user.out.UserJpaRepository;
 import com.loopers.utils.DatabaseCleanUp;
+import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -17,6 +18,7 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
@@ -33,6 +35,9 @@ class AdminBasicAuthIntegrationTest {
     private static final String ADMIN_CREATE_BRAND = "/api-admin/v1/brands";
     private static final String USERNAME = "ops-admin";
     private static final String PASSWORD = "test-only-admin-pass";
+    private static final String CSRF_COOKIE = "XSRF-TOKEN";
+    private static final String CSRF_HEADER = "X-XSRF-TOKEN";
+    private static final String BRAND_BODY = "{\"name\":\"브랜드\"}";
 
     @SpringBootTest
     @AutoConfigureMockMvc
@@ -142,6 +147,85 @@ class AdminBasicAuthIntegrationTest {
                 .andExpect(status().isCreated());
             mvc.perform(get("/api/v1/orders").header("X-USER-ID", "1")).andExpect(status().isOk());
             mvc.perform(get("/api/v1/orders").with(httpBasic(USERNAME, PASSWORD))).andExpect(status().isUnauthorized());
+        }
+    }
+
+    // 관리자 변경은 GET으로 받은 XSRF-TOKEN 쿠키 값을 X-XSRF-TOKEN 헤더로 되돌려 보내야 통과한다. 테스트 지원 csrf()를 쓰지 않고 실제 쿠키·헤더로 확인한다.
+    @Nested
+    @TestPropertySource(properties = {
+        "commerce.admin.basic-auth.enabled=true",
+        "commerce.admin.basic-auth.username=" + USERNAME,
+        "commerce.admin.basic-auth.password=" + PASSWORD})
+    class CookieCsrfTokenFlow extends Scene {
+        @Test
+        @DisplayName("맞는 Basic 관리자 조회 응답은 스크립트가 읽을 수 있는(HttpOnly 아님) XSRF-TOKEN 쿠키를 준다")
+        void issuesReadableCsrfCookieOnAdminRead() throws Exception {
+            MvcResult result = mvc.perform(get(ADMIN_LIST).with(httpBasic(USERNAME, PASSWORD)))
+                .andExpect(status().isOk())
+                .andReturn();
+
+            Cookie cookie = result.getResponse().getCookie(CSRF_COOKIE);
+            assertThat(cookie).as("관리자 조회 응답의 XSRF-TOKEN 쿠키").isNotNull();
+            assertThat(cookie.getValue()).isNotBlank();
+            assertThat(cookie.isHttpOnly()).isFalse();
+        }
+
+        @Test
+        @DisplayName("조회로 받은 XSRF-TOKEN 쿠키 값을 쿠키와 X-XSRF-TOKEN 헤더로 붙인 Basic 관리자 변경은 201이고 저장된다")
+        void acceptsWriteWithTokenFromReadCookie() throws Exception {
+            Cookie cookie = mvc.perform(get(ADMIN_LIST).with(httpBasic(USERNAME, PASSWORD)))
+                .andReturn().getResponse().getCookie(CSRF_COOKIE);
+            assertThat(cookie).as("관리자 조회 응답의 XSRF-TOKEN 쿠키").isNotNull();
+
+            mvc.perform(post(ADMIN_CREATE_BRAND).with(httpBasic(USERNAME, PASSWORD))
+                    .cookie(cookie).header(CSRF_HEADER, cookie.getValue())
+                    .contentType(MediaType.APPLICATION_JSON).content(BRAND_BODY))
+                .andExpect(status().isCreated());
+
+            assertThat(brandCount()).isEqualTo(1L);
+        }
+
+        @Test
+        @DisplayName("X-XSRF-TOKEN 헤더 값이 XSRF-TOKEN 쿠키 값과 다르면 맞는 Basic이어도 관리자 변경은 403이고 저장하지 않는다")
+        void rejectsWriteWithMismatchedHeader() throws Exception {
+            mvc.perform(post(ADMIN_CREATE_BRAND).with(httpBasic(USERNAME, PASSWORD))
+                    .cookie(new Cookie(CSRF_COOKIE, "cookie-token-value")).header(CSRF_HEADER, "other-token-value")
+                    .contentType(MediaType.APPLICATION_JSON).content(BRAND_BODY))
+                .andExpect(status().isForbidden());
+
+            assertThat(brandCount()).isZero();
+        }
+
+        @Test
+        @DisplayName("토큰이 전혀 없거나 쿠키만 있고 X-XSRF-TOKEN 헤더가 없는 관리자 변경은 맞는 Basic이어도 403이고 저장하지 않는다")
+        void rejectsWriteWithoutHeaderToken() throws Exception {
+            mvc.perform(post(ADMIN_CREATE_BRAND).with(httpBasic(USERNAME, PASSWORD))
+                    .contentType(MediaType.APPLICATION_JSON).content(BRAND_BODY))
+                .andExpect(status().isForbidden());
+            mvc.perform(post(ADMIN_CREATE_BRAND).with(httpBasic(USERNAME, PASSWORD))
+                    .cookie(new Cookie(CSRF_COOKIE, "cookie-token-value"))
+                    .contentType(MediaType.APPLICATION_JSON).content(BRAND_BODY))
+                .andExpect(status().isForbidden());
+
+            assertThat(brandCount()).isZero();
+        }
+
+        @Test
+        @DisplayName("고객 API 응답에는 XSRF-TOKEN 쿠키가 생기지 않고 고객 주문은 CSRF 토큰 없이 지금처럼 201이다")
+        void leavesCustomerApiWithoutCsrfCookie() throws Exception {
+            long productId = products.create(brands.create("브랜드").id(), "상품", 1000, 5).id();
+            String body = "{\"items\":[{\"productId\":" + productId + ",\"quantity\":1}]}";
+
+            MvcResult created = mvc.perform(post("/api/v1/orders").header("X-USER-ID", "1")
+                    .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isCreated())
+                .andReturn();
+            MvcResult listed = mvc.perform(get("/api/v1/orders").header("X-USER-ID", "1"))
+                .andExpect(status().isOk())
+                .andReturn();
+
+            assertThat(created.getResponse().getCookie(CSRF_COOKIE)).isNull();
+            assertThat(listed.getResponse().getCookie(CSRF_COOKIE)).isNull();
         }
     }
 }
