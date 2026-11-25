@@ -8,6 +8,7 @@ import com.loopers.domain.payment.Payment;
 import com.loopers.domain.payment.PaymentCreation;
 import com.loopers.domain.payment.PaymentGateway;
 import com.loopers.domain.payment.PaymentService;
+import com.loopers.domain.payment.PaymentStatus;
 import com.loopers.domain.payment.ProviderOrderId;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.DomainError;
@@ -121,8 +122,13 @@ public class PaymentFacade {
         paymentMetrics.lookedUp("reconcile", result);
         return switch (result) {
             case LookupResult.Unavailable unavailable -> new ReconcileResult(payment, true);
-            case LookupResult.Observation observation -> new ReconcileResult(paymentTransactions.observe(
-                payment.getId(), observation, PaymentDiscrepancy.Source.LOOKUP, now), false);
+            case LookupResult.Observation observation -> {
+                PaymentStatus before = payment.getStatus();
+                Payment observed = paymentTransactions.observe(
+                    payment.getId(), observation, PaymentDiscrepancy.Source.LOOKUP, now);
+                paymentLog.changed(before, observed, "reconcile");
+                yield new ReconcileResult(observed, false);
+            }
         };
     }
 }

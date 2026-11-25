@@ -2,6 +2,7 @@ package com.loopers.application.payment;
 
 import com.loopers.domain.payment.CreateObservation;
 import com.loopers.domain.payment.Payment;
+import com.loopers.domain.payment.PaymentStatus;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -18,5 +19,18 @@ public class PaymentLog {
         }
         log.info("PG 생성 호출이 끝났다: paymentId={}, orderId={}, result={}",
             payment.getId(), payment.getOrderId(), result);
+    }
+
+    void changed(PaymentStatus from, Payment payment, String source) {
+        if (payment.getStatus() == from) {
+            return;
+        }
+        if (payment.getStatus() == PaymentStatus.CONFLICT) {
+            log.warn("결제가 PG 와 어긋난 상태로 바뀌었다: paymentId={}, orderId={}, source={}, from={}, to={}",
+                payment.getId(), payment.getOrderId(), source, from, payment.getStatus());
+            return;
+        }
+        log.info("결제 상태가 바뀌었다: paymentId={}, orderId={}, source={}, from={}, to={}",
+            payment.getId(), payment.getOrderId(), source, from, payment.getStatus());
     }
 }

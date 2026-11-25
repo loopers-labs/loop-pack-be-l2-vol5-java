@@ -737,6 +737,40 @@ class PaymentFacadeIntegrationTest {
                 .filter(line -> line.contains("result=unknown")))
                 .hasSize(1);
         }
+
+        @DisplayName("reconcile 이 조회 결과로 상태를 바꾸면 어디서 무엇이 무엇으로 바뀌었는지 한 줄 남는다")
+        @Test
+        void logsStatusChangedByReconcile(CapturedOutput output) {
+            Order order = place(2);
+            PG.dropNextCreateResponse();
+            Payment payment = confirm(order.getId(), "attempt-1");
+            PG.changeStatus(PG.transactionsOf(payment.getProviderOrderId().value()).get(0).transactionKey(), PgFixture.Status.SUCCESS);
+
+            paymentFacade.reconcile(USER, order.getId(), NOW.plusSeconds(10));
+
+            assertThat(changedLines(output, payment)).singleElement().asString()
+                .contains("orderId=" + order.getId(), "source=reconcile", "from=UNKNOWN", "to=SUCCESS");
+        }
+
+        @DisplayName("reconcile 이 조회했지만 상태가 그대로면 줄을 남기지 않는다")
+        @Test
+        void logsNothingWhenReconcileChangesNothing(CapturedOutput output) {
+            Order order = place(2);
+            Payment payment = confirm(order.getId(), "attempt-1");
+            int before = lookups();
+
+            paymentFacade.reconcile(USER, order.getId(), NOW.plusSeconds(10));
+
+            assertThat(lookups()).isEqualTo(before + 1);
+            assertThat(changedLines(output, payment)).isEmpty();
+        }
+
+        private List<String> changedLines(CapturedOutput output, Payment payment) {
+            return output.getOut().lines()
+                .filter(line -> line.contains("paymentId=" + payment.getId()))
+                .filter(line -> line.contains("from="))
+                .toList();
+        }
     }
 
     @Nested
