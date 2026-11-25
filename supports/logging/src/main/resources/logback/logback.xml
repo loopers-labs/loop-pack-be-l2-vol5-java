@@ -8,6 +8,14 @@
         </root>
     </springProfile>
 
+    <!-- 콘솔은 위 블록 그대로 두고, Alloy가 읽을 JSON 파일만 더한다. -->
+    <springProfile name="local,local-dev">
+        <include resource="appenders/json-file-appender.xml"/>
+        <root level="INFO">
+            <appender-ref ref="FILE"/>
+        </root>
+    </springProfile>
+
     <springProfile name="dev">
         <include resource="appenders/json-console-appender.xml"/>
         <include resource="appenders/slack-appender.xml"/>
