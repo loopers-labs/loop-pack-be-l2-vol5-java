@@ -211,6 +211,42 @@ class PaymentLogContextIntegrationTest {
         assertBusinessKeysCleared();
     }
 
+    @Test
+    @DisplayName("저장 키 없이 조회된 단일 거래가 금액이 다르면 판정 WARN 로그에 그 거래의 transactionKey가 붙지 않는다")
+    void mismatchedTransactionKeyIsNotAttachedToReviewLog() {
+        server.createBehavior(CreateBehavior.ERROR_500_AFTER_CREATE);
+        orders.confirm(1, orderId, TestPgFixture.command());
+        String foreignKey = server.transactions().get(0).transactionKey();
+        server.replaceTransaction(foreignKey, providerOrderId(orderId), 999, "SUCCESS");
+        logs.list.clear();
+
+        orders.reconcilePayment(orderId);
+
+        ILoggingEvent event = single(SERVICE_LOGGER, "result=Review");
+        assertThat(event.getMDCPropertyMap())
+            .containsEntry("orderId", String.valueOf(orderId))
+            .doesNotContainKey("transactionKey");
+        assertBusinessKeysCleared();
+    }
+
+    @Test
+    @DisplayName("저장 키 없이 조회된 단일 거래가 주문·금액과 일치하면 Verified INFO 로그에 그 거래의 transactionKey가 붙는다")
+    void matchedTransactionKeyIsAttachedToVerifiedLog() {
+        server.createBehavior(CreateBehavior.ERROR_500_AFTER_CREATE);
+        orders.confirm(1, orderId, TestPgFixture.command());
+        String matchedKey = server.transactions().get(0).transactionKey();
+        server.changeStatus(matchedKey, "SUCCESS");
+        logs.list.clear();
+
+        orders.reconcilePayment(orderId);
+
+        ILoggingEvent event = single(SERVICE_LOGGER, "result=Verified");
+        assertThat(event.getMDCPropertyMap())
+            .containsEntry("orderId", String.valueOf(orderId))
+            .containsEntry("transactionKey", matchedKey);
+        assertBusinessKeysCleared();
+    }
+
     private long newOrder() {
         return orders.create(1, List.of(new OrderApplicationService.ItemRequest(productId, 2))).id();
     }
