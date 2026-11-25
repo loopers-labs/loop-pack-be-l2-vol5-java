@@ -303,10 +303,6 @@ public class OrderApplicationService {
         // callback 본문은 누구나 보낼 수 있는 신호다. 저장된 값으로 잠금·트랜잭션 밖에서 PG를 조회한다.
         PaymentTransactionsLookup lookup = paymentGatewayRegistry.get(requested.getProviderId())
             .verifyOrder(requested.getProviderOrderId(), requested.getTransactionKey());
-        if (requested.getTransactionKey() == null
-            && lookup instanceof PaymentTransactionsLookup.Found found && found.transactions().size() == 1) {
-            logContext.transactionKey(found.transactions().get(0).transactionKey());
-        }
         if (lookup instanceof PaymentTransactionsLookup.NotCalled) {
             log.info("조회 회로 정책으로 PG를 호출하지 않았습니다. orderId={}, providerId={}, source={}",
                 requested.getOrderId(), requested.getProviderId(), source);
@@ -321,7 +317,7 @@ public class OrderApplicationService {
                 || (source != PaymentSource.MANUAL && payment.getProviderStatus() == PaymentRecord.ProviderStatus.NEEDS_REVIEW)) {
                 return OrderResult.from(order, Optional.of(payment));
             }
-            OrderResult result = applyLookupLocked(order, payment, lookup, source, callbackKey);
+            OrderResult result = applyLookupLocked(order, payment, lookup, source, callbackKey, logContext);
             if (source == PaymentSource.AUTOMATIC) {
                 advanceLookupSchedule(order, payment, lookup);
             }
@@ -330,7 +326,7 @@ public class OrderApplicationService {
     }
 
     private OrderResult applyLookupLocked(Order order, PaymentRecord payment, PaymentTransactionsLookup lookup,
-        PaymentSource source, String callbackKey) {
+        PaymentSource source, String callbackKey, PaymentLogContext.Scope logContext) {
         PaymentLookupAssessment assessment = PaymentLookupAssessment.assess(payment, lookup);
         if (source == PaymentSource.CALLBACK) {
             recordCallbackKeyMismatch(order.getId(), assessment.callbackComparisonKey(), callbackKey);
@@ -347,6 +343,10 @@ public class OrderApplicationService {
                 yield requireReview(order, payment, review.kind(), review.summary());
             }
             case PaymentLookupAssessment.Verified verified -> {
+                // 조회로 찾은 거래 키는 우리 주문·금액과 일치한다고 판정된 뒤에만 붙인다. 불일치 거래 키가 이 주문의 것처럼 보이지 않게 한다.
+                if (payment.getTransactionKey() == null) {
+                    logContext.transactionKey(verified.report().transactionKey());
+                }
                 log.info("PG 조회 판정. orderId={}, source={}, result=Verified, providerStatus={}",
                     order.getId(), source, verified.report().status());
                 yield applyLocked(order, Optional.of(payment), verified.report(), source);
