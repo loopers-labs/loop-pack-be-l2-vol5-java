@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# 알림 규칙·라우팅·대시보드 검사(10주차 4단계 4a). gradle check에는 넣지 않는다(Docker 필요).
-# 1) promtool check rules / check config  2) promtool test rules(0건이면 실패)
-# 3) amtool check-config / 라우팅 3건      4) 대시보드 JSON·datasource·dashboard_url·runbook 앵커 일치
+# 알림 규칙·라우팅·대시보드·로그 수집·가이드 서버 검사(10주차 4단계 4a·4b). gradle check에는 넣지 않는다(Docker 필요).
+# 1) promtool check rules / check config  2) promtool test rules(0건이면 실패, R1~R9)
+# 3) amtool check-config / 라우팅(A1: critical → 가이드와 Slack 자리 둘 다)
+# 4) 대시보드 JSON·datasource·dashboard_url·runbook 앵커 일치
+# 5) Alloy validate + label은 app·level만  6) Loki verify-config  7) 가이드 서버 unittest(0건·skip이면 실패)
 # 어느 단계든 실패하거나 도구가 실행되지 않으면 0이 아닌 값으로 끝난다.
 set -euo pipefail
 
@@ -11,12 +13,18 @@ unset DOCKER_CONFIG
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PROMETHEUS_IMAGE="prom/prometheus:v3.5.0"
 ALERTMANAGER_IMAGE="prom/alertmanager:v0.28.1"
+ALLOY_IMAGE="grafana/alloy:v1.10.1"
+LOKI_IMAGE="grafana/loki:3.5.3"
+PYTHON_IMAGE="python:3.12.11-slim"
 RULES_DIR="$ROOT/docker/prometheus/rules"
 AM_DIR="$ROOT/docker/alertmanager"
 PROM_CONFIG="$ROOT/docker/grafana/prometheus.yml"
 DASHBOARD="$ROOT/docker/grafana/provisioning/dashboards/payment-incident.json"
 DATASOURCE="$ROOT/docker/grafana/provisioning/datasources/datasource.yml"
 RUNBOOK="$ROOT/docs/runbook/week10.md"
+ALLOY_DIR="$ROOT/docker/alloy"
+LOKI_DIR="$ROOT/docker/loki"
+GUIDE_DIR="$ROOT/docker/guide"
 
 WORK_DIR="$(mktemp -d)"
 trap 'rm -rf "$WORK_DIR"' EXIT
@@ -76,8 +84,11 @@ route_case() {
     amtool config routes test --config.file=/etc/alertmanager/alertmanager.yml \
         --verify.receivers="$expected" "$@"
 }
-route_case guide-webhook alertname=PaymentUnresolvedPiling severity=critical
+# A1: critical은 가이드와 Slack 자리 둘 다로 간다(continue). 가이드가 죽어도 원본이 간다.
+route_case guide-webhook,slack alertname=PaymentUnresolvedPiling severity=critical
+route_case guide-webhook,slack alertname=PaymentAbandonedPiling severity=critical
 route_case slack alertname=PaymentNeedsReview severity=warning
+route_case slack alertname=GuideServerDown severity=warning
 route_case slack alertname=SomethingWithoutSeverity
 
 step "dashboard / rule links"
@@ -138,6 +149,53 @@ if errors:
         print("  ERROR", e)
     sys.exit(1)
 print("  OK")
+PY
+
+step "alloy validate"
+docker run --rm --network none -v "$ALLOY_DIR:/etc/alloy:ro" "$ALLOY_IMAGE" validate /etc/alloy/config.alloy
+python3 - "$ALLOY_DIR/config.alloy" <<'PY'
+import re
+import sys
+
+text = open(sys.argv[1], encoding="utf-8").read()
+
+
+def block_keys(name):
+    found = re.findall(name + r"\s*\{\s*values\s*=\s*\{(.*?)\}", text, re.S)
+    return [set(re.findall(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=", body, re.M)) for body in found]
+
+
+labels = block_keys(r"stage\.labels")
+metadata = block_keys(r"stage\.structured_metadata")
+keys = set().union(*labels) if labels else set()
+print(f"  labels={sorted(keys)} structured_metadata={sorted(set().union(*metadata)) if metadata else []}")
+errors = []
+if keys != {"app", "level"}:
+    errors.append(f"label은 app·level만이어야 함: {sorted(keys)}")
+want = {"orderId", "providerOrderId", "attemptKey", "transactionKey"}
+if not metadata or not want <= set().union(*metadata):
+    errors.append("orderId·providerOrderId·attemptKey·transactionKey가 structured metadata에 없음")
+if errors:
+    sys.exit("  ERROR " + "; ".join(errors))
+print("  OK")
+PY
+
+step "loki verify-config"
+docker run --rm --network none -v "$LOKI_DIR:/etc/loki:ro" "$LOKI_IMAGE" \
+    -config.file=/etc/loki/loki.yml -verify-config
+echo "  OK"
+
+step "guide unittest"
+# -i: 아래 검사 스크립트를 stdin으로 넘긴다. 빠지면 빈 스크립트가 0으로 끝나 거짓 통과가 된다.
+docker run -i --rm --network none -e PYTHONDONTWRITEBYTECODE=1 -v "$GUIDE_DIR:/app:ro" -w /app "$PYTHON_IMAGE" \
+    python - <<'PY'
+import sys
+import unittest
+
+result = unittest.TextTestRunner(verbosity=2, stream=sys.stdout).run(unittest.defaultTestLoader.loadTestsFromName("test_guide"))
+print(f"  executed={result.testsRun} failed={len(result.failures)} errors={len(result.errors)} skipped={len(result.skipped)}")
+if result.testsRun == 0 or result.failures or result.errors or result.skipped:
+    sys.exit("guide tests: 0건, 실패, 오류 또는 skip")
 PY
 
 printf '\nALL CHECKS PASSED\n'

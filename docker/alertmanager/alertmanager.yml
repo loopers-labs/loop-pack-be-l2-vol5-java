@@ -1,5 +1,7 @@
 # 알림 라우팅(10주차 4단계 4a). 라우팅 모양은 scripts/ops/check-alerting.sh의 amtool 라우팅 테스트로 고정한다.
-# critical(사람을 깨움) → guide-webhook: 4b에서 근거를 붙이는 가이드 서버로 바꾼다. 지금은 가짜 수신기다.
+# critical(사람을 깨움) → guide-webhook과 slack 둘 다(continue, 10주차 4b P4).
+#   guide-webhook은 가이드 서버다. 근거를 붙인 두 번째 메시지를 Slack 자리로 보낸다.
+#   slack으로도 원본을 바로 보낸다. 가이드가 죽거나 늦어도 사람은 원본을 받는다.
 # warning(아침 확인)    → slack: 로컬은 가짜 수신기다.
 #   실제 Slack은 receivers.slack에 slack_configs를 두고 api_url_file로 비밀 파일을 읽는다.
 #   Alertmanager는 설정 파일에서 환경 변수를 펼치지 않는다. 배포 환경이 SLACK_WEBHOOK_URL 환경 변수를 그 파일로 써 넣는다.
@@ -18,6 +20,11 @@ route:
         - severity="critical"
       receiver: guide-webhook
       repeat_interval: 1h
+      continue: true
+    - matchers:
+        - severity="critical"
+      receiver: slack
+      repeat_interval: 1h
     - matchers:
         - severity="warning"
       receiver: slack
@@ -26,7 +33,7 @@ route:
 receivers:
   - name: guide-webhook
     webhook_configs:
-      - url: http://fake-receiver:8080/guide
+      - url: http://guide:8080/alert
         send_resolved: true
   - name: slack
     webhook_configs:

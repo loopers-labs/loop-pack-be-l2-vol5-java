@@ -6,3 +6,9 @@ datasources:
     access: proxy
     url: http://prometheus:9090
     isDefault: true
+  # 10주차 4b. 대시보드 "주문 번호로 경계 로그" 패널이 이 uid를 쓴다.
+  - name: Loki
+    uid: loki
+    type: loki
+    access: proxy
+    url: http://loki:3100

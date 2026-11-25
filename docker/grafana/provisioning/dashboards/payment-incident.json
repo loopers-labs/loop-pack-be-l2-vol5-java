@@ -313,7 +313,7 @@
       "id": 6,
       "type": "table",
       "title": "결제 알림 상태",
-      "description": "지금 pending·firing인 결제 알림. 각 알림의 runbook_url을 따라간다.\nrunbook: docs/runbook/week10.md#paymentunresolvedpiling 외 규칙별 앵커",
+      "description": "지금 pending·firing인 결제 알림. 각 알림의 runbook_url을 따라간다.\nrunbook: docs/runbook/week10.md#paymentunresolvedpiling 외 규칙별 앵커(GuideServerDown 포함)",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -333,9 +333,98 @@
       },
       "targets": [
         {
-          "expr": "sum by (alertname, severity, alertstate) (ALERTS{alertname=~\"Payment.*\"})",
+          "expr": "sum by (alertname, severity, alertstate) (ALERTS{alertname=~\"Payment.*|GuideServerDown\"})",
           "instant": true,
           "format": "table",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "logs",
+      "title": "주문 번호로 경계 로그",
+      "description": "위 변수 orderId에 주문 번호를 넣으면 그 주문의 경계 로그(create 결과·조회 판정·종결)를 시간순으로 본다. orderId는 Loki structured metadata다(label 아님). 기본값 .+는 orderId가 붙은 경계 로그 전체다.\nrunbook: docs/runbook/week10.md#주문-번호로-경계-로그-찾기",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 18,
+        "h": 10
+      },
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "sortOrder": "Ascending",
+        "enableLogDetails": true,
+        "dedupStrategy": "none"
+      },
+      "targets": [
+        {
+          "expr": "{app=\"commerce-api\"} | orderId=~\"${orderId:regex}\" |= \"OrderApplicationService\"",
+          "queryType": "range",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "stat",
+      "title": "가이드 서버 가동",
+      "description": "critical 가이드 서버 up(1=가동). 0이 5분 지속되면 GuideServerDown(warning). 그동안 critical은 원본만 간다.\nrunbook: docs/runbook/week10.md#guideserverdown",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 24,
+        "w": 6,
+        "h": 10
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background"
+      },
+      "targets": [
+        {
+          "expr": "up{job=\"guide\"}",
+          "instant": true,
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
@@ -352,5 +441,20 @@
       "url": "docs/runbook/week10.md",
       "targetBlank": true
     }
-  ]
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "orderId",
+        "label": "주문 번호(orderId)",
+        "type": "textbox",
+        "query": ".+",
+        "current": {
+          "text": ".+",
+          "value": ".+"
+        },
+        "hide": 0
+      }
+    ]
+  }
 }

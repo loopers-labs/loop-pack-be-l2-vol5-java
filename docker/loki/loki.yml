@@ -1,0 +1,46 @@
+# 로컬 Loki(10주차 4b). 단일 바이너리, 로컬 파일 저장, 인증 없음(127.0.0.1에만 연다).
+# label은 Alloy가 app·level만 붙인다. orderId 등 주문 열쇠는 structured metadata라 label 수가 늘지 않는다.
+# 보존 [임시] 72h: 로컬 진단용이라 사고 하루 뒤까지 되짚을 수 있으면 충분하다. compactor가 지난 청크를 지운다.
+auth_enabled: false
+
+server:
+  http_listen_port: 3100
+  log_level: warn
+
+common:
+  path_prefix: /loki
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+  storage:
+    filesystem:
+      chunks_directory: /loki/chunks
+      rules_directory: /loki/rules
+
+schema_config:
+  configs:
+    - from: "2026-01-01"
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+
+limits_config:
+  retention_period: 72h
+  allow_structured_metadata: true
+  # Loki 3 기본값은 service_name label과 detected_level metadata를 자동으로 더한다. label을 app·level로 묶어 두려고 끈다.
+  discover_service_name: []
+  discover_log_levels: false
+  # 앱을 띄우기 전의 지난 로그 파일도 읽을 수 있게 한다(Alloy가 처음부터 읽는다).
+  reject_old_samples: false
+
+compactor:
+  working_directory: /loki/compactor
+  retention_enabled: true
+  delete_request_store: filesystem
+
+analytics:
+  reporting_enabled: false

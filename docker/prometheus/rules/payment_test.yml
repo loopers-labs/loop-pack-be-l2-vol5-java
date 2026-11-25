@@ -1,5 +1,5 @@
 # payment.yml 규칙 테스트(promtool test rules). 실행: scripts/ops/check-alerting.sh
-# 각 그룹은 계획의 장면 R1~R8 하나다. 수치는 payment.yml의 [임시] 값(X=0.2%, N=20, M=10m, K=5)에 맞췄다.
+# 각 그룹은 계획의 장면 R1~R9 하나다(R9는 10주차 4b 가이드 서버 생존 감시). 수치는 payment.yml의 [임시] 값(X=0.2%, N=20, M=10m, K=5)에 맞췄다.
 # 시계열은 1분 간격이다. 'a+bxn'은 a에서 시작해 1분마다 b씩 n번 더한다.
 rule_files:
   - payment.yml
@@ -330,3 +330,28 @@ tests:
       - eval_time: 14m
         alertname: PaymentPgUnreachable
         exp_alerts: []
+
+  # R9 가이드 서버가 5분째 응답하지 않으면 warning. 6분부터 up=0이고 for 5m이라 11분부터 울린다.
+  - name: R9 가이드 서버가 5분 넘게 down이면 GuideServerDown warning 울림
+    interval: 1m
+    input_series:
+      - series: 'up{job="guide", instance="guide:8080"}'
+        values: '1x5 0x15'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: GuideServerDown
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: GuideServerDown
+        exp_alerts: []
+      - eval_time: 12m
+        alertname: GuideServerDown
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: guide
+              instance: guide:8080
+            exp_annotations:
+              summary: critical 가이드 서버가 5분 넘게 응답하지 않습니다. critical 알림은 근거 없이 원본만 갑니다.
+              runbook_url: docs/runbook/week10.md#guideserverdown
+              dashboard_url: http://localhost:3000/d/commerce-payment-incident

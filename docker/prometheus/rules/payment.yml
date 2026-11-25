@@ -1,4 +1,4 @@
-# 결제 사고 알림 규칙(10주차 4단계 4a). 모양은 payment_test.yml(promtool test rules)로 고정한다.
+# 결제 사고 알림 규칙(10주차 4단계 4a, 4b에서 가이드 서버 생존 감시 그룹 추가). 모양은 payment_test.yml(promtool test rules)로 고정한다.
 # 원칙: 사람이 지금 손대야 할 것만 울린다. 자동 재조회로 풀리는 일시 증가는 대시보드에서만 본다.
 #   critical = 자동 회복이 안 먹힘 AND 당장 조치할 만큼 쌓임(사람을 깨운다).
 #   warning  = 한 건이라도 사람 확인이 필요하지만 아침에 봐도 되는 것.
@@ -92,3 +92,19 @@ groups:
 
       # (5단계 자리) 환불 규칙: 고객에게 약속한 환불 기한까지 남은 시간으로 급한 정도를 정한다.
       # 지표·규칙·테스트는 5단계에서 추가한다.
+
+  # 결제 알림을 받쳐 주는 운영 도구의 생존 감시(10주차 4b).
+  - name: commerce-ops
+    rules:
+      # [임시] 5m. 가이드 서버가 죽어도 critical 원본은 Alertmanager가 Slack 자리로 따로 보낸다(continue).
+      # 그래서 깨우지 않고 아침 확인(warning)으로 둔다. 짧은 재시작은 거른다.
+      - alert: GuideServerDown
+        expr: |
+          up{job="guide"} == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: critical 가이드 서버가 5분 넘게 응답하지 않습니다. critical 알림은 근거 없이 원본만 갑니다.
+          runbook_url: docs/runbook/week10.md#guideserverdown
+          dashboard_url: http://localhost:3000/d/commerce-payment-incident
