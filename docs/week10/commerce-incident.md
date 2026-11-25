@@ -38,7 +38,7 @@
 | create 결과 모름 | WARN | orderId, providerId, result=Unknown, reason |
 | create 미발송 | WARN | orderId, providerId, result=NotSent, reason |
 | 반영: 확정으로 처음 바뀜 | INFO(commit 뒤) | orderId, source |
-| 반영: 결제 실패로 처음 바뀜 | INFO(commit 뒤) | orderId, result, providerStatus, source |
+| 반영: 결제 실패로 처음 바뀜 | INFO(commit 뒤) | orderId, result(FAILED·NOT_SENT, 4-2와 같은 분류), providerStatus, source |
 | 반영: 이미 같은 결과(UNCHANGED) | 줄 없음 | create·판정 줄이 이미 남긴다 |
 | 반영: 종결 주문에 반대 결과(CONFLICT) | WARN | orderId, status, providerStatus |
 | confirm 반영 TX 실패 | ERROR | orderId, providerStatus, causeType |
@@ -68,13 +68,13 @@
 | 본인·관리자 reconcile | 진입 즉시 orderId. 결제 기록을 읽은 뒤 attemptKey·providerOrderId |
 | 자동 재조회 | 주문마다 열고 닫는다. 건별 try/catch 바깥이다 |
 | 만료 | 주문마다 열고 닫는다 |
-| 조회(공통) | 저장된 거래 키가 있으면 그 값. 없고 조회로 거래 한 건을 찾으면 그 키 |
+| 조회(공통) | 저장된 거래 키(create Accepted로 받아 저장한 키)가 있으면 진입 때 그 값. 없으면 조회로 찾은 거래의 키를 판정이 Verified일 때만 |
 
 - **[구현 판단]** `order/app/PaymentLogContext.Scope`(try-with-resources)가 열 때 네 키의 이전 값을 저장하고 비운다. 닫을 때 이전 값으로 복원한다. 없던 키는 지운다. confirm이 안에서 결과 반영을 부르듯 진입점이 겹쳐도 바깥 문맥이 지켜지고, 스레드 풀에 키가 남지 않는다.
 - adapter는 호출한 스레드에서 동기로 돈다. 그래서 MDC를 그대로 물려받는다. adapter 시그니처는 바꾸지 않았다.
 - 확인 사실: HTTP 요청 스레드 MDC에는 `traceId`·`spanId`가 이미 들어 있다(테스트 실행으로 확인).
 - dev·qa·prd 로그는 logstash JSON(Boot structured logging)이다. MDC 키마다 최상위 JSON 필드로 나간다.
-- 저장된 거래 키가 없고 조회로 찾은 거래가 1건이면 매칭 확인 전에 그 키를 MDC `transactionKey`로 넣는다. 매칭이 불일치(TRANSACTION_MISMATCH)면 우리 것이 아닌 키가 붙을 수 있다.
+- 조회로 찾은 거래 키는 판정이 Verified(우리 주문·금액과 일치)일 때만 MDC `transactionKey`로 넣는다. 불일치·복수·0건(Uncertain·Review)이면 넣지 않는다. 남의 거래 키가 이 주문의 것처럼 찍히지 않게 하기 위해서다(w10s1b 1-1). 판정 WARN에는 kind·summary만 남는다.
 
 ## 4. 지표
 
@@ -85,14 +85,16 @@
 - DB를 주기 조회한다. 주기는 `commerce.payment.unresolved-metric.refresh-interval: 15s` **[임시]**다. 값은 주기만큼 늦다. test 프로필에서는 갱신 스케줄러가 꺼져 있다.
 - 첫 갱신 전 값은 NaN이다. 0이면 "미확인 없음"으로 읽히기 때문이다 **[구현 판단]**.
 - 갱신이 실패하면 마지막 값을 유지하고 WARN(causeType)을 남긴다 **[구현 판단]**.
-- 갱신 스케줄은 결제 조회·Outbox relay와 스케줄 풀(크기 2, 설계 28절)을 나눠 쓴다. 두 작업이 동시에 긴 회차(PG timeout 연속, relay broker 대기 최대 35초)에 들어가면 갱신이 주기보다 늦어질 수 있다(코드 추론, 실행 확인 안 함).
+- 갱신 스케줄은 전용 단일 스레드(`sched-unresolved-metric-`)에서 돈다(7절). 결제 조회·relay가 길게 막혀도 갱신은 밀리지 않는다(재조회와 relay를 함께 막아 둔 테스트로 확인). 단 DB 연결 풀은 함께 쓰므로 풀이 고갈되면 갱신도 늦어질 수 있다.
 - 인스턴스마다 같은 값을 낸다. 여러 인스턴스는 합하지 말고 max로 본다.
 - orderId·userId·traceId는 태그로 넣지 않는다.
 
 ### 4-2. 결제 종결 결과 counter `commerce.payment.outcome` [사용자 결정]
 
-- 태그 `result`: confirmed · failed · expired. 세 시계열을 시작부터 등록한다(0도 시계열이 있다). orderId는 태그로 넣지 않는다.
-- `failed`에는 PG FAILED뿐 아니라 모든 PG 미발송(ALL_NOT_SENT)·효과 없는 거절(REJECTED_NO_EFFECT)로 종결된 것도 들어간다(`PaymentReport.outcome`). 실패 종결 INFO도 같다.
+- 태그 `result`: confirmed · failed · not_sent · expired. 네 시계열을 시작부터 등록한다(0도 시계열이 있다). orderId는 태그로 넣지 않는다.
+- `failed`: PG가 거래를 만들고 FAILED로 확정한 경우(카드 거절 등)만이다.
+- `not_sent`: 거래가 생기기 전에 끝난 실패다. 모든 PG 미발송(ALL_NOT_SENT)과 효과 없는 거절(REJECTED_NO_EFFECT)이다. 돈이 움직이지 않았다 **[사용자 결정 w10s1-3 B, REJECTED_NO_EFFECT 위치는 PL 결정]**.
+- 나눈 이유: 거절 급증(`failed`)이 카드사·PG 판정 문제만 가리키게 하기 위해서다. 실패 종결 INFO의 `result`도 같은 분류다(`FAILED`·`NOT_SENT`).
 - 주문이 종결로 처음 바뀔 때만 1 늘린다. 같은 결과 재확인(UNCHANGED)·반대 결과(CONFLICT)·확인 필요 유지·재조회 반복은 세지 않는다.
 - commit 뒤에만 센다. rollback된 종결을 세지 않기 위해서다. 활성 트랜잭션 없이 부르면 예외로 막는다.
 - 차이: 만료 종결 INFO는 commit 뒤가 아니라 즉시 남긴다. 만료 TX가 rollback되면 만료 INFO만 남을 수 있다. counter는 commit 뒤에만 센다.
@@ -112,3 +114,17 @@
 - callback의 providerOrderId는 인증 없는 외부 입력이다. 형식·길이 검사 없이(빈 값만 거절) MDC에 들어간다. 메시지 본문에는 넣지 않는다.
 - 수동 reconcile·callback 반영 실패의 공통 ERROR는 Scope가 닫힌 뒤 찍힌다. 그래서 orderId MDC가 없고 traceId로만 잇는다.
 - `payment_records.provider_order_id`에는 인덱스가 없다. callback의 결제 기록 조회는 전체 탐색이 될 수 있다. 이번 단계에서는 고치지 않는다.
+
+## 7. 스케줄 작업 스레드 [사용자 결정]
+
+- 8주차 설계 28절의 "스케줄러 풀 2"를 **작업마다 전용 단일 스레드 스케줄러**(격벽)로 대체한다. 한 작업이 PG timeout·broker 대기로 길게 막혀도 다른 작업은 제 주기에 돈다. 8주차 문서는 고치지 않는다.
+
+| 작업 | 스케줄러 빈 | 스레드 이름 접두사 |
+| --- | --- | --- |
+| 결제 자동 재조회·만료(`PaymentLookupScheduler`) | `paymentLookupTaskScheduler` | `sched-payment-lookup-` |
+| Outbox relay(`OrderOutboxRelayScheduler`) | `outboxRelayTaskScheduler` | `sched-outbox-relay-` |
+| 미확인 결제 gauge 갱신(`UnresolvedPaymentMetricsScheduler`) | `unresolvedMetricTaskScheduler` | `sched-unresolved-metric-` |
+
+- 앞으로 생길 스케줄 작업(대사·환불 등)도 같은 규칙이다. 전용 스케줄러를 하나 더 만들고 `@Scheduled(scheduler = ...)`로 붙인다.
+- **[구현 판단]** 빈은 `order/config/OrderSchedulingConfig`가 작업 켜기 설정과 무관하게 항상 만든다. 작업이 꺼져 있으면 스레드는 놀기만 한다. Boot `ThreadPoolTaskSchedulerBuilder`로 만들어 `spring.task.scheduling.shutdown.*` 설정이 빈마다 적용된다. 종료 대기는 Boot 기본(기다리지 않음)이다. 이 빈들이 있어 Boot 기본 `taskScheduler`는 만들어지지 않고, `spring.task.scheduling.pool.size` 설정은 지웠다.
+- 남는 공유 자원: DB 연결 풀과 PG는 작업끼리 여전히 나눠 쓴다.
