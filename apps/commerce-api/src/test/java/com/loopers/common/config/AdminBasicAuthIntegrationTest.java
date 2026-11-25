@@ -27,41 +27,44 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 // 관리자 HTTP Basic은 local·dev 프로필 설정이 켜고 계정은 환경 변수로만 받는다. test 프로필에서는 같은 프로퍼티를 직접 넣어 증명한다.
 // 비밀번호 값은 이 테스트 전용이며 운영 계정과 무관하다.
-@SpringBootTest
-@AutoConfigureMockMvc
+// 바깥 클래스에 Spring을 두면 바깥 인스턴스의 주입 필드가 프로퍼티 없는 바깥 컨텍스트에서 온다. 그래서 장면마다 자기 컨텍스트로 주입받는다.
 class AdminBasicAuthIntegrationTest {
     private static final String ADMIN_LIST = "/api-admin/v1/orders";
     private static final String ADMIN_CREATE_BRAND = "/api-admin/v1/brands";
     private static final String USERNAME = "ops-admin";
     private static final String PASSWORD = "test-only-admin-pass";
 
-    @Autowired private MockMvc mvc;
-    @Autowired private BrandApplicationService brands;
-    @Autowired private ProductApplicationService products;
-    @Autowired private UserJpaRepository users;
-    @Autowired private JdbcTemplate jdbc;
-    @Autowired private DatabaseCleanUp cleanup;
+    @SpringBootTest
+    @AutoConfigureMockMvc
+    abstract static class Scene {
+        @Autowired protected MockMvc mvc;
+        @Autowired protected BrandApplicationService brands;
+        @Autowired protected ProductApplicationService products;
+        @Autowired private UserJpaRepository users;
+        @Autowired private JdbcTemplate jdbc;
+        @Autowired private DatabaseCleanUp cleanup;
 
-    @BeforeEach
-    void prepare() {
-        users.save(new UserJpaEntity(1));
-    }
+        @BeforeEach
+        void prepare() {
+            users.save(new UserJpaEntity(1));
+        }
 
-    @AfterEach
-    void clean() {
-        jdbc.update("delete from order_items");
-        cleanup.truncateAllTables();
-    }
+        @AfterEach
+        void clean() {
+            jdbc.update("delete from order_items");
+            cleanup.truncateAllTables();
+        }
 
-    private long brandCount() {
-        return jdbc.queryForObject("select count(*) from brands", Long.class);
+        protected long brandCount() {
+            return jdbc.queryForObject("select count(*) from brands", Long.class);
+        }
     }
 
     @Nested
     @TestPropertySource(properties = {
         "commerce.admin.basic-auth.username=" + USERNAME,
         "commerce.admin.basic-auth.password=" + PASSWORD})
-    class BasicAuthNotEnabled {
+    class BasicAuthNotEnabled extends Scene {
         @Test
         @DisplayName("Basic 인증을 켜지 않은 프로필은 계정 값이 있어도 맞는 Basic 요청을 지금처럼 403으로 거절한다")
         void rejectsEvenMatchingBasic() throws Exception {
@@ -72,7 +75,7 @@ class AdminBasicAuthIntegrationTest {
 
     @Nested
     @TestPropertySource(properties = "commerce.admin.basic-auth.enabled=true")
-    class BasicAuthEnabledWithoutAccount {
+    class BasicAuthEnabledWithoutAccount extends Scene {
         @Test
         @DisplayName("Basic 인증을 켰지만 계정 환경 변수가 없으면 어떤 Basic 요청도 관리자 API에서 지금처럼 403으로 거절한다")
         void rejectsAllAdminRequests() throws Exception {
@@ -90,7 +93,7 @@ class AdminBasicAuthIntegrationTest {
         "commerce.admin.basic-auth.enabled=true",
         "commerce.admin.basic-auth.username=" + USERNAME,
         "commerce.admin.basic-auth.password=" + PASSWORD})
-    class BasicAuthEnabledWithAccount {
+    class BasicAuthEnabledWithAccount extends Scene {
         @Test
         @DisplayName("Basic 인증을 켜고 계정을 설정하면 맞는 Basic 관리자 조회는 200이다")
         void acceptsMatchingBasicOnRead() throws Exception {

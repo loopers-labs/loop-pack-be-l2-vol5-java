@@ -119,12 +119,26 @@ spring:
         - classpath:sql/local/seed-coupon-admission-settings.sql
   jpa:
     defer-datasource-initialization: true
+# 관리자 HTTP Basic(local·dev 전용). 계정은 환경 변수로만 받고 기본값을 두지 않는다. 비어 있으면 관리자 API는 모두 거절된다.
+commerce:
+  admin:
+    basic-auth:
+      enabled: true
+      username: ${COMMERCE_ADMIN_USERNAME:}
+      password: ${COMMERCE_ADMIN_PASSWORD:}
 
 ---
 spring:
   config:
     activate:
       on-profile: dev
+# 관리자 HTTP Basic(local·dev 전용). 계정은 환경 변수로만 받고 기본값을 두지 않는다. 비어 있으면 관리자 API는 모두 거절된다.
+commerce:
+  admin:
+    basic-auth:
+      enabled: true
+      username: ${COMMERCE_ADMIN_USERNAME:}
+      password: ${COMMERCE_ADMIN_PASSWORD:}
 
 ---
 spring:
