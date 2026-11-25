@@ -699,6 +699,28 @@ streamer      ├─ OTLP trace ────────────────
 | 3 | fault: PG 호출 span | trace를 너무 일찍 읽었다 — 24ms짜리 확정 span만 먼저 도착하고 3초짜리 PG span은 아직 오는 중 | 기다린 span이 들어올 때까지 다시 받는다 |
 | 4 | recovery: 구매 활동 로그의 traceId | `ls … \| head -1`이 이름 순으로 **지난주 streamer jar**를 골랐다 (Brave bridge, 전송처 없음) | jar를 지금 HEAD hash 이름으로 고른다 |
 
+### 관측 화면·AI 진단 실행 (2026-11-25, `docs/week10/results/w10-20261125-192654/`, D-13)
+
+**검사 154개 중 154개 통과** — `PAUSE_AFTER_FAULT=1 KEEP=1 bash docs/week10/run.sh`, 커밋 `c421a264` (작업 트리 깨끗). 단계 표·가설 판정은 위 실행과 같다. 더해진 검사 19개:
+
+| 저장소 | 확인한 것 |
+|---|---|
+| Prometheus | 저장값 UNKNOWN 3 → 0 · PG 생성 호출 최대 지연 ≥ 2.9초(outcome=UNKNOWN) · span 지표 |
+| Tempo service graph | commerce-api → commerce-streamer 17 · commerce-api → localhost(PG) 37 · commerce-api → commerce-api 17(Outbox 저장 → relay) |
+| Loki | 응답 유실 주문의 ② 줄을 주문 ID로 · trace_id로 각각 1줄 · label에 orderId·traceId 없음 · 카드 번호·임시 비밀번호 0줄 |
+| Grafana | 대시보드 `w10-incident` · 단계 표시 4개 이상 |
+
+**AI 진단** (`ai-diagnosis/`, fault에서 멈춘 동안 · Grafana MCP만 · 질의 23개 · 약 3분)
+
+| 가설 | AI | run.sh | 차이 |
+|---|---|---|---|
+| 1 | 기각 | 기각 | AI 근거는 **pg-sim(장애 주입기) 로그** — 운영이면 볼 수 없는 증거. 이를 빼면 미확정이어야 한다. run.sh는 PG 조회 API |
+| 2 | 지지 | 지지 | 같은 근거(② READ_TIMEOUT · 3초 error span · 지표 3) |
+| 3 | 기각 | 기각 | 같은 근거(③·⑤ 0줄) |
+
+- 결론은 같았지만 근거 하나가 "주입 코드의 정답"이었다 (과제 §4). 대조와 짚을 점은 `ai-diagnosis/compare.md`.
+- 다음 실험 후보 🤔: pg-sim 로그를 Loki에 넣지 않고 다시 → AI가 가설 1을 미확정으로 내는지.
+
 ## 변경 이력
 
 - 2026-11-23: 과제 요약·기존 자산과 함정·설계 항목 목록 작성 (브랜치 `volume-10-claude`, 기준 `a76bd0a6`).
@@ -722,4 +744,5 @@ streamer      ├─ OTLP trace ────────────────
 - 2026-11-24: run.sh 3·4번째 실행 실패 원인(trace를 너무 일찍 읽음 · 지난 jar를 고름)을 고쳐 5번째 실행에서 검사 135개 통과. 증거 `docs/week10/results/w10-20261124-231516/`.
 - 2026-11-25: 전체 회귀에서 commerce-api 테스트 JVM이 메모리 부족(OOM). 원인: 업무 지표 gauge의 람다가 `PaymentQueryService`를 강한 참조로 잡고, Spring Boot는 문맥마다 만든 registry를 전역 registry에 넣고 빼지 않는다 → `@DirtiesContext`로 닫힌 문맥이 회수되지 않고 쌓였다. 서비스를 weak reference로 넘기게 고쳤다 (D-4, 지표 동작은 같다).
 - 2026-11-25: D-13 추가 — Grafana 대시보드 · Loki+Alloy(로그 파일 수집) · Tempo service graph · MCP(저장소엔 `example.mcp.json` 틀, 등록은 로컬). 과제 밖 추가.
+- 2026-11-25: D-13 실행 `w10-20261125-192654` 154개 통과 · AI 진단 대조(위 "관측 화면·AI 진단 실행"). AI 원문 stream에는 홈 경로·플러그인·세션 ID가 있어 대화만 남긴 `transcript.jsonl`로 바꿔 저장한다.
 - 2026-11-25: D-13 마지막 실행 첫 시도가 "Loki에 주문 12 로그 ②" 검사에서 멈췄다(`w10-20261125-191933`, 커밋 안 함). 앱이 로그 파일을 연 채로 덧붙이면 macOS Docker Desktop 파일 공유가 컨테이너(Alloy)에 바로 알리지 않는다 — 연 채로 1초마다 쓴 15줄이 0줄이다가 닫은 직후 한꺼번에 도착했다. 앞 실행(`w10-20261125-190752`)이 통과한 것은 우연이었다. `log-relay.py`가 원본을 따라 사본에 쓸 때마다 열고 닫게 해, 연 채로 써도 1~2초 안에 들어오는 것을 확인했다.

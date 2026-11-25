@@ -1,0 +1,23 @@
+mcp__grafana-w10__query_prometheus	{"datasourceUid":"prometheus","expr":"commerce_payment_unresolved","endTime":"now","queryType":"instant"}
+mcp__grafana-w10__query_prometheus	{"datasourceUid":"prometheus","expr":"commerce_payment_unresolved","startTime":"now-6h","endTime":"now","queryType":"range","stepSeconds":600}
+mcp__grafana-w10__list_loki_label_values	{"datasourceUid":"loki","labelName":"app","startRfc3339":"now-24h"}
+mcp__grafana-w10__query_prometheus	{"datasourceUid":"prometheus","expr":"commerce_payment_unresolved","startTime":"now-1h","endTime":"now","queryType":"range","stepSeconds":30}
+mcp__grafana-w10__query_loki_logs	{"datasourceUid":"loki","logql":"{app=\"commerce-api\"} |= \"payment.\"","startRfc3339":"now-24h","endRfc3339":"now","limit":100,"direction":"forward"}
+mcp__grafana-w10__query_loki_logs	{"datasourceUid":"loki","logql":"sum by (boundary) (count_over_time({app=\"commerce-api\"} |= \"payment.\" | regexp `(?P<boundary>payment\\.[a-z.]+) ` [24h]))","queryType":"instant","endRfc3339":"now"}
+mcp__grafana-w10__query_loki_logs	{"datasourceUid":"loki","logql":"{app=\"commerce-api\"} |= \"payment.create.result\" != \"result=SUCCESS\"","startRfc3339":"now-24h","endRfc3339":"now","limit":50,"direction":"forward","format":"compact"}
+mcp__grafana-w10__query_loki_logs	{"datasourceUid":"loki","logql":"{app=\"commerce-api\"} |~ \"payment\\\\.[a-z.]+ orderId=(12|15|18) \"","startRfc3339":"now-24h","endRfc3339":"now","limit":100,"direction":"forward","format":"compact"}
+mcp__grafana-w10__query_loki_logs	{"datasourceUid":"loki","logql":"{app=\"pg-sim\"} |~ \"LP-ORD-00000000(12|15|18)\"","startRfc3339":"now-24h","endRfc3339":"now","limit":100,"direction":"forward","format":"compact"}
+mcp__grafana-w10__query_loki_logs	{"datasourceUid":"loki","logql":"sum by (source, pgStatus, found) (count_over_time({app=\"commerce-api\"} |= \"payment.lookup.result\" | regexp `found=(?P<found>\\S+) pgStatus=(?P<pgStatus>\\S+) source=(?P<source>\\S+)` [24h]))","queryType":"instant","endRfc3339":"now"}
+mcp__grafana-w10__query_loki_logs	{"datasourceUid":"loki","logql":"sum by (fromS, toS, outcome, source) (count_over_time({app=\"commerce-api\"} |= \"payment.apply\" | regexp `from=(?P<fromS>\\S+) to=(?P<toS>\\S+) outcome=(?P<outcome>\\S+) source=(?P<source>\\S+)` [24h]))","queryType":"instant","endRfc3339":"now"}
+mcp__grafana-w10__query_loki_logs	{"datasourceUid":"loki","logql":"{app=\"commerce-api\"} |~ \"payment\\\\.apply\\\\.failed|ERROR|Exception|callback\"","startRfc3339":"now-24h","endRfc3339":"now","limit":30,"format":"compact"}
+mcp__grafana-w10__query_loki_logs	{"datasourceUid":"loki","logql":"{app=\"pg-sim\"} !~ \"LP-ORD-00000000(12|15|18)\"","startRfc3339":"now-24h","endRfc3339":"now","limit":30,"direction":"forward","format":"compact"}
+mcp__grafana-w10__query_loki_logs	{"datasourceUid":"loki","logql":"{app=\"commerce-api\"} |= \"payment.lookup.result\"","startRfc3339":"now-24h","endRfc3339":"now","limit":20,"direction":"forward","format":"compact"}
+mcp__grafana-w10__get_tempo_trace	{"datasourceUid":"tempo","trace_id":"944b694ad5e292dcc0d74ea1e0b72c94"}
+mcp__grafana-w10__search_tempo_traces	{"datasourceUid":"tempo","query":"{ resource.service.name=\"commerce-api\" && span.http.url =~ \"http://localhost:8082.*\" && status = error }","start":"2026-11-25T10:00:00Z","end":"2026-11-25T11:00:00Z","limit":20}
+mcp__grafana-w10__search_tempo_traces	{"datasourceUid":"tempo","query":"{ resource.service.name=\"commerce-api\" && span.http.url =~ \"http://localhost:8082.*\" && span.method != \"POST\" }","start":"2026-11-25T10:00:00Z","end":"2026-11-25T11:00:00Z","limit":20}
+mcp__grafana-w10__list_prometheus_metric_names	{"datasourceUid":"prometheus","regex":"commerce_payment.*|.*reconcil.*|.*recover.*","limit":50}
+mcp__grafana-w10__query_prometheus	{"datasourceUid":"prometheus","expr":"commerce_payment_unresolved","startTime":"now-15m","endTime":"now","queryType":"range","stepSeconds":15}
+mcp__grafana-w10__query_loki_logs	{"datasourceUid":"loki","logql":"{app=~\"commerce-api|pg-sim\"} != \"Config values\"","startRfc3339":"2026-11-25T10:28:26Z","endRfc3339":"now","limit":30,"format":"compact"}
+mcp__grafana-w10__query_prometheus	{"datasourceUid":"prometheus","expr":"up{job=\"commerce-api\"}","endTime":"now","queryType":"instant"}
+mcp__grafana-w10__alerting_rules_read	{"operation":"list","limit_alerts":0}
+mcp__grafana-w10__alerting_rules_read	{"operation":"list","datasource_uid":"prometheus","limit_alerts":0}
