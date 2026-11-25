@@ -129,6 +129,25 @@ class PaymentStartedCounterIntegrationTest {
         assertThat(started() - before).as("started 증가분").isEqualTo(1.0);
     }
 
+    @Test
+    @DisplayName("결제 시작 트랜잭션이 started 등록 뒤 commit 직전에 실패해 rollback되면 started가 늘지 않고 PG create도 보내지 않는다")
+    void doesNotCountStartRolledBackAfterRegistration() {
+        long orderId = newOrder(productId, 1);
+        double before = started();
+        // 1번째 결제 기록 저장이 시작 트랜잭션이다. started 등록은 그 저장 뒤라 등록 뒤 rollback이 된다.
+        failingPaymentRecordRepository.failCommitAfterSave(1);
+
+        assertThatThrownBy(() -> orders.confirm(1, orderId, TestPgFixture.command()))
+            .hasMessage(FailingPaymentRecordRepository.INJECTED_COMMIT_FAILURE);
+
+        assertThat(failingPaymentRecordRepository.stateBeforeFailure()).as("실패 직전 DB로 보낸 상태")
+            .isEqualTo("order=PAYMENT_PENDING, payment=SEND_STARTED");
+        assertThat(orderStatus(orderId)).as("rollback 후 새 조회").isEqualTo("DRAFT");
+        assertThat(jdbc.queryForObject("select count(*) from payment_records", Long.class)).isZero();
+        assertThat(server.createCalls()).as("PG create 호출").isZero();
+        assertThat(started() - before).as("rollback 뒤 started 증가분").isEqualTo(0.0);
+    }
+
     private long newOrder(long product, int quantity) {
         return orders.create(1, List.of(new OrderApplicationService.ItemRequest(product, quantity))).id();
     }

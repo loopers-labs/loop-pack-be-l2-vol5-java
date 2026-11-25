@@ -50,6 +50,8 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -476,12 +478,14 @@ class OrderTransactionTest {
     // confirm에서 1번째 저장은 트랜잭션 A의 발송 시작 기록, 2번째는 결과 반영(트랜잭션 B)이다.
     static class FailingPaymentRecordRepository implements PaymentRecordRepository {
         static final String INJECTED_FAILURE = "주입된 결제 기록 저장 실패";
+        static final String INJECTED_COMMIT_FAILURE = "주입된 commit 직전 실패";
 
         private final PaymentRecordRepository delegate;
         private final EntityManager entityManager;
         private final JdbcTemplate jdbcTemplate;
         private final AtomicInteger savesUntilFailure = new AtomicInteger();
         private final AtomicReference<String> stateBeforeFailure = new AtomicReference<>();
+        private final AtomicInteger savesUntilCommitFailure = new AtomicInteger();
 
         FailingPaymentRecordRepository(PaymentRecordRepository delegate, EntityManager entityManager,
             JdbcTemplate jdbcTemplate) {
@@ -495,8 +499,16 @@ class OrderTransactionTest {
             savesUntilFailure.set(nth);
         }
 
+        // n번째 저장은 그대로 하고 그 트랜잭션을 commit 직전에 실패시킨다. 저장 뒤 같은 트랜잭션에서 등록한 commit 후 작업이
+        // rollback 때 실행되지 않는지 보려는 것이다. 실패 직전 변경을 DB로 보낸 상태를 남긴다.
+        void failCommitAfterSave(int nth) {
+            stateBeforeFailure.set(null);
+            savesUntilCommitFailure.set(nth);
+        }
+
         void disarm() {
             savesUntilFailure.set(0);
+            savesUntilCommitFailure.set(0);
         }
 
         String stateBeforeFailure() {
@@ -512,7 +524,20 @@ class OrderTransactionTest {
                 stateBeforeFailure.set(stockState(jdbcTemplate) + ", order=" + status);
                 throw new IllegalStateException(INJECTED_FAILURE);
             }
-            return delegate.save(payment);
+            PaymentRecord saved = delegate.save(payment);
+            if (savesUntilCommitFailure.get() > 0 && savesUntilCommitFailure.decrementAndGet() == 0) {
+                TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                    @Override
+                    public void beforeCommit(boolean readOnly) {
+                        entityManager.flush();
+                        Map<String, Object> state = jdbcTemplate.queryForMap("select o.status, p.provider_status from orders o"
+                            + " join payment_records p on p.order_id = o.id where o.id = ?", payment.getOrderId());
+                        stateBeforeFailure.set("order=" + state.get("status") + ", payment=" + state.get("provider_status"));
+                        throw new IllegalStateException(INJECTED_COMMIT_FAILURE);
+                    }
+                });
+            }
+            return saved;
         }
 
         @Override

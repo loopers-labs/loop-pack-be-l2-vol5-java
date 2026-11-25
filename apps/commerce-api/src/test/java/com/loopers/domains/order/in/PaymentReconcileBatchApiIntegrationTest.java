@@ -39,7 +39,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 // 일괄 조회 확정은 사람이 고정한 orderId 목록만 기존 수동 reconcile 경로로 처리한다. 주문 사이 간격은 운영 동작이라 test 프로필에서 0이다.
-// "연속 실패"가 무엇을 세는지 정해지기 전이라 혼합 목록은 멈춤·대상 아님이 두 건 넘게 이어지지 않게 배치한다.
 @SpringBootTest
 @AutoConfigureMockMvc
 class PaymentReconcileBatchApiIntegrationTest {
@@ -152,6 +151,73 @@ class PaymentReconcileBatchApiIntegrationTest {
         assertThat(orderState(remainingFirst)).isEqualTo("PAYMENT_PENDING/PENDING");
         assertThat(orderState(remainingSecond)).isEqualTo("PAYMENT_PENDING/PENDING");
         assertThat(server.lookupCalls() - lookups).isEqualTo(3);
+    }
+
+    @Test
+    @DisplayName("조회 실패 사이에 확정이 끼면 연속 실패를 다시 세어 [실패·실패·확정·실패·실패]는 중단하지 않는다")
+    void resolvedResetsConsecutiveFailures() throws Exception {
+        long firstFailed = lookupFailingOrder();
+        long secondFailed = lookupFailingOrder();
+        long resolved = pendingOrder();
+        server.changeStatus(transactionKey(resolved), "SUCCESS");
+        long thirdFailed = lookupFailingOrder();
+        long fourthFailed = lookupFailingOrder();
+        long lookups = server.lookupCalls();
+
+        JsonNode data = batch(List.of(firstFailed, secondFailed, resolved, thirdFailed, fourthFailed));
+
+        assertThat(data.get("processed").asInt()).isEqualTo(5);
+        assertThat(data.get("stopReason").isNull()).isTrue();
+        assertThat(outcomes(data)).containsExactly("STOPPED", "STOPPED", "RESOLVED", "STOPPED", "STOPPED");
+        assertThat(server.lookupCalls() - lookups).isEqualTo(5);
+    }
+
+    @Test
+    @DisplayName("불일치(REVIEW)는 연속 실패를 세지도 끊지도 않아 [실패·불일치·실패·실패]는 세 번째 실패에서 중단한다")
+    void reviewNeitherCountsNorResetsConsecutiveFailures() throws Exception {
+        long firstFailed = lookupFailingOrder();
+        long mismatched = pendingOrder();
+        server.replaceTransaction(transactionKey(mismatched), providerOrderId(mismatched), 999, "SUCCESS");
+        long secondFailed = lookupFailingOrder();
+        long thirdFailed = lookupFailingOrder();
+        long remaining = pendingOrder();
+        server.changeStatus(transactionKey(remaining), "SUCCESS");
+        long lookups = server.lookupCalls();
+
+        JsonNode data = batch(List.of(firstFailed, mismatched, secondFailed, thirdFailed, remaining));
+
+        assertThat(data.get("processed").asInt()).isEqualTo(4);
+        assertThat(data.get("stopReason").asText()).isEqualTo("CONSECUTIVE_FAILURES");
+        assertThat(outcomes(data)).containsExactly("STOPPED", "STOPPED", "STOPPED", "STOPPED", "SKIPPED");
+        item(resultsByOrderId(data).get(mismatched), "STOPPED", "REVIEW", "TRANSACTION_MISMATCH", "PAYMENT_PENDING",
+            "PAYMENT_PENDING");
+        assertThat(orderState(remaining)).isEqualTo("PAYMENT_PENDING/PENDING");
+        assertThat(server.lookupCalls() - lookups).isEqualTo(4);
+    }
+
+    @Test
+    @DisplayName("계속 대기·대상 아님은 연속 실패를 세지도 끊지도 않아 그 사이에 흩어진 세 번째 조회 실패에서 중단한다")
+    void stillPendingAndNotApplicableNeitherCountNorReset() throws Exception {
+        long firstFailed = lookupFailingOrder();
+        long stillPending = pendingOrder();
+        long secondFailed = lookupFailingOrder();
+        long draft = orders.create(1, List.of(new OrderApplicationService.ItemRequest(productId, 1))).id();
+        long thirdFailed = lookupFailingOrder();
+        long remaining = pendingOrder();
+        server.changeStatus(transactionKey(remaining), "SUCCESS");
+        long lookups = server.lookupCalls();
+
+        JsonNode data = batch(List.of(firstFailed, stillPending, MISSING_ORDER_ID, secondFailed, draft, thirdFailed, remaining));
+
+        assertThat(data.get("processed").asInt()).isEqualTo(6);
+        assertThat(data.get("stopReason").asText()).isEqualTo("CONSECUTIVE_FAILURES");
+        assertThat(outcomes(data)).containsExactly("STOPPED", "STOPPED", "NOT_APPLICABLE", "STOPPED", "NOT_APPLICABLE",
+            "STOPPED", "SKIPPED");
+        Map<Long, JsonNode> results = resultsByOrderId(data);
+        assertThat(text(results.get(stillPending), "reason")).isEqualTo("STILL_PENDING");
+        assertThat(text(results.get(draft), "reason")).isEqualTo("NOT_PG");
+        assertThat(orderState(remaining)).isEqualTo("PAYMENT_PENDING/PENDING");
+        assertThat(server.lookupCalls() - lookups).isEqualTo(4);
     }
 
     @Test
@@ -312,6 +378,12 @@ class PaymentReconcileBatchApiIntegrationTest {
     private long pendingOrder() {
         long orderId = orders.create(1, List.of(new OrderApplicationService.ItemRequest(productId, 1))).id();
         orders.confirm(1, orderId, TestPgFixture.command());
+        return orderId;
+    }
+
+    private long lookupFailingOrder() {
+        long orderId = pendingOrder();
+        server.lookupErrorFor(providerOrderId(orderId));
         return orderId;
     }
 

@@ -112,6 +112,22 @@ class PaymentUnknownEnteredCounterIntegrationTest {
         assertThat(unknownEntered() - before).as("commit된 결과 모름 뒤 증가분").isEqualTo(1.0);
     }
 
+    @Test
+    @DisplayName("결과 모름 반영 트랜잭션이 unknown_entered 등록 뒤 commit 직전에 실패해 rollback되면 늘지 않는다")
+    void doesNotCountEntryRolledBackAfterRegistration() {
+        long orderId = newOrder();
+        double before = unknownEntered();
+        // 2번째 결제 기록 저장이 결과 반영이다. unknown_entered 등록은 그 저장 뒤라 등록 뒤 rollback이 된다.
+        failingPaymentRecordRepository.failCommitAfterSave(2);
+
+        orders.confirm(1, orderId, TestPgFixture.command());
+
+        assertThat(failingPaymentRecordRepository.stateBeforeFailure()).as("실패 직전 DB로 보낸 상태")
+            .isEqualTo("order=PAYMENT_PENDING, payment=UNKNOWN");
+        assertThat(providerStatus(orderId)).as("rollback 후 새 조회").isEqualTo("SEND_STARTED");
+        assertThat(unknownEntered() - before).as("rollback 뒤 증가분").isEqualTo(0.0);
+    }
+
     private long newOrder() {
         return orders.create(1, List.of(new OrderApplicationService.ItemRequest(productId, 1))).id();
     }
