@@ -133,11 +133,11 @@ def slack_ok(path, body):
 
 
 class GuideTestBase(unittest.TestCase):
-    def start(self, prometheus=prometheus_ok, loki=None, llm=llm_ok, api_key="", timeout=5.0):
+    def start(self, prometheus=prometheus_ok, loki=None, llm=llm_ok, slack=slack_ok, api_key="", timeout=5.0):
         self.prometheus = FakeServer(prometheus)
         self.loki = FakeServer(loki or loki_with(WARN_LINES))
         self.llm = FakeServer(llm)
-        self.slack = FakeServer(slack_ok)
+        self.slack = FakeServer(slack)
         for fake in (self.prometheus, self.loki, self.llm, self.slack):
             self.addCleanup(fake.close)
         config = guide.Config(
@@ -289,6 +289,73 @@ class GuideTest(GuideTestBase):
             with self.subTest(leaked=leaked):
                 self.assertFalse(guide.llm_payload_is_clean(json.dumps({"x": "a " + leaked})))
         self.assertTrue(guide.llm_payload_is_clean(json.dumps({"pattern": "orderId=<값>, result=Unknown", "count": 3})))
+
+    def test_g7c_reason_causeType이_예외_클래스_이름_형태면_LLM_본문에_살리고_식별자_형태면_가린다(self):
+        exception_line = log_line("PG 결제 생성 시도 결과. orderId=104, providerId=test-pg, result=Unknown, "
+                                  "reason=ResourceAccessException(HttpTimeoutException), "
+                                  "causeType=ResourceAccessException(HttpTimeoutException)", "104")
+        identifier_lines = [
+            log_line("PG 조회 판정. orderId=105, result=Uncertain, reason=LP-ORD-0000000105", "105"),
+            log_line("PG 조회 판정. orderId=106, result=Uncertain, reason=Failed(LP-ORD-0000000106)", "106"),
+            log_line("PG 조회 판정. orderId=107, result=Uncertain, causeType=Timeout(TR-7c1d2e)", "107"),
+            log_line("PG 조회 판정. orderId=108, result=Uncertain, causeType=Order108Exception(Retry)", "108"),
+            log_line("PG 조회 판정. orderId=109, result=Uncertain, reason=Failed(" + ATTEMPT_KEY + ")", "109"),
+        ]
+        self.start(loki=loki_with([exception_line] + identifier_lines), api_key="test-key")
+
+        self.post_alert(json.dumps(ALERT).encode())
+
+        self.assertEqual(1, len(self.llm.requests))
+        sent = self.llm.requests[0]["body"].decode("utf-8")
+        content = json.loads(sent)["messages"][0]["content"]
+        self.assertIn("reason=ResourceAccessException(HttpTimeoutException)", content)
+        self.assertIn("causeType=ResourceAccessException(HttpTimeoutException)", content)
+        self.assertIn("result=Uncertain, reason=<값>", content, "식별자가 섞인 reason 값은 가린다")
+        self.assertIn("result=Uncertain, causeType=<값>", content, "식별자·숫자가 섞인 causeType 값은 가린다")
+        for leaked in ["LP-ORD-", "TR-7c1d2e", ATTEMPT_KEY, "Exception(Retry)", "Failed("]:
+            self.assertNotIn(leaked, sent)
+
+    def test_g8_Slack_전송이_실패하면_502로_답해_Alertmanager가_재시도하게_한다(self):
+        self.start(slack=lambda path, body: (500, b"server error"))
+
+        status = self.post_alert(json.dumps(ALERT).encode())
+
+        self.assertEqual(502, status)
+        self.assertEqual(1, len(self.slack.requests), "근거 메시지 전송을 한 번 시도한다")
+        self.assertEqual("guided", self.slack_messages()[0]["guide"])
+
+    def test_g9_LLM이_오류를_내면_결정적_근거_메시지는_그대로_가고_LLM_호출_실패를_표시한다(self):
+        self.start(llm=lambda path, body: (500, {"type": "error"}), api_key="test-key")
+
+        status = self.post_alert(json.dumps(ALERT).encode())
+
+        self.assertEqual(200, status)
+        self.assertEqual(1, len(self.llm.requests))
+        messages = self.slack_messages()
+        self.assertEqual(1, len(messages))
+        self.assertEqual("guided", messages[0]["guide"])
+        self.assertIn("unknown=50", messages[0]["text"])
+        self.assertIn("AI 요약 없음: LLM 호출 실패(HTTPError)", messages[0]["text"])
+
+    def test_g10_LLM이_제한_시간을_넘기면_결정적_근거_메시지는_그대로_가고_LLM_호출_실패를_표시한다(self):
+        def slow_llm(path, body):
+            time.sleep(3)
+            return llm_ok(path, body)
+
+        self.start(llm=slow_llm, api_key="test-key", timeout=2.0)
+
+        started = time.monotonic()
+        status = self.post_alert(json.dumps(ALERT).encode())
+        elapsed = time.monotonic() - started
+
+        self.assertEqual(200, status)
+        self.assertLess(elapsed, 2.5, f"제한 시간 2s인데 {elapsed:.2f}s 기다림")
+        self.assertEqual(1, len(self.llm.requests))
+        messages = self.slack_messages()
+        self.assertEqual(1, len(messages))
+        self.assertEqual("guided", messages[0]["guide"], "LLM 제한 시간 초과로 원본 fallback이 되면 안 된다")
+        self.assertIn("unknown=50", messages[0]["text"])
+        self.assertIn("AI 요약 없음: LLM 호출 실패(", messages[0]["text"])
 
     def test_metrics_가동과_처리_실패_수를_낸다(self):
         self.start(prometheus=lambda path, body: (500, {"status": "error"}))

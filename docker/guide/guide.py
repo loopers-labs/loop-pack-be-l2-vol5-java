@@ -35,11 +35,17 @@ QUERIES = {
 LOKI_QUERY = '{app="commerce-api", level=~"WARN|ERROR"} |= "OrderApplicationService"'
 LOKI_WINDOW_SECONDS = 30 * 60
 LOKI_LIMIT = 1000
+# LLM 호출은 전체 제한 시간보다 이만큼 먼저 끝낸다. 같은 시각에 끝나면 바깥 대기가 먼저 끝나 결정적 메시지 대신 원본이 간다.
+LLM_RESERVE_SECONDS = 0.5
+LLM_MIN_SECONDS = 0.5
 
 # 값이 유한한 분류 키만 패턴에 남긴다. 그 밖의 key=value 값은 모두 가린다.
 ENUM_KEYS = {"result", "source", "status", "providerStatus", "kind", "causeType", "reason", "providerId"}
 ENUM_VALUE = re.compile(r"^[A-Za-z][A-Za-z_-]{0,39}$")
 KEY_VALUE = re.compile(r"(\b[A-Za-z][A-Za-z0-9_]*)=([^,\s]+)")
+# reason·causeType은 예외 클래스 이름 형태(대문자로 시작하는 영문 이름과 괄호 중첩, 예: A(B(C)))도 살린다. 숫자·하이픈이 섞이면 가린다.
+EXCEPTION_KEYS = {"reason", "causeType"}
+EXCEPTION_VALUE = re.compile(r"^[A-Z][A-Za-z]*(?:\([A-Z][A-Za-z]*)*\)*$")
 
 CARD = re.compile(r"(?<!\d)\d(?:[ -]?\d){12,18}(?!\d)")
 SECRET_KV = re.compile(
@@ -138,6 +144,8 @@ def to_pattern(message):
         key, value = m.group(1), m.group(2)
         if key in ENUM_KEYS and ENUM_VALUE.match(value):
             return f"{key}={value}"
+        if key in EXCEPTION_KEYS and is_exception_name(value):
+            return f"{key}={value}"
         return f"{key}=<값>"
 
     text = mask_sensitive(message)
@@ -146,6 +154,10 @@ def to_pattern(message):
     text = TRANSACTION_KEY.sub("<거래키>", text)
     text = UUID.sub("<키>", text)
     return DIGITS.sub("#", text)
+
+
+def is_exception_name(value):
+    return len(value) <= 120 and bool(EXCEPTION_VALUE.match(value)) and value.count("(") == value.count(")")
 
 
 def llm_payload_is_clean(text):
@@ -365,12 +377,12 @@ class Guide:
             if not llm_payload_is_clean(llm_input):
                 self.metrics.inc("guide_llm_blocked_total")
                 ai_note = "보낼 본문에 식별자 형태가 남아 보내지 않음"
-            elif remaining(deadline) < 0.5:
+            elif remaining(deadline) - LLM_RESERVE_SECONDS < LLM_MIN_SECONDS:
                 ai_note = "제한 시간 부족"
             else:
                 self.metrics.inc("guide_llm_requests_total")
                 try:
-                    ai_text = call_llm(self.config, json.loads(llm_input), remaining(deadline))
+                    ai_text = call_llm(self.config, json.loads(llm_input), remaining(deadline) - LLM_RESERVE_SECONDS)
                 except (urllib.error.URLError, OSError, ValueError, EvidenceError) as e:
                     self.metrics.inc("guide_llm_failures_total")
                     ai_note = f"LLM 호출 실패({type(e).__name__})"
