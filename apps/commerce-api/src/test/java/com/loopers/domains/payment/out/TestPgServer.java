@@ -100,7 +100,7 @@ public final class TestPgServer implements AutoCloseable {
     public TestPgServer(String expectedUserId, Duration delay, int port) throws IOException {
         this.expectedUserId = expectedUserId;
         this.delay = delay;
-        this.server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
+        this.server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), port), 0);
         this.server.createContext(PAYMENTS_PATH, this::handle);
         this.server.setExecutor(executor);
         this.server.start();
