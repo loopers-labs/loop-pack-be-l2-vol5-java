@@ -1,6 +1,6 @@
 # 사고 연결 E2E 증거 — 최종 실행 (C1~C3 반영)
 
-- runId: `20261126T120742Z-f9dbdfde`. 맥북에어 로컬, 2026-11-26 12:07 UTC.
+- runId: `20261126T120742Z-f9dbdfde`. 맥북에어 로컬, 2026-11-26 12:07 UTC. runId 접미사(`f9dbdfde`)는 무작위 8자리이고 커밋 해시가 아니다(`IncidentEvidence`).
 - 코드: 실행 당시 HEAD `3d08c71f` + 쿠폰 발급 시각 한 줄(실행 뒤 `1c1889d5`로 커밋, 단언 불변).
 - 무엇: `CheckoutIncidentE2ETest` 한 번의 실행이 단계마다 남긴 JSON을 `build/incident-evidence/<runId>/`에서 그대로 복사했다. 내용은 손대지 않았다(`SHA256SUMS`).
 - 명령: `./gradlew :apps:commerce-api:check :apps:commerce-streamer:check :apps:commerce-batch:check --rerun-tasks`
@@ -43,5 +43,5 @@
 
 - `20261125T082202Z-068161dd`: 873d848 실행(11-25). missingEvidence·summary.json·0이 아닌 포인트·쿠폰이 없다. 기록으로 그대로 둔다.
 - `20261126T113318Z-6d788078`: 중단된 회귀·리허설 사전 실행. 그대로 둔다.
-- 문서·PR이 이 폴더를 가리키도록 바꾸는 일은 다음 단계에서 한다.
+- 설계 문서 8절·12-1은 이 폴더를 제출용 한 벌로 가리킨다.
 - `SHA256SUMS`는 JSON 7개만 다룬다(이 README는 제외).

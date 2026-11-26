@@ -25,7 +25,7 @@
 | H2 내부 반영 실패: PG 결과를 받거나 조회했지만 우리 DB 반영이 실패했다 | create Accepted INFO 또는 조회 Verified INFO가 있고 반영 ERROR가 있다 | 기각. 반영 ERROR 0 | "반영 ERROR 0"은 MDC orderId로 거른 캡처 로그에 ERROR가 없다는 부재 판단이다. 로그 유실·MDC 누락이면 구분할 수 없다 / DB 쪽 오류 기록(MySQL error log·rollback 통계)은 보지 않았다 |
 | H3 PG 실패·미발송: 돈이 움직이지 않았다 | PG 거래가 없거나 FAILED, 또는 create NotSent WARN | 기각. PG 조회 SUCCESS·금액 일치, NotSent WARN 0 | 돈이 움직였다는 근거는 PG 조회 SUCCESS·금액 일치뿐이다. PG 정산 파일·카드사 승인 내역 대조는 없다 / "NotSent WARN 0"도 캡처 로그 기준 부재 판단이다 |
 
-- 실제 칸은 `CheckoutIncidentE2ETest`의 단언(H1 참, H2·H3 거짓)이다. 최종 HEAD로 다시 뽑은 evidence 경로는 12-1에 적는다.
+- 실제 칸은 `CheckoutIncidentE2ETest`의 단언(H1 참, H2·H3 거짓)이다. 최종 코드로 다시 뽑은 evidence(`20261126T120742Z-f9dbdfde`, `diagnosis.json`의 `missingEvidence`가 위 "부족한 증거" 칸)는 8절·12-1에 적는다.
 
 ## 2. 로그 레벨과 경계 로그
 
@@ -148,10 +148,13 @@
 
 - 테스트: `apps/commerce-api/src/e2eTest/.../order/in/CheckoutIncidentE2ETest.java`. 같은 DB·같은 PG 거래로 정상 10건 → 응답 유실 3건 → 증거 보존 → 가설 판정 → 본인 reconcile 복구 → 반복·보호 → 구매 활동·주간 랭킹을 잇는다.
 - 실행 증거는 `build/incident-evidence/<runId>/`에 실행마다 새로 쌓인다(빌드 산출물이라 `clean`이면 지워진다).
-- 제출용 한 벌: `docs/week10/evidence/20261125T082202Z-068161dd/`(커밋 873d848의 깨끗한 실행, 실패 없음). 단계별 JSON 6개와 `SHA256SUMS`가 있다.
-  - `diagnosis.json` 판정: 유실 주문 11·12·13 모두 H1(응답 유실) 채택, H2(내부 반영 실패)·H3(PG 실패·미발송) 기각.
-  - `fault.json` sha256 `759ae143…5e8f28`(복구 뒤에도 같음을 테스트가 단언).
+- 제출용 한 벌: `docs/week10/evidence/20261126T120742Z-f9dbdfde/`(최종 코드: 실행 당시 3d08c71 + 쿠폰 발급 시각을 테스트 시계로 고정한 한 줄, 실행 뒤 1c1889d로 커밋·단언 불변. 실패·skip 없음). 단계별 JSON 7개(`summary.json` 포함)와 `SHA256SUMS`, `README.md`가 있다.
+  - `diagnosis.json` 판정: 유실 주문 11·12·13 모두 H1(응답 유실) 채택, H2(내부 반영 실패)·H3(PG 실패·미발송) 기각. 가설마다 `missingEvidence`(보지 못한 증거) 2문장(1절 표의 "부족한 증거" 칸과 같다).
+  - `summary.json`(확정·UNKNOWN·PG 성공 수): 장애 집합(사용자 2) FAULT 7·3·10 → RECOVERY·REPEAT·FOLLOWUP 모두 10·0·10. FAULT 뒤 create 증가 0(복구·반복·후속). 기준 집합(사용자 1)은 모든 단계 10·0·10.
+  - fault 시점 자산(포인트 5,000·10,000, 사용자 2 쿠폰 1장, 가용 재고 10, 잡힌 수량 20)이 복구·반복·후속에서 그대로다.
+  - `fault.json` sha256 `d7243b24…05484d`(복구 뒤에도 같음을 테스트가 단언).
   - 카드번호·인증 헤더·비밀값 문자열 없음(복사 전 검사).
+- 기록(11-25 코드): `docs/week10/evidence/20261125T082202Z-068161dd/`(커밋 873d848 실행). `missingEvidence`·`summary.json`·0이 아닌 포인트·쿠폰이 없던 때의 한 벌이라 제출 근거로 쓰지 않고 그대로 둔다.
 
 ## 9. 운영 도구(4단계 4a)
 
@@ -834,7 +837,7 @@ REFUNDED일 때만 값이 있다. **우리가 본 경로**로 정한다.
 - `REFUND_REQUESTED`·`REFUND_UNKNOWN`은 조회만 한다. 다시 보내지 않는다(11-4).
 - 조회 회로가 막혔으면 PG를 부르지 않고 `PG_UNREACHABLE`을 남기고 돌려준다. 돈·담당은 그대로다.
 - 응답: 돈의 상태, 환불 주체, 담당, 담당 종료 시각·종료자, 마지막 확인 3칸. 돈이 끝나면 담당을 같은 TX에서 닫고 종료자는 누른 관리자 이름이다. 우리 취소로 끝나면 환불 주체 `SYSTEM`.
-- 409: 담당 AUTO, 담당 이미 닫힘, 돈 이미 끝남(대상 그대로). 404: 대상 없음. 403: 비관리자·CSRF 없음. 반영 실패는 오류 응답(보통 500, 잠금 획득 실패는 503)이고 그 건의 `lastCheckOutcome`이 `APPLY_FAILED`다.
+- 409: 담당 AUTO, 담당 이미 닫힘, 돈 이미 끝남(대상 그대로). 404: 대상 없음. 403: 비관리자·CSRF 없음. 반영 실패는 500이고 그 건의 `lastCheckOutcome`이 `APPLY_FAILED`다. 첫 잠금 획득 실패는 503이고 회차가 돌지 않아 원인 기록이 없다(누름 로그 `rejected=BUSY`). 반영 TX의 두 번째 잠금 실패는 드물게 `APPLY_FAILED`로 기록된다(12-2).
 - **만들지 않는 것**: 사람 담당 → AUTO 되돌리기, 새 타이머·기한(사용자: "이틀 뒤면 처리한 사람도 까먹겠다").
 - 거절 뒤 재누름 **[참모 20:42 확정 ①]**: PG가 취소를 효과 없이 거절하면(`CANCEL_REJECTED`) 돈은 `CHARGED`로 돌아가고 사람 담당 그대로다. 지금 처리를 다시 누르면 취소를 다시 보낸다(누를 때마다 1회, `refund_requested_at` 덮어씀). PG가 첫 요청이 효과 없었다고 명시한 경우라 이중 환불 위험이 없다는 판단이다.
 - 누를 때마다 경계 INFO 한 줄 **[참모 20:42 확정 ①]**: `지금 처리를 눌렀습니다. orderId=…, admin=…, outcome=…`. MDC `orderId`, 누른 관리자 이름(인증 이름), `outcome`(= `last_check_outcome`). 칼럼은 더하지 않는다. 비밀값·PG 텍스트·거래 키는 넣지 않는다.
@@ -859,7 +862,7 @@ REFUNDED일 때만 값이 있다. **우리가 본 경로**로 정한다.
 | `./gradlew :apps:commerce-api:check`(test·e2eTest·Checkstyle·ArchUnit) | test 1143·e2eTest 4, 실패·skip 0 (`docs/week10/evidence/20261126T120742Z-f9dbdfde/`) | 직전 기록: 84dcede에서 test 1135·e2eTest 4, 실패·skip 0 |
 | 다른 모듈 검사 | commerce-streamer test 47·commerce-batch test 54, 실패·skip 0 (`docs/week10/evidence/20261126T120742Z-f9dbdfde/`) | — |
 | `scripts/ops/check-alerting.sh`(promtool·amtool·대시보드·가이드 테스트) | promtool 40·guide 16 (6단계 2번 회귀) | 직전 기록: rules 12, promtool 40, guide 16, ALL CHECKS PASSED |
-| 사고 연결 E2E(8절) | 제출용 한 벌 `docs/week10/evidence/20261125T082202Z-068161dd/` | H1 채택·H2·H3 기각, 복구 뒤 증거 해시 같음 |
+| 사고 연결 E2E(8절) | 제출용 한 벌 `docs/week10/evidence/20261126T120742Z-f9dbdfde/`(3d08c71 + 시계 한 줄 1c1889d) | H1 채택·H2·H3 기각(가설별 `missingEvidence` 2문장), 장애 집합 FAULT 7·3·10 → RECOVERY·REPEAT·FOLLOWUP 10·0·10, create 증가 0, 기준 집합 10·0·10, fault 시점 자산 불변, 복구 뒤 증거 해시 같음. 기록(11-25 코드): `20261125T082202Z-068161dd` |
 
 **변이(판별력)** — 결함을 넣어 테스트가 실패하는지 본 것. 모두 원복을 diff·바이트 비교로 확인했다.
 
@@ -874,6 +877,8 @@ REFUNDED일 때만 값이 있다. **우리가 본 경로**로 정한다.
 | 5b 두 축 모델 | 14 + 규칙 13 | jitter 제거, PERSON 취소 허용, findDue AUTO만, 자동 종료 제거, 담당 검사·NO_CHARGE 모순 검사 제거, label 대문자, counter afterCommit 제거 2 등 | S1~S10, promtool |
 | 5b R1·R3 | 2 | 기한 재확인 제거, R1 조건 되돌림 | 서비스·통합 2, 도메인·HTTP 2 |
 | 5c 막힌 원인·지금 처리 | 7 + 규칙 2 | 원인 기록을 반영 TX 안에서, 사람 트리거 분기를 스케줄러에, 요청 뒤 재전송, 담당 검사 제거, counter 사전 등록 제거, MISMATCH→OK, 기록기 예외로 덮기 | C1·C4·C5·C7·C8·C9·R3, QA 보강 |
+| 6단계 지금 처리 INFO(5280c59) | 2 | 누름 INFO 제거, 거절 사유 바꿈 | `RefundTrackingServiceTest` |
+| 6단계 C2 자산 불변(42ee823, 커밋 메시지 근거) | 1 | 복구 경로 포인트 추가 차감(격리 복사본) | `CheckoutIncidentE2ETest` RECOVERY 단언 |
 
 - 변이 기록 원본은 단계별 review 파일이다(저장소 밖). 이 표는 요지만 옮겼다.
 - 판별하지 못한 변이: 4b 가이드 LLM 여유 0 되돌리기는 5회 중 3회만 검출(시간 의존). 5단계 F3는 재요청 변이를 못 잡는다(F4·서비스 테스트가 판별).
@@ -891,7 +896,7 @@ REFUNDED일 때만 값이 있다. **우리가 본 경로**로 정한다.
 | 항목 | 왜 못 했나 / 무엇이 위험한가 | 지금의 대응 |
 | --- | --- | --- |
 | 실제 PG 취소 API | 과정 PG 계약에 취소가 없다. 요청·응답 모양은 [가정](11-6)이고 test-pg만 구현한다 | 실제 PG가 다르면 어댑터만 바꾼다 |
-| 새 환불 지표의 실제 Prometheus 이름 | `refund_cases`·`refund_person_open`·`refund_requested_oldest_age_seconds`·`refund_outcome`·`refund_person_assigned`·`refund_check`는 Micrometer 변환 규칙으로만 대조했다. 실제 scrape 없음. 환불 규칙은 리허설에 넣지 않았다 | promtool 시계열 테스트로 식 모양만 고정 |
+| 새 환불 지표의 실제 수집·환불 알림 발화 | scrape는 로컬 리허설 1회로 확인했다: 6단계 2회차 장면 C(evidence `20261126T121317Z-965d8579` `captures/c-04-prom-refund-range.json`)에서 `money_status=refunded` 4, `result=refunded` 4, `outcome` pg_error 5·pg_unreachable 4·ok 4. `refund_person_open`·`refund_requested_oldest_age_seconds`·`refund_person_assigned`는 이 캡처에 없어 Micrometer 변환 규칙 대조뿐이다. 환불 알림 규칙(11-16) 발화는 리허설하지 않았다 | promtool 시계열 테스트로 식 모양 고정 + 로컬 리허설 1회 |
 | 임계값 | 모든 [임시] 값(12-3)은 운영 트래픽으로 정하지 않았다 | 측정 뒤 조정 |
 | 정산 파일 대사 | PG 정산 파일과 우리 기록을 맞춰 보지 않는다. 사람 기록(11-17)은 관리자의 말을 믿는다 | 범위 밖(11-9·11-18) |
 | 취소 멱등 키 | 취소 요청에 멱등 키가 없다(11-6). 한 번만은 상태(`REFUND_REQUESTED` commit 뒤 1회)로만 보장한다. 거절 뒤 지금 처리를 다시 누르면 다시 보낸다(11-19, PG가 효과 없음을 명시한 경우만) | 결과 모름이면 다시 보내지 않고 조회 |
@@ -919,7 +924,7 @@ REFUNDED일 때만 값이 있다. **우리가 본 경로**로 정한다.
 | 4a | pacer 대기가 interrupt되면 요청 전체가 예외로 끝나 부분 결과를 잃는다 |
 | 4a | 미확인 목록의 결제 대기 수만 건 규모 쿼리 계획은 확인하지 않았다(9-8) |
 | 4b | streamer의 `spring.application.name`이 `commerce-api`다. local로 함께 띄우면 같은 로그 파일·같은 8081을 쓴다(10-8) |
-| 4b | Alloy 읽기 위치(`/var/lib/alloy/data`)가 볼륨이 아니다. 재기동하면 같은 줄이 다시 들어갈 수 있다(추정) |
+| 4b | Alloy 읽기 위치(`/var/lib/alloy/data`)가 볼륨이 아니다. 재기동하면 같은 줄이 다시 들어갈 수 있다(추정). 근거 관찰: 리허설 2회차 B9 — 실행 사이에 남은 `logs/commerce-api.json`을 새로 띄운 스택이 다시 읽어 Loki 질의에 이전 실행 줄이 섞였다(`docs/week10/rehearsal.md`). 같은 컨테이너 재기동에서의 중복은 직접 보지 않았다 |
 | 4b | `grafana/grafana` 이미지 버전 미고정. 가이드 실패 시 Slack 자리에 원본 두 번, resolved 통지 최대 5분 늦음(10-4·10-8) |
 | 5단계 | 관리자 환불 목록은 `opened_at` 순 정렬인데 그 칸 인덱스가 없다. 대상이 많이 쌓이면 정렬 비용이 커진다 |
 | 5단계 | 기능 이전에 만료된 주문은 늦은 성공이 와야 대상이 생긴다(소급 생성 없음). 취소 호출 예외 때 WARN이 2줄 남는다 |
@@ -942,19 +947,21 @@ REFUNDED일 때만 값이 있다. **우리가 본 경로**로 정한다.
 | 5건·5m | `rules:92·93` | `PaymentPgUnreachable` | 규칙 | 9-2 | 일치 |
 | p99 > 1s·5m 100건·10m | `rules:112·115·116` | `PaymentApiLatencyP99High`(결제 API 지연) | 규칙 | 9-2 | 일치 |
 | 1h·4h·4h | `docker/alertmanager/alertmanager.yml:22·27·31·17` | repeat_interval critical·warning·기본 | Alertmanager 설정 | 9-2 | 일치 |
+| 30s·5m | `docker/alertmanager/alertmanager.yml:15·16` | group_wait·group_interval(묶음 첫 통지 대기·같은 묶음 재통지 간격) | Alertmanager 설정 | 9-2 | 일치. 5m은 resolved 지연·B6 재통지 누락의 원인(12-2) |
 | 50건 | `app.yml:104`(기본값 `order/config/PaymentReconcileBatchConfig.java:12`) | 일괄 확정 한 번 최대 | yml `payment.reconcile-batch.max-orders` | 9-6 | 일치 |
 | 200ms(test 0ms) | `app.yml:105`(test `:185`) | 일괄 확정 PG 조회 간격 | yml `payment.reconcile-batch.interval` | 9-6 | 일치 |
 | 3건 | `app.yml:106` | 일괄 확정 연속 실패 한도 | yml `payment.reconcile-batch.consecutive-failure-limit` | 9-6 | 일치 |
+| 30s | `app.yml:89` | 조회 회로 열림 대기(open-duration). 지나면 다음 조회가 탐색 호출, 일괄 확정 시작 전 503 판단 기준 | yml `payment.lookup.circuit.open-duration` | 9-6(정의는 week8 "PG별 조회 서킷 브레이커 [임시]") | 일치 |
 | 10MB·3개·100MB | `supports/logging/src/main/resources/appenders/json-file-appender.xml:6·7·8` | local JSON 로그 롤링 | `logging.logback.rollingpolicy.*` | 10-2 | 일치 |
 | 72h | `docker/loki/loki.yml:32` | Loki 보존 | Loki 설정 | 10-3 | 일치 |
 | 10s | `docker/guide/guide.py:90`(환경 변수 `:104`) | 가이드 근거 수집 제한 시간 | `GUIDE_TIMEOUT_SECONDS` | 10-4 | 일치 |
 | 5m | `rules:205` | `GuideServerDown` 지속 | 규칙 | 10-4 | 일치 |
 | 2일 | `RC:28` | 자동 추적 기한 `handoff_at` | 도메인 상수(P8: 설정 아님) | 11-2·11-5 | 일치 |
 | 4일 | `RC:29` | 고객 약속 `promise_at` | 도메인 상수 | 11-2·11-5 | 일치 |
-| 1m | `RC:37`(사용 `RTS:256·333`, `order/app/OrderApplicationService.java:312`) | 첫 조회·환불 요청 뒤·결과 모름 뒤 jitter 상한, 배증 시작값 | 도메인 상수 | 11-5·11-14 | 일치 |
+| 1m | `RC:37`(사용 `RTS:283·360`, `order/app/OrderApplicationService.java:312`) | 첫 조회·환불 요청 뒤·결과 모름 뒤 jitter 상한, 배증 시작값 | 도메인 상수 | 11-5·11-14 | 일치 |
 | 1h | `RC:38`(배증 `RC:321~325`) | 결론 없는 조회 뒤 상한의 최대 | 도메인 상수 | 11-5·11-14 | 일치 |
-| 30m | `RC:39`(사용 `RTS:314·355`, `OrderApplicationService.java:521·526`) | 사람 담당 조회 jitter 상한 | 도메인 상수 | 11-13·11-14 | 일치 |
-| 20건 | `RTS:36` | 환불 추적 회차 상한(AUTO·PERSON 합계) | 코드 상수 | 11-5·11-15 | 일치 |
+| 30m | `RC:39`(사용 `RTS:341·382`, `OrderApplicationService.java:521·526`) | 사람 담당 조회 jitter 상한 | 도메인 상수 | 11-13·11-14 | 일치 |
+| 20건 | `RTS:37` | 환불 추적 회차 상한(AUTO·PERSON 합계) | 코드 상수 | 11-5·11-15 | 일치 |
 | 30s | `app.yml:98` | 환불 추적 회차 주기 | yml `payment.refund.scheduler.fixed-delay` | 11-5 | 일치 |
 | 100자 | `RC:41` | `last_check_cause` 최대 길이(칸 `VARCHAR(100)`) | 도메인 상수 + DDL | 11-19 | 일치([임시] 아님, P4) |
 | 15m | `rules:132` | `PaymentRefundNeedsPerson` 지속 | 규칙 | 11-16 | 일치 |
