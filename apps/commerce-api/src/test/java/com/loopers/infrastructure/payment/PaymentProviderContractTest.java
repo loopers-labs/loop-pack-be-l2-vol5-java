@@ -1,5 +1,6 @@
 package com.loopers.infrastructure.payment;
 
+import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import com.loopers.domain.common.Money;
 import com.loopers.domain.payment.CardNumber;
@@ -189,92 +190,73 @@ class PaymentProviderContractTest {
     }
 
     @Nested
-    @ExtendWith(OutputCaptureExtension.class)
-    @DisplayName("결과를 모르게 된 생성 호출은 왜 모르는지를 PG 주문 식별자와 함께 남긴다")
+    @DisplayName("결과를 모르게 된 생성 호출은 왜 모르는지를 PG 주문 식별자와 함께 WARN 한 줄로 남기고, 접수된 호출은 남기지 않는다")
     class UnknownCause {
 
-        @DisplayName("응답이 끊기면 연결이 끊겼다는 원인이 한 줄 남는다")
+        private static final String GATEWAY_LOG = "com.loopers.infrastructure.payment.PgPaymentGateway";
+
+        @DisplayName("응답이 끊기면 응답을 못 받았고 연결이 끊겼다는 줄이, 수락도 거절도 아닌 응답이면 해석하지 못했다는 줄이 상태 코드와 함께 남는다")
         @Test
-        void connectionLost(CapturedOutput output) {
-            PG.dropNextCreateResponse();
+        void namesLostAndUnexpectedResponses() {
+            try (LogEvents log = LogEvents.of(GATEWAY_LOG)) {
+                PG.dropNextCreateResponse();
+                gateway.create(creation(54L, 7000));
+                PG.respondNextCreateWith(500, "");
+                gateway.create(creation(55L, 7000));
 
-            gateway.create(creation(49L, 7000));
-
-            assertThat(linesOf(output, "LP-ORD-0000000049")).singleElement().asString()
-                .contains("cause=connection_lost");
+                List<ILoggingEvent> events = log.list();
+                assertThat(events).hasSize(2).allSatisfy(event -> assertThat(event.getLevel()).isEqualTo(Level.WARN));
+                assertThat(LogEvents.fieldsOf(events.get(0)))
+                    .containsEntry("event", "payment_create_no_response")
+                    .containsEntry("providerOrderId", "LP-ORD-0000000054")
+                    .containsEntry("cause", "connection_lost");
+                assertThat(LogEvents.fieldsOf(events.get(1)))
+                    .containsEntry("event", "payment_create_unexpected_response")
+                    .containsEntry("providerOrderId", "LP-ORD-0000000055")
+                    .containsEntry("cause", "unexpected_response")
+                    .containsEntry("status", 500);
+            }
         }
 
-        @DisplayName("응답이 생성 timeout 보다 늦으면 timeout 이라는 원인이 한 줄 남는다")
+        @DisplayName("응답이 생성 timeout 보다 늦으면 응답을 못 받았고 timeout 이었다는 줄이 남는다")
         @Test
-        void timeout(CapturedOutput output) {
+        void namesTimeout() {
             PgFixture.HeldResponse held = PG.holdNextCreateResponse();
-            try {
+            try (LogEvents log = LogEvents.of(GATEWAY_LOG)) {
                 gateway.create(creation(50L, 7000));
+
+                assertThat(log.list()).singleElement().satisfies(event -> {
+                    assertThat(event.getLevel()).isEqualTo(Level.WARN);
+                    assertThat(LogEvents.fieldsOf(event))
+                        .containsEntry("event", "payment_create_no_response")
+                        .containsEntry("providerOrderId", "LP-ORD-0000000050")
+                        .containsEntry("cause", "timeout");
+                });
             } finally {
                 held.release();
             }
-
-            assertThat(linesOf(output, "LP-ORD-0000000050")).singleElement().asString()
-                .contains("cause=timeout");
-        }
-
-        @DisplayName("수락도 거절도 아닌 응답을 받으면 그 상태 코드와 함께 해석할 수 없는 응답이라는 원인이 한 줄 남는다")
-        @Test
-        void unexpectedResponse(CapturedOutput output) {
-            PG.respondNextCreateWith(500, "");
-
-            gateway.create(creation(51L, 7000));
-
-            assertThat(linesOf(output, "LP-ORD-0000000051")).singleElement().asString()
-                .contains("cause=unexpected_response", "status=500");
         }
 
         @DisplayName("접수된 생성 호출은 줄을 남기지 않는다")
         @Test
-        void acceptedLeavesNoLine(CapturedOutput output) {
-            gateway.create(creation(52L, 7000));
+        void acceptedLeavesNoLine() {
+            try (LogEvents log = LogEvents.of(GATEWAY_LOG)) {
+                gateway.create(creation(52L, 7000));
 
-            assertThat(linesOf(output, "LP-ORD-0000000052")).isEmpty();
+                assertThat(log.list()).isEmpty();
+            }
         }
 
         @DisplayName("PG-014: 원인을 남기는 줄에 카드 번호는 없다")
         @Test
+        @ExtendWith(OutputCaptureExtension.class)
         void noCardNumber(CapturedOutput output) {
             PG.dropNextCreateResponse();
 
             gateway.create(creation(53L, 7000));
 
-            assertThat(linesOf(output, "LP-ORD-0000000053")).isNotEmpty();
+            assertThat(output.getOut()).contains("providerOrderId=LP-ORD-0000000053");
             assertThat(output.getOut()).doesNotContain("0000-0000-0000-0000");
-        }
-
-        @DisplayName("원인을 남기는 줄은 응답을 못 받았는지 해석을 못 했는지를 가리키는 이름과, "
-            + "PG 주문 식별자와 원인과 상태 코드를 따로 찾을 수 있는 필드로도 갖는다")
-        @Test
-        void carriesNameAndCauseAsFields() {
-            List<ILoggingEvent> events = LogEvents.during("com.loopers.infrastructure.payment.PgPaymentGateway", () -> {
-                PG.dropNextCreateResponse();
-                gateway.create(creation(54L, 7000));
-                PG.respondNextCreateWith(500, "");
-                gateway.create(creation(55L, 7000));
-            });
-
-            assertThat(events).hasSize(2);
-            assertThat(LogEvents.fieldsOf(events.get(0)))
-                .containsEntry("event", "payment_create_no_response")
-                .containsEntry("providerOrderId", "LP-ORD-0000000054")
-                .containsEntry("cause", "connection_lost");
-            assertThat(LogEvents.fieldsOf(events.get(1)))
-                .containsEntry("event", "payment_create_unexpected_response")
-                .containsEntry("providerOrderId", "LP-ORD-0000000055")
-                .containsEntry("cause", "unexpected_response")
-                .containsEntry("status", 500);
-        }
-
-        private List<String> linesOf(CapturedOutput output, String providerOrderId) {
-            return output.getOut().lines()
-                .filter(line -> line.contains("providerOrderId=" + providerOrderId))
-                .toList();
         }
     }
 

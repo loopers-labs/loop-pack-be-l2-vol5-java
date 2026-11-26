@@ -1,5 +1,7 @@
 package com.loopers.interfaces.api.payment;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.spi.ILoggingEvent;
 import com.loopers.application.brand.BrandFacade;
 import com.loopers.application.order.OrderCreateCommand;
 import com.loopers.application.order.OrderFacade;
@@ -14,6 +16,7 @@ import com.loopers.domain.payment.PaymentRepository;
 import com.loopers.domain.payment.PaymentStatus;
 import com.loopers.domain.product.Price;
 import com.loopers.domain.product.ProductService;
+import com.loopers.support.log.LogEvents;
 import com.loopers.support.payment.TestPayments;
 import com.loopers.support.pg.PgFixture;
 import com.loopers.utils.DatabaseCleanUp;
@@ -153,8 +156,22 @@ class PaymentCallbackApiE2ETest {
         String key = started(order);
         PG.changeStatus(key, PgFixture.Status.SUCCESS);
 
-        int response = callbackFor(key);
+        int response;
+        List<ILoggingEvent> logged;
+        try (LogEvents log = LogEvents.of("com.loopers.application.payment.PaymentLog")) {
+            response = callbackFor(key);
+            logged = log.list();
+        }
 
+        assertThat(logged).singleElement().satisfies(event -> {
+            assertThat(event.getLevel()).isEqualTo(Level.INFO);
+            assertThat(LogEvents.fieldsOf(event))
+                .containsEntry("event", "payment_status_changed")
+                .containsEntry("orderId", order.getId())
+                .containsEntry("source", "callback")
+                .containsEntry("from", "PENDING")
+                .containsEntry("to", "SUCCESS");
+        });
         assertAll(
             () -> assertThat(response).isEqualTo(200),
             () -> assertThat(stored(order).getStatus()).isEqualTo(OrderStatus.CONFIRMED),

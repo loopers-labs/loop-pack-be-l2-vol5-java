@@ -9,22 +9,23 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-public final class LogEvents {
+public final class LogEvents implements AutoCloseable {
 
-    private LogEvents() {
+    private final Logger logger;
+    private final ListAppender<ILoggingEvent> appender = new ListAppender<>();
+
+    private LogEvents(Logger logger) {
+        this.logger = logger;
+        appender.start();
+        logger.addAppender(appender);
     }
 
-    public static List<ILoggingEvent> during(String loggerName, Runnable action) {
-        Logger logger = (Logger) LoggerFactory.getLogger(loggerName);
-        ListAppender<ILoggingEvent> events = new ListAppender<>();
-        events.start();
-        logger.addAppender(events);
-        try {
-            action.run();
-        } finally {
-            logger.detachAppender(events);
-        }
-        return events.list;
+    public static LogEvents of(String loggerName) {
+        return new LogEvents((Logger) LoggerFactory.getLogger(loggerName));
+    }
+
+    public List<ILoggingEvent> list() {
+        return List.copyOf(appender.list);
     }
 
     public static Map<String, Object> fieldsOf(ILoggingEvent event) {
@@ -33,5 +34,10 @@ public final class LogEvents {
             event.getKeyValuePairs().forEach(pair -> fields.put(pair.key, pair.value));
         }
         return fields;
+    }
+
+    @Override
+    public void close() {
+        logger.detachAppender(appender);
     }
 }
