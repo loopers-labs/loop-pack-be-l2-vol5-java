@@ -4,7 +4,8 @@
 #   up                      인프라(MySQL·Redis·Kafka)와 모니터링(리허설 오버레이) 기동. compose 프로젝트 이름을 따로 써서 평소 볼륨을 건드리지 않는다
 #   app                     commerce-api(local)를 띄운다(포그라운드). 아래 "앱 리허설 설정" 참고
 #   test-pg                 test-pg 8082·8083(포그라운드)
-#   seed                    사용자(DB 직접)·브랜드·상품(관리자 API) 준비. 출력: 상품 ID
+#   seed                    브랜드·상품(관리자 API) 준비와 포인트 충전. 출력: 상품 ID
+#                           사용자(id 1)는 앱 local 시드(sql/local/seed-users.sql)가 기동 때 만든다
 #   order PRODUCT_ID [lose] 주문 1건 생성 → (lose면 test-pg 응답 유실 지정) → confirm. 출력: 주문 ID와 confirm 응답
 #   metrics                 Prometheus에서 결제 지표 4종 조회
 #   alerts                  Prometheus 알림 상태와 Alertmanager 알림
@@ -14,8 +15,7 @@
 #   unresolved              관리자 미확인 목록(admin-curl.sh)
 #   reconcile ID[,ID...]    관리자 일괄 조회 확정(admin-curl.sh)
 #   down                    리허설 compose를 볼륨까지 내린다
-# 환경 변수: COMMERCE_ADMIN_USERNAME·COMMERCE_ADMIN_PASSWORD(관리자 계정, 출력하지 않음),
-#   REHEARSAL_USER_ID(기본 1)
+# 환경 변수: COMMERCE_ADMIN_USERNAME·COMMERCE_ADMIN_PASSWORD(관리자 계정, 출력하지 않음)
 # 카드는 test-pg 테스트 카드(TestPgFixture)를 그대로 읽어 쓴다. 저장소에 새 카드 값을 두지 않는다.
 #
 # 앱 리허설 설정(명령줄 override, 운영 설정 파일은 그대로):
@@ -32,7 +32,7 @@ PROM_URL="http://127.0.0.1:9090"
 AM_URL="http://127.0.0.1:9093"
 LOKI_URL="http://127.0.0.1:3100"
 GRAFANA_URL="http://127.0.0.1:3000"
-USER_ID="${REHEARSAL_USER_ID:-1}"
+USER_ID=1 # local 시드 사용자(sql/local/seed-users.sql)
 INFRA=(docker compose -p w10r-infra -f "$ROOT/docker/infra-compose.yml")
 MON=(docker compose -p w10r-mon -f "$ROOT/docker/monitoring-compose.yml" -f "$ROOT/docker/monitoring-compose.rehearsal.yml")
 ADMIN="$ROOT/scripts/ops/admin-curl.sh"
@@ -61,8 +61,6 @@ case "${1:-}" in
         exec "$TEST_PG" start
         ;;
     seed)
-        "${INFRA[@]}" exec -T mysql mysql -uapplication -papplication loopers \
-            -e "INSERT IGNORE INTO users (id) VALUES ($USER_ID);" 2> >(grep -v 'Using a password' >&2)
         brand_id="$("$ADMIN" POST /api-admin/v1/brands '{"name":"리허설 브랜드"}' | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["id"])')"
         "$ADMIN" POST /api-admin/v1/products "{\"brandId\":$brand_id,\"name\":\"리허설 상품\",\"price\":1000,\"stock\":1000}" \
             | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["id"])'

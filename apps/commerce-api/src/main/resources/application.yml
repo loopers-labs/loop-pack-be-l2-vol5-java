@@ -112,7 +112,7 @@ spring:
       on-profile: local, test
 
 ---
-# 로컬에서 쿠폰 발급을 해 볼 캠페인을 준비한다(29절). ddl-auto create로 테이블이 생긴 뒤 실행되도록 초기화를 미룬다. test 프로필에는 두지 않는다.
+# 로컬에서 쿠폰 발급을 해 볼 캠페인과 주문을 해 볼 사용자 1명(10주차 리허설 B3)을 준비한다(29절). ddl-auto create로 테이블이 생긴 뒤 실행되도록 초기화를 미룬다. test 프로필에는 두지 않는다.
 spring:
   config:
     activate:
@@ -123,6 +123,7 @@ spring:
       data-locations:
         - classpath:sql/local/seed-coupon-campaign.sql
         - classpath:sql/local/seed-coupon-admission-settings.sql
+        - classpath:sql/local/seed-users.sql
   jpa:
     defer-datasource-initialization: true
 # 관리자 HTTP Basic(local·dev 전용). 계정은 환경 변수로만 받고 기본값을 두지 않는다. 비어 있으면 관리자 API는 모두 거절된다.
