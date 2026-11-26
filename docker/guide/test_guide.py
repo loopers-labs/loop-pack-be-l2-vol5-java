@@ -106,6 +106,11 @@ def prometheus_ok(path, body):
     if "commerce_payment_unresolved" in query and "by (status)" in query:
         result = [{"metric": {"status": "unknown"}, "value": [0, "50"]},
                   {"metric": {"status": "needs_review"}, "value": [0, "2"]}]
+    elif "commerce_payment_refund_cases" in query and "by (status)" in query:
+        result = [{"metric": {"status": "handed_to_human"}, "value": [0, "12"]},
+                  {"metric": {"status": "refund_unknown"}, "value": [0, "1"]}]
+    elif "refund_outcome" in query:
+        result = [{"metric": {}, "value": [0, "4"]}]
     elif "unknown_entered" in query:
         result = [{"metric": {}, "value": [0, "0.006006006006006006"]}]
     else:
@@ -356,6 +361,23 @@ class GuideTest(GuideTestBase):
         self.assertEqual("guided", messages[0]["guide"], "LLM 제한 시간 초과로 원본 fallback이 되면 안 된다")
         self.assertIn("unknown=50", messages[0]["text"])
         self.assertIn("AI 요약 없음: LLM 호출 실패(", messages[0]["text"])
+
+    def test_g11_환불_누적_critical에는_환불_확인_대상_상태별과_사람_이관_증가를_근거로_붙인다(self):
+        self.start(api_key="test-key")
+        alert = json.loads(json.dumps(ALERT))
+        alert["groupLabels"]["alertname"] = alert["commonLabels"]["alertname"] = "PaymentRefundPiling"
+        alert["alerts"][0]["labels"]["alertname"] = "PaymentRefundPiling"
+        alert["alerts"][0]["annotations"]["runbook_url"] = "docs/runbook/week10.md#paymentrefundpiling"
+
+        status = self.post_alert(json.dumps(alert).encode())
+
+        self.assertEqual(200, status)
+        text = self.slack_messages()[0]["text"]
+        self.assertIn("환불 확인 대상 상태별: handed_to_human=12, refund_unknown=1", text)
+        self.assertIn("사람 이관 증가(30분): 4", text)
+        sent = json.loads(self.llm.requests[0]["body"].decode("utf-8"))["messages"][0]["content"]
+        self.assertIn('"handed_to_human": 12', sent, "LLM에도 집계만 보낸다")
+        self.assertIn("환불 확인 대상 상태별", sent, "어디부터 볼지에 환불 패널 이름을 준다")
 
     def test_metrics_가동과_처리_실패_수를_낸다(self):
         self.start(prometheus=lambda path, body: (500, {"status": "error"}))

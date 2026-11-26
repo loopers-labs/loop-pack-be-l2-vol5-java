@@ -8,6 +8,7 @@
 
 - local·dev에서만 쓴다. 계정은 환경 변수 `COMMERCE_ADMIN_USERNAME`·`COMMERCE_ADMIN_PASSWORD`로 넣는다. 변경 요청의 CSRF 토큰은 래퍼가 알아서 붙인다(설계 문서 9-4).
 - 미확인 목록: `scripts/ops/admin-curl.sh GET '/api-admin/v1/payments/unresolved?status=UNKNOWN&minAgeSeconds=300'`
+- 환불 확인 대상 목록(5단계): `status=HANDED_TO_HUMAN` 또는 `status=REFUND_UNKNOWN`. 사람 처리는 조회만 하고 PG 콘솔 등에서 한다.
 - 일괄 확정(목록에서 고른 orderId만, 1~50건): `scripts/ops/admin-curl.sh POST /api-admin/v1/payments/reconcile-batch '{"orderIds":[101,102]}'`
 
 ## PaymentUnresolvedPiling
@@ -48,6 +49,35 @@
 - 확인: 대시보드 "결제 확정 API 응답 시간 p50·p90·p99(5분)" 패널.
 - 본문은 범위 밖(다음 단계).
 
+## PaymentRefundHandedToHuman
+
+- severity: warning
+- 뜻: 만료된 주문의 늦은 성공(돈이 나갔을 수 있음)을 자동 추적 2일[임시] 안에 결론 내지 못해 사람 확인으로 넘긴 환불 대상이 15분 넘게 남아 있다. 자동으로 풀리지 않는다.
+- 기한: 고객 환불 약속은 만료 뒤 4일[임시]이다. 넘어온 시점부터 1일 이상 남아 있으니 아침 확인으로 처리한다.
+- 대상 고정: `scripts/ops/admin-curl.sh GET '/api-admin/v1/payments/unresolved?status=HANDED_TO_HUMAN'`. 이 목록의 주문만 다룬다.
+- 처리: 목록의 주문마다 PG 콘솔 등에서 실제 승인·취소 상태를 확인하고 필요하면 수동으로 환불한다. 처리 결과를 시스템에 표시하는 수단은 이번 범위 밖이라 처리 내역은 따로 기록한다.
+- 금지: 결제·환불 요청을 다시 보내지 않는다(중복 결제·중복 환불). DB 상태를 직접 바꾸지 않는다.
+- 확인: 대시보드 "환불 확인 대상 상태별" 패널.
+
+## PaymentRefundUnknown
+
+- severity: warning
+- 뜻: PG에 환불(취소)을 요청했지만 응답을 잃어 결과를 모르는 대상(REFUND_UNKNOWN)이 30분 넘게 남아 있다. 시스템은 다시 보내지 않고 다음 회차에 조회로 푼다. 30분 넘게 못 풀었으면 PG 취소 조회가 막혔을 수 있다.
+- 대상 고정: `scripts/ops/admin-curl.sh GET '/api-admin/v1/payments/unresolved?status=REFUND_UNKNOWN'`.
+- 처리: PG 상태(장애·조회 회로)를 먼저 본다. 회복되면 자동 조회가 이어서 푼다. 자동 추적 기한을 넘기면 사람 확인(PaymentRefundHandedToHuman)으로 넘어온다. 급하면 PG 콘솔에서 취소 여부를 확인한다.
+- 금지: 환불 요청을 다시 보내지 않는다(결과를 모를 때 재전송은 중복 환불 위험). DB 상태를 직접 바꾸지 않는다.
+- 확인: 대시보드 "환불 확인 대상 상태별" 패널.
+
+## PaymentRefundPiling
+
+- severity: critical
+- 뜻: 사람 확인으로 넘어간 환불 대상이 10건[임시] 이상이고 새 이관이 최근 30분 안에도 계속된 채 10분 지속됐다. 대형 장애 뒤 자동 환불이 결론을 내지 못하고 사람 몫이 쌓이고 있다.
+- 새 이관이 멈추면 풀린다. 이미 쌓인 건은 PaymentRefundHandedToHuman(warning)으로 계속 남는다.
+- 대상 고정: `scripts/ops/admin-curl.sh GET '/api-admin/v1/payments/unresolved?status=HANDED_TO_HUMAN'`. 이 목록을 기준으로 사람을 나눠 처리한다.
+- 처리: PG 장애·환불 조회 실패가 원인인지 먼저 본다(대시보드, 경계 로그). 대상은 PG 콘솔 등에서 수동으로 확인·환불한다. 처리 결과를 시스템에 표시하는 수단은 이번 범위 밖이다.
+- 금지: 결제·환불 요청을 다시 보내지 않는다. DB 상태를 직접 바꾸지 않는다.
+- 확인: 대시보드 "환불 확인 대상 상태별" 패널.
+
 ## GuideServerDown
 
 - severity: warning
@@ -58,7 +88,7 @@
 ## critical 가이드 메시지 읽는 법
 
 - critical은 Slack 자리에 두 번 온다. ① Alertmanager 원본 ② 가이드 서버가 근거를 붙인 메시지(`[가이드]`로 시작).
-- 가이드 메시지의 근거는 결정적으로 모은다: 미확인 상태별 수, 결과 모름 유입 비율(30분), 만료 종결 증가(10분), 최근 30분 경계 로그 WARN·ERROR의 종류별 줄 수와 대표 줄(최대 3줄, 카드·비밀값 가림).
+- 가이드 메시지의 근거는 결정적으로 모은다: 미확인 상태별 수, 결과 모름 유입 비율(30분), 만료 종결 증가(10분), 환불 확인 대상 상태별 수, 사람 이관 증가(30분), 최근 30분 경계 로그 WARN·ERROR의 종류별 줄 수와 대표 줄(최대 3줄, 카드·비밀값 가림).
 - `[가이드 실패: …]`로 시작하면 근거 수집이 실패했거나 제한 시간([임시] 10s)을 넘은 것이다. 뒤에 붙은 원본 알림으로 대응한다.
 - `ANTHROPIC_API_KEY`가 있으면 "AI 요약"이 붙는다. AI에는 집계와 로그 종류(식별자·숫자 ID를 모두 가린 문구)만 보낸다. 주문 번호·PG 주문 번호·시도 키·거래 키·사용자 ID·카드·비밀값은 보내지 않는다. 남아 있으면 부르지 않는다. AI 요약은 "무엇이 일어나는 것 같다, 어디부터 보라"까지다. 개별 주문 찾기와 조치는 사람이 아래 순서로 한다.
 

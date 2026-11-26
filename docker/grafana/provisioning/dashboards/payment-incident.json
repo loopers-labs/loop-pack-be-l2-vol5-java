@@ -518,6 +518,69 @@
           "refId": "C"
         }
       ]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "환불 확인 대상 상태별",
+      "description": "만료 뒤 늦은 성공의 환불 확인 대상 수(tracking·refund_requested·refund_unknown·refunded·closed_no_charge·handed_to_human). DB 주기 조회라 갱신 주기만큼 늦다. 빨간 선은 critical 건수 조건 10건(handed_to_human).\nrunbook: https://github.com/loopers-labs/loop-pack-be-l2-vol5-java/blob/L2J4Dot/docs/runbook/week10.md#paymentrefundhandedtohuman / runbook: https://github.com/loopers-labs/loop-pack-be-l2-vol5-java/blob/L2J4Dot/docs/runbook/week10.md#paymentrefundunknown / runbook: https://github.com/loopers-labs/loop-pack-be-l2-vol5-java/blob/L2J4Dot/docs/runbook/week10.md#paymentrefundpiling",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 42,
+        "w": 24,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "spanNulls": false,
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 10
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "expr": "max by (status) (commerce_payment_refund_cases)",
+          "legendFormat": "{{status}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A"
+        }
+      ]
     }
   ],
   "links": [
