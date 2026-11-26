@@ -16,6 +16,14 @@ public final class RefundCase {
 
     public enum PersonResult { REFUNDED, NO_CHARGE }
 
+    // 마지막 확인이 왜 멈췄는지 남기는 유한 분류다(10주차 5c). 결론·진행이 정상으로 처리된 확인은 OK 하나로 둔다(PL P1).
+    public enum CheckOutcome {
+        PG_UNREACHABLE, PG_ERROR, APPLY_FAILED, MISMATCH, PENDING, EMPTY, CANCEL_UNKNOWN, CANCEL_REJECTED, OK
+    }
+
+    // 회차를 누가 돌렸는지다. 스케줄러는 자동 담당만 환불하고, 사람이 "지금 처리"를 누른 회차는 사람 담당 건도 환불할 수 있다(PL P2).
+    public enum CheckTrigger { SCHEDULER, PERSON }
+
     // [임시] 자동 추적 2일 뒤 사람에게 넘기고, 고객에게는 4일 안 환불을 약속한다(사용자 결정 D188).
     public static final Duration HANDOFF_AFTER = Duration.ofDays(2);
     public static final Duration PROMISE_AFTER = Duration.ofDays(4);
@@ -50,6 +58,9 @@ public final class RefundCase {
     private int checkAttempts;
     private Instant refundRequestedAt;
     private Instant concludedAt;
+    private Instant lastCheckAt;
+    private CheckOutcome lastCheckOutcome;
+    private String lastCheckCause;
 
     private RefundCase(long orderId, String providerId, String providerOrderId, Money amount, MoneyStatus moneyStatus,
         RefundActor refundActor, Owner owner, String ownerReason, Instant ownerChangedAt, Instant ownerClosedAt,
@@ -112,6 +123,21 @@ public final class RefundCase {
             nextCheckAt, checkAttempts, refundRequestedAt, concludedAt);
     }
 
+    public static RefundCase restore(long orderId, String providerId, String providerOrderId, Money amount,
+        MoneyStatus moneyStatus, RefundActor refundActor, Owner owner, String ownerReason, Instant ownerChangedAt,
+        Instant ownerClosedAt, String ownerClosedBy, PaymentRecord.ProviderStatus priorProviderStatus, String transactionKey,
+        Instant openedAt, Instant handoffAt, Instant promiseAt, Instant nextCheckAt, int checkAttempts,
+        Instant refundRequestedAt, Instant concludedAt, Instant lastCheckAt, CheckOutcome lastCheckOutcome,
+        String lastCheckCause) {
+        RefundCase refundCase = restore(orderId, providerId, providerOrderId, amount, moneyStatus, refundActor, owner,
+            ownerReason, ownerChangedAt, ownerClosedAt, ownerClosedBy, priorProviderStatus, transactionKey, openedAt, handoffAt,
+            promiseAt, nextCheckAt, checkAttempts, refundRequestedAt, concludedAt);
+        refundCase.lastCheckAt = lastCheckAt;
+        refundCase.lastCheckOutcome = lastCheckOutcome;
+        refundCase.lastCheckCause = lastCheckCause;
+        return refundCase;
+    }
+
     // 환불은 스케줄러 한 곳에서만 보낸다. 여기서는 키를 남기고 확인 중이면 조회를 당길 뿐 돈의 상태를 앞으로 옮기지 않는다.
     // 청구 없음으로 끝난 뒤의 성공은 사실이 뒤집힌 것이라 청구 확인으로 다시 열고 사람이 맡는다. 환불됨은 끝난 사실이라 그대로 둔다.
     public void joinLateSuccess(String reportedTransactionKey, Instant now, Duration personCheckDelay) {
@@ -153,6 +179,17 @@ public final class RefundCase {
     // 환불 요청함을 commit한 뒤에만 취소를 보내므로 청구 확인에서만 한 번 요청할 수 있다.
     public boolean canRequestRefund() {
         return moneyStatus == MoneyStatus.CHARGED && owner == Owner.AUTO;
+    }
+
+    public boolean canRequestRefund(CheckTrigger trigger) {
+        return canRequestRefund();
+    }
+
+    public void requestRefund(CheckTrigger trigger, Instant now, Duration resultCheckDelay) {
+        requestRefund(now, resultCheckDelay);
+    }
+
+    public void recordCheck(CheckOutcome outcome, String cause, Instant now) {
     }
 
     public void recordCharged(String foundTransactionKey) {
@@ -378,5 +415,17 @@ public final class RefundCase {
 
     public Instant getConcludedAt() {
         return concludedAt;
+    }
+
+    public Instant getLastCheckAt() {
+        return lastCheckAt;
+    }
+
+    public CheckOutcome getLastCheckOutcome() {
+        return lastCheckOutcome;
+    }
+
+    public String getLastCheckCause() {
+        return lastCheckCause;
     }
 }

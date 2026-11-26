@@ -53,4 +53,8 @@ public class PaymentRefundCasePersistenceAdapter implements PaymentRefundCaseRep
     public List<Long> findDue(Instant now, int limit) {
         return paymentRefundCaseJpaRepository.findDue(now, PageRequest.of(0, limit));
     }
+
+    @Override
+    public void recordCheck(long orderId, RefundCase.CheckOutcome outcome, String cause, Instant checkedAt) {
+    }
 }

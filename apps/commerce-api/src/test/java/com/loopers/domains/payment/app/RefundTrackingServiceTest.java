@@ -70,11 +70,13 @@ class RefundTrackingServiceTest {
     private final List<String> events = new CopyOnWriteArrayList<>();
     private final Set<String> blockedProviders = new HashSet<>();
     private final List<String> outcomes = new CopyOnWriteArrayList<>();
+    private final List<RefundCase.CheckOutcome> checks = new CopyOnWriteArrayList<>();
     private final HalfJitter jitter = new HalfJitter();
     private InMemoryRefundCases refundCases;
     private PaymentGateway gatewayA;
     private PaymentGateway gatewayB;
     private MutablePaymentClock clock;
+    private RefundCheckFailureRecorder failureRecorder;
     private RefundTrackingService service;
 
     @BeforeEach
@@ -84,9 +86,10 @@ class RefundTrackingServiceTest {
         gatewayB = gateway(PG_B);
         clock = new MutablePaymentClock();
         clock.set(NOW);
+        failureRecorder = mock(RefundCheckFailureRecorder.class);
         service = new RefundTrackingService(refundCases, new PaymentGatewayRegistry(List.of(gatewayA, gatewayB), List.of(PG_A, PG_B)),
             blockedProviders::contains, new TransactionTemplate(new RecordingTransactions(events)), clock,
-            new RecordingOutcomes(), jitter);
+            new RecordingOutcomes(), jitter, failureRecorder);
     }
 
     @Test
@@ -635,6 +638,197 @@ class RefundTrackingServiceTest {
             });
     }
 
+    @ParameterizedTest(name = "조회 장면={0} → 마지막 확인={1}, 원인={2}")
+    @CsvSource({
+        "unreachable, PG_UNREACHABLE, ResourceAccessException(SocketTimeoutException)",
+        "exception, PG_UNREACHABLE, IllegalStateException",
+        "not-called, PG_UNREACHABLE, ",
+        "error-response, PG_ERROR, HTTP 500",
+        "zero, EMPTY, ",
+        "pending, PENDING, ",
+        "mismatch, MISMATCH, ",
+        "multiple, MISMATCH, ",
+        "failed, OK, ",
+        "canceled, OK, "
+    })
+    @DisplayName("C2: 회차의 조회 결과마다 마지막 확인 시각·분류·원인(클래스 이름·짧은 사유만, 예외 메시지 없음)을 대상에 남기고 그 분류를 commit 뒤 한 번 센다")
+    void recordsLastCheckPerLookupResult(String scene, RefundCase.CheckOutcome expected, String expectedCause) {
+        refundCases.put(tracking(1, PG_A, "TR-1"));
+        switch (scene) {
+            case "unreachable" -> lookup(gatewayA, 1, new PaymentTransactionsLookup.Failed(
+                "ResourceAccessException(SocketTimeoutException)", PaymentTransactionsLookup.FailureKind.UNREACHABLE));
+            case "exception" -> when(gatewayA.verifyOrder(anyString(), any()))
+                .thenThrow(new IllegalStateException("PG-SECRET 내부 메시지"));
+            case "not-called" -> lookup(gatewayA, 1, new PaymentTransactionsLookup.NotCalled());
+            case "error-response" -> lookup(gatewayA, 1, new PaymentTransactionsLookup.Failed("HTTP 500",
+                PaymentTransactionsLookup.FailureKind.ERROR_RESPONSE));
+            case "zero" -> lookup(gatewayA, 1, new PaymentTransactionsLookup.Found(List.of(), PaymentTransactionsLookup.Coverage.ALL));
+            case "pending" -> lookup(gatewayA, 1, found(tx("TR-1", 1, AMOUNT, PaymentTransactionStatus.PENDING)));
+            case "mismatch" -> lookup(gatewayA, 1, found(tx("TR-1", 1, new Money(1), PaymentTransactionStatus.SUCCESS)));
+            case "multiple" -> lookup(gatewayA, 1, new PaymentTransactionsLookup.Found(List.of(
+                tx("TR-1", 1, AMOUNT, PaymentTransactionStatus.SUCCESS), tx("TR-2", 1, AMOUNT, PaymentTransactionStatus.SUCCESS)),
+                PaymentTransactionsLookup.Coverage.ALL));
+            case "failed" -> lookup(gatewayA, 1, found(tx("TR-1", 1, AMOUNT, PaymentTransactionStatus.FAILED)));
+            default -> lookup(gatewayA, 1, found(tx("TR-1", 1, AMOUNT, PaymentTransactionStatus.CANCELED)));
+        }
+
+        service.trackDueCases();
+
+        RefundCase refundCase = refundCases.get(1);
+        assertThat(refundCase.getLastCheckAt()).isEqualTo(NOW);
+        assertThat(refundCase.getLastCheckOutcome()).isEqualTo(expected);
+        assertThat(refundCase.getLastCheckCause()).isEqualTo(expectedCause);
+        assertThat(checks).containsExactly(expected);
+    }
+
+    @Test
+    @DisplayName("C2: 회로가 막힌 PG의 대상은 PG를 부르지 않고 마지막 확인을 PG_UNREACHABLE로 남기며 돈·담당·조회 횟수는 그대로다")
+    void recordsUnreachableWhenCircuitBlocksLookup() {
+        refundCases.put(tracking(1, PG_A, "TR-1"));
+        blockedProviders.add(PG_A);
+
+        service.trackDueCases();
+
+        RefundCase refundCase = refundCases.get(1);
+        verify(gatewayA, never()).verifyOrder(anyString(), any());
+        assertThat(refundCase.getMoneyStatus()).isEqualTo(MoneyStatus.CHECKING);
+        assertThat(refundCase.getOwner()).isEqualTo(Owner.AUTO);
+        assertThat(refundCase.getCheckAttempts()).isZero();
+        assertThat(refundCase.getLastCheckAt()).isEqualTo(NOW);
+        assertThat(refundCase.getLastCheckOutcome()).isEqualTo(RefundCase.CheckOutcome.PG_UNREACHABLE);
+        assertThat(checks).containsExactly(RefundCase.CheckOutcome.PG_UNREACHABLE);
+    }
+
+    @ParameterizedTest(name = "취소 결과={0} → 마지막 확인={1}, 원인={2}, 돈의 상태={3}")
+    @CsvSource({
+        "canceled, OK, , REFUNDED",
+        "rejected, CANCEL_REJECTED, ALREADY_SETTLED, CHARGED",
+        "unknown, CANCEL_UNKNOWN, SocketTimeoutException, REFUND_UNKNOWN",
+        "not-sent, CANCEL_UNKNOWN, ConnectException, REFUND_UNKNOWN",
+        "throws, CANCEL_UNKNOWN, IllegalStateException, REFUND_UNKNOWN"
+    })
+    @DisplayName("C2: 환불 요청 회차는 취소 결과로 마지막 확인을 남기고(결과 모름·거절은 원인과 함께) 한 회차에 한 번만 센다")
+    void recordsLastCheckPerCancelResult(String scene, RefundCase.CheckOutcome expected, String expectedCause,
+        MoneyStatus expectedMoney) {
+        refundCases.put(tracking(1, PG_A, "TR-1"));
+        lookup(gatewayA, 1, found(tx("TR-1", 1, AMOUNT, PaymentTransactionStatus.SUCCESS)));
+        switch (scene) {
+            case "canceled" -> cancel(gatewayA,
+                new PaymentCancelResult.Canceled(tx("TR-1", 1, AMOUNT, PaymentTransactionStatus.CANCELED)));
+            case "rejected" -> cancel(gatewayA, new PaymentCancelResult.RejectedNoEffect("ALREADY_SETTLED"));
+            case "unknown" -> cancel(gatewayA, new PaymentCancelResult.Unknown("SocketTimeoutException"));
+            case "not-sent" -> cancel(gatewayA, new PaymentCancelResult.NotSent("ConnectException"));
+            default -> when(gatewayA.cancel(any())).thenThrow(new IllegalStateException("PG-SECRET 내부 메시지"));
+        }
+
+        service.trackDueCases();
+
+        RefundCase refundCase = refundCases.get(1);
+        assertThat(refundCase.getMoneyStatus()).isEqualTo(expectedMoney);
+        assertThat(refundCase.getLastCheckAt()).isEqualTo(NOW);
+        assertThat(refundCase.getLastCheckOutcome()).isEqualTo(expected);
+        assertThat(refundCase.getLastCheckCause()).isEqualTo(expectedCause);
+        assertThat(checks).containsExactly(expected);
+    }
+
+    @Test
+    @DisplayName("C2: 조회 결과 반영이 예외로 끝나면 대상은 그대로이고 취소를 보내지 않으며 반영 실패 기록기에 주문과 예외 클래스 이름(메시지 없음)만 넘긴다")
+    void handsApplyFailureToRecorder() {
+        refundCases.put(tracking(1, PG_A, "TR-1"));
+        lookup(gatewayA, 1, found(tx("TR-1", 1, AMOUNT, PaymentTransactionStatus.SUCCESS)));
+        refundCases.failNextSaveOf(MoneyStatus.REFUND_REQUESTED, new IllegalStateException("PG-SECRET 내부 메시지"));
+
+        service.trackDueCases();
+
+        verify(failureRecorder, times(1)).recordApplyFailed(1, "IllegalStateException");
+        verify(gatewayA, never()).cancel(any());
+        assertThat(refundCases.get(1).getMoneyStatus()).isEqualTo(MoneyStatus.CHECKING);
+        assertThat(checks).isEmpty();
+    }
+
+    @ParameterizedTest(name = "돈의 상태={0}")
+    @EnumSource(value = MoneyStatus.class, names = {"CHECKING", "CHARGED"})
+    @DisplayName("C3: 사람 담당 중 대상에 지금 처리를 누르면 다음 조회 시각 전이어도 바로 조회하고 SUCCESS면 환불 요청함 commit 뒤 취소를 한 번 보내 환불됨(SYSTEM)으로 끝나며 담당은 누른 관리자 이름으로 닫힌다")
+    void processNowRefundsPersonCase(MoneyStatus moneyStatus) {
+        refundCases.put(withState(1, PG_A, "TR-1", moneyStatus, Owner.PERSON, NOW.plus(HALF_PERSON)));
+        lookup(gatewayA, 1, found(tx("TR-1", 1, AMOUNT, PaymentTransactionStatus.SUCCESS)));
+        cancel(gatewayA, new PaymentCancelResult.Canceled(tx("TR-1", 1, AMOUNT, PaymentTransactionStatus.CANCELED)));
+
+        RefundTrackingService.ProcessNowResult result = service.processNow(1, "ops-admin");
+
+        assertThat(events).containsSubsequence("save:1:REFUND_REQUESTED", "commit", "cancel:1", "save:1:REFUNDED", "commit");
+        verify(gatewayA, times(1)).cancel(new PaymentCancelCommand(providerOrderId(1), "TR-1", AMOUNT));
+        RefundCase refundCase = refundCases.get(1);
+        assertThat(refundCase.getMoneyStatus()).isEqualTo(MoneyStatus.REFUNDED);
+        assertThat(refundCase.getRefundActor()).isEqualTo(RefundActor.SYSTEM);
+        assertThat(refundCase.getOwner()).isEqualTo(Owner.PERSON);
+        assertThat(refundCase.getOwnerClosedAt()).isEqualTo(NOW);
+        assertThat(refundCase.getOwnerClosedBy()).isEqualTo("ops-admin");
+        assertThat(refundCase.getLastCheckOutcome()).isEqualTo(RefundCase.CheckOutcome.OK);
+        assertThat(result).isEqualTo(new RefundTrackingService.ProcessNowResult(1, "REFUNDED", "SYSTEM", "PERSON", NOW,
+            "ops-admin", NOW, "OK", null));
+        assertThat(outcomes).containsExactly("REFUNDED/SYSTEM");
+        assertThat(checks).containsExactly(RefundCase.CheckOutcome.OK);
+    }
+
+    @ParameterizedTest(name = "돈의 상태={0}")
+    @EnumSource(value = MoneyStatus.class, names = {"REFUND_REQUESTED", "REFUND_UNKNOWN"})
+    @DisplayName("C4: 환불을 요청한 뒤인 사람 담당 대상에 지금 처리를 누르면 조회만 하고 SUCCESS가 보여도 취소를 다시 보내지 않으며 담당은 열린 채다")
+    void processNowOnlyLooksUpAfterRefundRequested(MoneyStatus moneyStatus) {
+        refundCases.put(withState(1, PG_A, "TR-1", moneyStatus, Owner.PERSON, NOW.plus(HALF_PERSON)));
+        lookup(gatewayA, 1, found(tx("TR-1", 1, AMOUNT, PaymentTransactionStatus.SUCCESS)));
+
+        RefundTrackingService.ProcessNowResult result = service.processNow(1, "ops-admin");
+
+        verify(gatewayA, times(1)).verifyOrder(providerOrderId(1), "TR-1");
+        verify(gatewayA, never()).cancel(any());
+        RefundCase refundCase = refundCases.get(1);
+        assertThat(refundCase.getMoneyStatus()).isEqualTo(moneyStatus);
+        assertThat(refundCase.isPersonOpen()).isTrue();
+        assertThat(refundCase.getLastCheckAt()).isEqualTo(NOW);
+        assertThat(result.moneyStatus()).isEqualTo(moneyStatus.name());
+        assertThat(result.owner()).isEqualTo("PERSON");
+        assertThat(result.ownerClosedAt()).isNull();
+    }
+
+    @Test
+    @DisplayName("C5: 지금 처리를 두 번 연속 누르면 첫 번째에 보낸 취소의 결과를 모를 때 두 번째는 조회만 해 취소 호출은 1번이다")
+    void processNowTwiceSendsCancelOnce() {
+        refundCases.put(withState(1, PG_A, "TR-1", MoneyStatus.CHARGED, Owner.PERSON, NOW.plus(HALF_PERSON)));
+        lookup(gatewayA, 1, found(tx("TR-1", 1, AMOUNT, PaymentTransactionStatus.SUCCESS)));
+        cancel(gatewayA, new PaymentCancelResult.Unknown("SocketTimeoutException"));
+
+        RefundTrackingService.ProcessNowResult first = service.processNow(1, "ops-admin");
+        RefundTrackingService.ProcessNowResult second = service.processNow(1, "ops-admin");
+
+        verify(gatewayA, times(2)).verifyOrder(providerOrderId(1), "TR-1");
+        verify(gatewayA, times(1)).cancel(any());
+        assertThat(first.moneyStatus()).isEqualTo("REFUND_UNKNOWN");
+        assertThat(first.lastCheckOutcome()).isEqualTo("CANCEL_UNKNOWN");
+        assertThat(second.moneyStatus()).isEqualTo("REFUND_UNKNOWN");
+        assertThat(refundCases.get(1).isPersonOpen()).isTrue();
+    }
+
+    @Test
+    @DisplayName("C6: 회로가 막힌 PG의 사람 담당 대상에 지금 처리를 누르면 PG를 부르지 않고 PG_UNREACHABLE을 돌려주며 돈·담당은 그대로다")
+    void processNowSkipsPgWhenCircuitBlocks() {
+        refundCases.put(withState(1, PG_A, "TR-1", MoneyStatus.CHARGED, Owner.PERSON, NOW.plus(HALF_PERSON)));
+        blockedProviders.add(PG_A);
+
+        RefundTrackingService.ProcessNowResult result = service.processNow(1, "ops-admin");
+
+        verify(gatewayA, never()).verifyOrder(anyString(), any());
+        verify(gatewayA, never()).cancel(any());
+        RefundCase refundCase = refundCases.get(1);
+        assertThat(refundCase.getMoneyStatus()).isEqualTo(MoneyStatus.CHARGED);
+        assertThat(refundCase.isPersonOpen()).isTrue();
+        assertThat(refundCase.getLastCheckOutcome()).isEqualTo(RefundCase.CheckOutcome.PG_UNREACHABLE);
+        assertThat(result.moneyStatus()).isEqualTo("CHARGED");
+        assertThat(result.owner()).isEqualTo("PERSON");
+        assertThat(result.ownerClosedAt()).isNull();
+        assertThat(result.lastCheckOutcome()).isEqualTo("PG_UNREACHABLE");
+    }
+
     private static PaymentGateway gateway(String providerId) {
         PaymentGateway gateway = mock(PaymentGateway.class);
         when(gateway.providerId()).thenReturn(providerId);
@@ -699,7 +893,8 @@ class RefundTrackingServiceTest {
             source.getMoneyStatus(), source.getRefundActor(), source.getOwner(), source.getOwnerReason(),
             source.getOwnerChangedAt(), source.getOwnerClosedAt(), source.getOwnerClosedBy(), source.getPriorProviderStatus(),
             source.getTransactionKey(), source.getOpenedAt(), source.getHandoffAt(), source.getPromiseAt(),
-            source.getNextCheckAt(), source.getCheckAttempts(), source.getRefundRequestedAt(), source.getConcludedAt());
+            source.getNextCheckAt(), source.getCheckAttempts(), source.getRefundRequestedAt(), source.getConcludedAt(),
+            source.getLastCheckAt(), source.getLastCheckOutcome(), source.getLastCheckCause());
     }
 
     // 돈의 상태가 끝나지 않은 대상 중 다음 조회 시각이 지난 것을 담당과 무관하게 고르되 자동 담당을 먼저, 그다음 시각 순으로 고르는 DB 조회를
@@ -709,6 +904,8 @@ class RefundTrackingServiceTest {
             MoneyStatus.REFUND_REQUESTED, MoneyStatus.REFUND_UNKNOWN);
         private final Map<Long, RefundCase> rows = new ConcurrentHashMap<>();
         private final List<String> events;
+        private RuntimeException saveFailure;
+        private MoneyStatus failingMoneyStatus;
 
         InMemoryRefundCases(List<String> events) {
             this.events = events;
@@ -722,8 +919,18 @@ class RefundTrackingServiceTest {
             return copy(rows.get(orderId));
         }
 
+        void failNextSaveOf(MoneyStatus moneyStatus, RuntimeException failure) {
+            saveFailure = failure;
+            failingMoneyStatus = moneyStatus;
+        }
+
         @Override
         public RefundCase save(RefundCase refundCase) {
+            if (saveFailure != null && refundCase.getMoneyStatus() == failingMoneyStatus) {
+                RuntimeException failure = saveFailure;
+                saveFailure = null;
+                throw failure;
+            }
             events.add("save:" + refundCase.getOrderId() + ":" + refundCase.getMoneyStatus());
             rows.put(refundCase.getOrderId(), copy(refundCase));
             return copy(refundCase);
@@ -753,6 +960,11 @@ class RefundTrackingServiceTest {
             due.sort(Comparator.comparing(RefundCase::getOwner).thenComparing(RefundCase::getNextCheckAt)
                 .thenComparing(RefundCase::getOrderId));
             return due.stream().limit(limit).map(RefundCase::getOrderId).toList();
+        }
+
+        @Override
+        public void recordCheck(long orderId, RefundCase.CheckOutcome outcome, String cause, Instant checkedAt) {
+            throw new UnsupportedOperationException("반영 실패 기록은 RefundCheckFailureRecorder 대역으로 본다.");
         }
     }
 
@@ -806,6 +1018,11 @@ class RefundTrackingServiceTest {
         public void recordPersonAssigned(String reason) {
             events.add("assigned:" + reason);
             outcomes.add("assigned:" + reason);
+        }
+
+        @Override
+        public void recordCheck(RefundCase.CheckOutcome outcome) {
+            checks.add(outcome);
         }
     }
 }

@@ -15,6 +15,12 @@ public sealed interface PaymentTransactionsLookup {
     record NotCalled() implements PaymentTransactionsLookup {
     }
 
-    record Failed(String reason) implements PaymentTransactionsLookup {
+    // 응답 자체를 받지 못한 실패(연결·타임아웃)와 PG가 오류로 응답한 실패를 나눈다. 환불 추적의 막힌 원인 분류가 이 구분을 쓴다.
+    enum FailureKind { UNREACHABLE, ERROR_RESPONSE }
+
+    record Failed(String reason, FailureKind kind) implements PaymentTransactionsLookup {
+        public Failed(String reason) {
+            this(reason, FailureKind.UNREACHABLE);
+        }
     }
 }

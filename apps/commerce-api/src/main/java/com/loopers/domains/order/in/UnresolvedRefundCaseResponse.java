@@ -9,12 +9,13 @@ import java.time.Instant;
 public record UnresolvedRefundCaseResponse(long orderId, String providerOrderId, String providerId, long amount,
     String moneyStatus, String refundActor, String owner, String ownerReason, Instant ownerChangedAt, Instant ownerClosedAt,
     String priorProviderStatus, boolean hasTransactionKey, Instant openedAt, long elapsedSeconds, Instant handoffAt,
-    Instant promiseAt, int checkAttempts, Instant nextCheckAt, Instant refundRequestedAt, Instant concludedAt) {
+    Instant promiseAt, int checkAttempts, Instant nextCheckAt, Instant refundRequestedAt, Instant concludedAt,
+    Instant lastCheckAt, String lastCheckOutcome, String lastCheckCause) {
     static UnresolvedRefundCaseResponse from(UnresolvedRefundCaseView view) {
         return new UnresolvedRefundCaseResponse(view.orderId(), view.providerOrderId(), view.providerId(), view.amount(),
             view.moneyStatus(), view.refundActor(), view.owner(), view.ownerReason(), view.ownerChangedAt(),
             view.ownerClosedAt(), view.priorProviderStatus(), view.hasTransactionKey(), view.openedAt(), view.elapsedSeconds(),
             view.handoffAt(), view.promiseAt(), view.checkAttempts(), view.nextCheckAt(), view.refundRequestedAt(),
-            view.concludedAt());
+            view.concludedAt(), view.lastCheckAt(), view.lastCheckOutcome(), view.lastCheckCause());
     }
 }

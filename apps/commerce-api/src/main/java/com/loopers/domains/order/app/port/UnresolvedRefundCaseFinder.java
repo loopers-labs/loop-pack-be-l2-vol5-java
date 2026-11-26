@@ -12,5 +12,6 @@ public interface UnresolvedRefundCaseFinder {
     record Row(long orderId, String providerOrderId, String providerId, long amount, String moneyStatus, String refundActor,
         String owner, String ownerReason, Instant ownerChangedAt, Instant ownerClosedAt, String priorProviderStatus,
         boolean hasTransactionKey, Instant openedAt, Instant handoffAt, Instant promiseAt, int checkAttempts,
-        Instant nextCheckAt, Instant refundRequestedAt, Instant concludedAt) { }
+        Instant nextCheckAt, Instant refundRequestedAt, Instant concludedAt, Instant lastCheckAt, String lastCheckOutcome,
+        String lastCheckCause) { }
 }

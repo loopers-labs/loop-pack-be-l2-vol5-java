@@ -50,6 +50,11 @@ public class PaymentRefundCaseJpaEntity {
     private int checkAttempts;
     private Instant refundRequestedAt;
     private Instant concludedAt;
+    private Instant lastCheckAt;
+    @Column(length = 30)
+    private String lastCheckOutcome;
+    @Column(length = 100)
+    private String lastCheckCause;
 
     protected PaymentRefundCaseJpaEntity() {
     }
@@ -79,6 +84,9 @@ public class PaymentRefundCaseJpaEntity {
         checkAttempts = refundCase.getCheckAttempts();
         refundRequestedAt = refundCase.getRefundRequestedAt();
         concludedAt = refundCase.getConcludedAt();
+        lastCheckAt = refundCase.getLastCheckAt();
+        lastCheckOutcome = refundCase.getLastCheckOutcome() == null ? null : refundCase.getLastCheckOutcome().name();
+        lastCheckCause = refundCase.getLastCheckCause();
     }
 
     RefundCase toRefundCase() {
@@ -86,6 +94,7 @@ public class PaymentRefundCaseJpaEntity {
             RefundCase.MoneyStatus.valueOf(moneyStatus), refundActor == null ? null : RefundCase.RefundActor.valueOf(refundActor),
             RefundCase.Owner.valueOf(owner), ownerReason, ownerChangedAt, ownerClosedAt, ownerClosedBy,
             priorProviderStatus == null ? null : PaymentRecord.ProviderStatus.valueOf(priorProviderStatus), transactionKey,
-            openedAt, handoffAt, promiseAt, nextCheckAt, checkAttempts, refundRequestedAt, concludedAt);
+            openedAt, handoffAt, promiseAt, nextCheckAt, checkAttempts, refundRequestedAt, concludedAt, lastCheckAt,
+            lastCheckOutcome == null ? null : RefundCase.CheckOutcome.valueOf(lastCheckOutcome), lastCheckCause);
     }
 }

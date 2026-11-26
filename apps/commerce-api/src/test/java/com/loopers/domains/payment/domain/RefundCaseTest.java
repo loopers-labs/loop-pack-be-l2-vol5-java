@@ -563,6 +563,65 @@ class RefundCaseTest {
         assertThat(refundCase.getMoneyStatus()).isEqualTo(MoneyStatus.NO_CHARGE);
     }
 
+    @ParameterizedTest(name = "돈의 상태={0}, 담당={1}, 트리거={2} → {3}")
+    @CsvSource({
+        "CHARGED, AUTO, SCHEDULER, true",
+        "CHARGED, PERSON, SCHEDULER, false",
+        "CHARGED, PERSON, PERSON, true",
+        "CHARGED, AUTO, PERSON, true",
+        "CHECKING, PERSON, PERSON, false",
+        "REFUND_REQUESTED, PERSON, PERSON, false",
+        "REFUND_UNKNOWN, PERSON, PERSON, false",
+        "REFUND_UNKNOWN, AUTO, SCHEDULER, false"
+    })
+    @DisplayName("C8·P2: 환불 요청은 청구 확인이고 (자동 담당이거나 사람이 누른 회차)일 때만 허용하고 스케줄러 회차는 사람 담당 건에 허용하지 않는다")
+    void decidesRefundRequestByTrigger(MoneyStatus moneyStatus, Owner owner, RefundCase.CheckTrigger trigger, boolean expected) {
+        RefundCase refundCase = existing(moneyStatus, owner, "TR-1", LATE, 1);
+
+        assertThat(refundCase.canRequestRefund(trigger)).isEqualTo(expected);
+    }
+
+    @Test
+    @DisplayName("C3: 사람이 누른 회차는 청구 확인·사람 담당 대상에 환불을 요청할 수 있고 환불 요청함·요청 시각이 남으며 담당은 사람 그대로다")
+    void requestsRefundForPersonWhenPersonTriggered() {
+        RefundCase refundCase = existing(MoneyStatus.CHARGED, Owner.PERSON, "TR-1", LATE, 1);
+
+        refundCase.requestRefund(RefundCase.CheckTrigger.PERSON, LATE, DELAY);
+
+        assertThat(refundCase.getMoneyStatus()).isEqualTo(MoneyStatus.REFUND_REQUESTED);
+        assertThat(refundCase.getRefundRequestedAt()).isEqualTo(LATE);
+        assertThat(refundCase.getNextCheckAt()).isEqualTo(LATE.plus(DELAY));
+        assertThat(refundCase.isPersonOpen()).isTrue();
+    }
+
+    @Test
+    @DisplayName("C8: 스케줄러 회차는 청구 확인·사람 담당 대상에 환불을 요청하면 예외가 나고 돈의 상태·요청 시각이 그대로다")
+    void rejectsSchedulerRefundRequestForPerson() {
+        RefundCase refundCase = existing(MoneyStatus.CHARGED, Owner.PERSON, "TR-1", LATE, 1);
+
+        assertThatThrownBy(() -> refundCase.requestRefund(RefundCase.CheckTrigger.SCHEDULER, LATE, DELAY))
+            .isInstanceOf(IllegalStateException.class);
+
+        assertThat(refundCase.getMoneyStatus()).isEqualTo(MoneyStatus.CHARGED);
+        assertThat(refundCase.getRefundRequestedAt()).isNull();
+    }
+
+    @Test
+    @DisplayName("마지막 확인을 기록하면 시각·분류·원인만 바뀌고 돈·담당·다음 조회·조회 횟수는 그대로다")
+    void recordsLastCheckOnly() {
+        RefundCase refundCase = existing(MoneyStatus.CHARGED, Owner.PERSON, "TR-1", LATE, 1);
+
+        refundCase.recordCheck(RefundCase.CheckOutcome.PG_ERROR, "HTTP 500", LATE);
+
+        assertThat(refundCase.getLastCheckAt()).isEqualTo(LATE);
+        assertThat(refundCase.getLastCheckOutcome()).isEqualTo(RefundCase.CheckOutcome.PG_ERROR);
+        assertThat(refundCase.getLastCheckCause()).isEqualTo("HTTP 500");
+        assertThat(refundCase.getMoneyStatus()).isEqualTo(MoneyStatus.CHARGED);
+        assertThat(refundCase.isPersonOpen()).isTrue();
+        assertThat(refundCase.getNextCheckAt()).isEqualTo(LATE);
+        assertThat(refundCase.getCheckAttempts()).isEqualTo(1);
+    }
+
     private static PaymentRecord pending(PaymentRecord.ProviderStatus providerStatus, String transactionKey) {
         PaymentRecord payment = PaymentRecord.pgStarted(42, new Money(7000), "attempt", "test-pg", STARTED_AT);
         payment.applyProviderReport(providerStatus, transactionKey);

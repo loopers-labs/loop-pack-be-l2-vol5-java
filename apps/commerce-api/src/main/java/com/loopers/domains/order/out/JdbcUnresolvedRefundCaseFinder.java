@@ -64,7 +64,7 @@ public class JdbcUnresolvedRefundCaseFinder implements UnresolvedRefundCaseFinde
             resultSet.getString("prior_provider_status"), resultSet.getBoolean("has_transaction_key"),
             instant(resultSet, "opened_at"), instant(resultSet, "handoff_at"), instant(resultSet, "promise_at"),
             resultSet.getInt("check_attempts"), instant(resultSet, "next_check_at"), instant(resultSet, "refund_requested_at"),
-            instant(resultSet, "concluded_at"));
+            instant(resultSet, "concluded_at"), null, null, null);
     }
 
     private static Instant instant(ResultSet resultSet, String column) throws SQLException {

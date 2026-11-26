@@ -710,5 +710,10 @@ class OrderTransactionTest {
         public List<Long> findDue(Instant now, int limit) {
             return delegate.findDue(now, limit);
         }
+
+        @Override
+        public void recordCheck(long orderId, RefundCase.CheckOutcome outcome, String cause, Instant checkedAt) {
+            delegate.recordCheck(orderId, outcome, cause, checkedAt);
+        }
     }
 }

@@ -14,6 +14,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 class MicrometerRefundOutcomeRecorderTest {
     private static final String OUTCOME = "commerce.payment.refund_outcome";
     private static final String ASSIGNED = "commerce.payment.refund_person_assigned";
+    private static final String CHECK = "commerce.payment.refund_check";
+    private static final List<String> CHECK_OUTCOMES = List.of("pg_unreachable", "pg_error", "apply_failed", "mismatch",
+        "pending", "empty", "cancel_unknown", "cancel_rejected", "ok");
     private static final List<String> RESULTS = List.of("refunded", "no_charge");
     private static final List<String> ACTORS = List.of("system", "person", "external");
     private static final List<String> REASONS = List.of("handoff_deadline", "transaction_mismatch", "multiple_transactions",
@@ -63,6 +66,37 @@ class MicrometerRefundOutcomeRecorderTest {
         assertThat(assigned(registry, "result_reversed")).isEqualTo(1.0);
         REASONS.stream().filter(reason -> !reason.equals("result_reversed"))
             .forEach(reason -> assertThat(assigned(registry, reason)).as(reason).isZero());
+    }
+
+    @Test
+    @DisplayName("C9: 시작하면 소문자 outcome 9개 마지막 확인 counter가 0으로 있어 첫 apply_failed도 증가로 잡히고 outcome 외 label은 없다")
+    void registersCheckOutcomesAtZero() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+
+        new MicrometerRefundOutcomeRecorder(registry);
+
+        assertThat(registry.find(CHECK).counters()).hasSize(9)
+            .allSatisfy(counter -> assertThat(counter.getId().getTags()).extracting(tag -> tag.getKey())
+                .containsExactly("outcome"));
+        CHECK_OUTCOMES.forEach(outcome -> assertThat(check(registry, outcome)).as(outcome).isZero());
+    }
+
+    @Test
+    @DisplayName("C9: APPLY_FAILED를 기록하면 apply_failed counter만 1 는다")
+    void countsOnlyRecordedCheckOutcome() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        RefundOutcomeRecorder recorder = new MicrometerRefundOutcomeRecorder(registry);
+
+        recorder.recordCheck(RefundCase.CheckOutcome.APPLY_FAILED);
+
+        assertThat(check(registry, "apply_failed")).isEqualTo(1.0);
+        CHECK_OUTCOMES.stream().filter(outcome -> !outcome.equals("apply_failed"))
+            .forEach(outcome -> assertThat(check(registry, outcome)).as(outcome).isZero());
+    }
+
+    private static double check(SimpleMeterRegistry registry, String outcome) {
+        Counter counter = registry.find(CHECK).tag("outcome", outcome).counter();
+        return counter == null ? -1 : counter.count();
     }
 
     private static double outcome(SimpleMeterRegistry registry, String result, String actor) {

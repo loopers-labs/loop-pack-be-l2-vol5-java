@@ -93,6 +93,7 @@ public class UnresolvedPaymentQueryService {
             row.moneyStatus(), row.refundActor(), row.owner(), row.ownerReason(), row.ownerChangedAt(), row.ownerClosedAt(),
             row.priorProviderStatus(), row.hasTransactionKey(), row.openedAt(),
             Duration.between(row.openedAt(), now).getSeconds(), row.handoffAt(), row.promiseAt(), row.checkAttempts(),
-            row.nextCheckAt(), row.refundRequestedAt(), row.concludedAt());
+            row.nextCheckAt(), row.refundRequestedAt(), row.concludedAt(), row.lastCheckAt(), row.lastCheckOutcome(),
+            row.lastCheckCause());
     }
 }

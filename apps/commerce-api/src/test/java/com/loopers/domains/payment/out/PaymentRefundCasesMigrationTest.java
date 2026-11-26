@@ -16,10 +16,12 @@ import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
 import static org.assertj.core.api.Assertions.assertThat;
 
 // 5단계 한 칸 모델(status·reason) 테이블을 두 축 모델로 옮기는 로컬 이전 스크립트를 실제 MySQL로 본다(10주차 5b 계획 6절, S9).
+// v3(10주차 5c)는 v2 뒤에 마지막 확인 세 칸을 더한다. 엔티티 모양은 v2 → v3 순서로 실행한 결과와 비교한다.
 // 테스트 스키마는 엔티티로 만들어지므로 지우고 5단계 모양을 직접 만든 뒤 옛 값 행을 넣어 이전한다. 끝나면 엔티티가 만든 DDL로 되돌린다.
 @SpringBootTest
 class PaymentRefundCasesMigrationTest {
     private static final String SCRIPT = "sql/migrate-payment-refund-cases-v2.sql";
+    private static final String SCRIPT_V3 = "sql/migrate-payment-refund-cases-v3.sql";
     private static final String TABLE = "payment_refund_cases";
     private static final String NEW_INDEX = "idx_payment_refund_cases_money_status_next_check";
     private static final String OLD_INDEX = "idx_payment_refund_cases_status_next_check";
@@ -121,6 +123,20 @@ class PaymentRefundCasesMigrationTest {
         assertThat(jdbcTemplate.queryForList(SELECT_STATE)).isEqualTo(once);
     }
 
+    @Test
+    @DisplayName("v2 → v3를 실행하면 기존 행의 마지막 확인 세 칸은 비어 있고 v3를 다시 실행해도 행·모양이 같다")
+    void addsEmptyLastCheckColumns() {
+        run();
+        List<Map<String, Object>> once = jdbcTemplate.queryForList(SELECT_STATE);
+
+        new ResourceDatabasePopulator(new ClassPathResource(SCRIPT_V3)).execute(dataSource);
+
+        assertSameAsEntity();
+        assertThat(jdbcTemplate.queryForList(SELECT_STATE)).isEqualTo(once);
+        assertThat(jdbcTemplate.queryForObject("select count(*) from payment_refund_cases where last_check_at is null"
+            + " and last_check_outcome is null and last_check_cause is null", Long.class)).isEqualTo(11);
+    }
+
     private void assertSameAsEntity() {
         assertThat(columns()).isEqualTo(entityColumns);
         assertThat(indexColumns(NEW_INDEX)).containsExactly("money_status", "next_check_at");
@@ -156,7 +172,7 @@ class PaymentRefundCasesMigrationTest {
     }
 
     private void run() {
-        new ResourceDatabasePopulator(new ClassPathResource(SCRIPT)).execute(dataSource);
+        new ResourceDatabasePopulator(new ClassPathResource(SCRIPT), new ClassPathResource(SCRIPT_V3)).execute(dataSource);
     }
 
     private List<Map<String, Object>> columns() {

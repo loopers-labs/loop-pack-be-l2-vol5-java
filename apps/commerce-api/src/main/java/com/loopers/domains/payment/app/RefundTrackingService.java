@@ -39,11 +39,12 @@ public class RefundTrackingService {
     private final Clock clock;
     private final RefundOutcomeRecorder refundOutcomeRecorder;
     private final LookupJitter lookupJitter;
+    private final RefundCheckFailureRecorder refundCheckFailureRecorder;
 
     public RefundTrackingService(PaymentRefundCaseRepository paymentRefundCaseRepository,
         PaymentGatewayRegistry paymentGatewayRegistry, PaymentLookupCircuitState paymentLookupCircuitState,
         TransactionTemplate transactionTemplate, Clock clock, RefundOutcomeRecorder refundOutcomeRecorder,
-        LookupJitter lookupJitter) {
+        LookupJitter lookupJitter, RefundCheckFailureRecorder refundCheckFailureRecorder) {
         this.paymentRefundCaseRepository = paymentRefundCaseRepository;
         this.paymentGatewayRegistry = paymentGatewayRegistry;
         this.paymentLookupCircuitState = paymentLookupCircuitState;
@@ -51,6 +52,12 @@ public class RefundTrackingService {
         this.clock = clock;
         this.refundOutcomeRecorder = refundOutcomeRecorder;
         this.lookupJitter = lookupJitter;
+        this.refundCheckFailureRecorder = refundCheckFailureRecorder;
+    }
+
+    // 사람 담당 중인 대상 하나에 스케줄러와 같은 회차를 지금 돌리고 그 결과를 돌려준다(10주차 5c "지금 처리").
+    public ProcessNowResult processNow(long orderId, String adminName) {
+        return new ProcessNowResult(orderId, null, null, null, null, null, null, null, null);
     }
 
     public void trackDueCases() {
@@ -298,4 +305,7 @@ public class RefundTrackingService {
             }
         });
     }
+
+    public record ProcessNowResult(long orderId, String moneyStatus, String refundActor, String owner, Instant ownerClosedAt,
+        String ownerClosedBy, Instant lastCheckAt, String lastCheckOutcome, String lastCheckCause) { }
 }

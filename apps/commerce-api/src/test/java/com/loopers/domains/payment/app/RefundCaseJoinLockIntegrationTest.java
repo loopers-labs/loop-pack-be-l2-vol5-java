@@ -330,6 +330,11 @@ class RefundCaseJoinLockIntegrationTest {
             return delegate.findDue(now, limit);
         }
 
+        @Override
+        public void recordCheck(long orderId, RefundCase.CheckOutcome outcome, String cause, Instant checkedAt) {
+            delegate.recordCheck(orderId, outcome, cause, checkedAt);
+        }
+
         private void fireIfArmed(boolean lockedRead) {
             Thread thread = Thread.currentThread();
             Hook hook = hooks.get(thread);

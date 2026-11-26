@@ -62,6 +62,10 @@ public class MicrometerRefundOutcomeRecorder implements RefundOutcomeRecorder {
         counter.increment();
     }
 
+    @Override
+    public void recordCheck(RefundCase.CheckOutcome outcome) {
+    }
+
     private static String outcomeKey(Result result, RefundCase.RefundActor actor) {
         return result.name() + "/" + actor.name();
     }

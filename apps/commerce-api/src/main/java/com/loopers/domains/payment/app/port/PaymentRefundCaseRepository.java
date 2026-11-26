@@ -16,4 +16,7 @@ public interface PaymentRefundCaseRepository {
     Optional<RefundCase> findByOrderIdForUpdate(long orderId);
 
     List<Long> findDue(Instant now, int limit);
+
+    // 마지막 확인 칸만 바꾼다. 반영 트랜잭션이 rollback된 뒤 원인만 남길 때 쓴다(돈·담당 칸은 건드리지 않는다).
+    void recordCheck(long orderId, RefundCase.CheckOutcome outcome, String cause, Instant checkedAt);
 }

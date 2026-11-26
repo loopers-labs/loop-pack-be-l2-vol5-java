@@ -20,7 +20,10 @@ import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.persistence.EntityManager;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
@@ -57,6 +60,7 @@ class RefundTrackingRollbackIntegrationTest {
     private static final String PROVIDER_ORDER_ID = String.format("LP-ORD-%010d", ORDER_ID);
     private static final String OUTCOME_METRIC = "commerce.payment.refund_outcome";
     private static final String ASSIGNED_METRIC = "commerce.payment.refund_person_assigned";
+    private static final String CHECK_METRIC = "commerce.payment.refund_check";
 
     @Autowired private RefundTrackingService refundTracking;
     @Autowired private RefundPersonResolutionService personResolution;
@@ -131,6 +135,40 @@ class RefundTrackingRollbackIntegrationTest {
         assertThat(jdbc.queryForObject("select concluded_at is null and owner_closed_at is null and refund_actor is null"
             + " from payment_refund_cases where order_id = ?", Boolean.class, ORDER_ID)).isTrue();
         assertThat(outcome("refunded/person") - before).isZero();
+    }
+
+    @Test
+    @DisplayName("C1: 조회 결과 반영(환불 요청함 저장)이 flush된 뒤 commit 직전에 실패해 rollback되면 돈·담당·요청 시각은 그대로이고 취소를 보내지 않으며 마지막 확인 APPLY_FAILED·원인 클래스 이름은 별도 트랜잭션으로 commit되고 apply_failed counter가 1 늘며 ERROR 한 줄(orderId·causeType만)이 남는다")
+    void recordsApplyFailedInSeparateTransaction() {
+        failingRefundCases.save(RefundCase.restore(ORDER_ID, TestPgFixture.PROVIDER_ID, PROVIDER_ORDER_ID, new Money(1000),
+            MoneyStatus.CHECKING, null, Owner.AUTO, null, null, null, null, PaymentRecord.ProviderStatus.PENDING, null, NOW,
+            NOW.plus(RefundCase.HANDOFF_AFTER), NOW.plus(RefundCase.PROMISE_AFTER), NOW, 0, null, null));
+        server.addTransaction(PROVIDER_ORDER_ID, 1000, "SUCCESS");
+        Counter applyFailed = meterRegistry.find(CHECK_METRIC).tag("outcome", "apply_failed").counter();
+        double before = applyFailed == null ? 0 : applyFailed.count();
+        failingRefundCases.failOnSaveOf(MoneyStatus.REFUND_REQUESTED, Owner.AUTO);
+
+        refundTracking.trackDueCases();
+
+        assertThat(failingRefundCases.stateBeforeFailure()).as("실패 직전 DB에 나간 상태").isEqualTo("REFUND_REQUESTED/AUTO");
+        assertThat(state(ORDER_ID)).isEqualTo("CHECKING/AUTO");
+        Map<String, Object> row = jdbc.queryForMap("select refund_requested_at, last_check_at, last_check_outcome,"
+            + " last_check_cause from payment_refund_cases where order_id = ?", ORDER_ID);
+        assertThat(row.get("refund_requested_at")).isNull();
+        assertThat(row.get("last_check_outcome")).isEqualTo("APPLY_FAILED");
+        assertThat(row.get("last_check_cause")).isEqualTo("IllegalStateException");
+        assertThat(row.get("last_check_at")).isEqualTo(LocalDateTime.ofInstant(NOW, ZoneOffset.UTC));
+        assertThat(pg.cancelCalls(PROVIDER_ORDER_ID)).isZero();
+        Counter afterCounter = meterRegistry.find(CHECK_METRIC).tag("outcome", "apply_failed").counter();
+        assertThat(afterCounter).isNotNull();
+        assertThat(afterCounter.count() - before).isEqualTo(1.0);
+        assertThat(logs.list.stream().filter(event -> event.getLevel() == Level.ERROR).toList()).singleElement()
+            .satisfies(event -> {
+                assertThat(event.getMDCPropertyMap()).containsEntry("orderId", String.valueOf(ORDER_ID));
+                assertThat(event.getFormattedMessage()).contains("causeType=IllegalStateException")
+                    .doesNotContain("주입된");
+                assertThat(event.getThrowableProxy()).isNull();
+            });
     }
 
     private String state(long orderId) {
@@ -225,6 +263,11 @@ class RefundTrackingRollbackIntegrationTest {
         @Override
         public List<Long> findDue(Instant now, int limit) {
             return delegate.findDue(now, limit);
+        }
+
+        @Override
+        public void recordCheck(long orderId, RefundCase.CheckOutcome outcome, String cause, Instant checkedAt) {
+            delegate.recordCheck(orderId, outcome, cause, checkedAt);
         }
     }
 }

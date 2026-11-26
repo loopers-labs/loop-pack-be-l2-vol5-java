@@ -9,6 +9,9 @@ public interface RefundOutcomeRecorder {
     // 담당이 사람으로 바뀐 것을 사유(RefundCase의 사유 코드)별로 센다.
     void recordPersonAssigned(String reason);
 
+    // 마지막 확인 결과를 분류별로 센다.
+    void recordCheck(RefundCase.CheckOutcome outcome);
+
     enum Result {
         REFUNDED, NO_CHARGE
     }

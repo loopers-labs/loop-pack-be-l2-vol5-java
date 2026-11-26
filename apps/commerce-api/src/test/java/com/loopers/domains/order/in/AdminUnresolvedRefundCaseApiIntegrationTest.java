@@ -88,7 +88,7 @@ class AdminUnresolvedRefundCaseApiIntegrationTest {
         assertThat(fieldNames(newest)).containsExactlyInAnyOrder("orderId", "providerOrderId", "providerId", "amount",
             "moneyStatus", "refundActor", "owner", "ownerReason", "ownerChangedAt", "ownerClosedAt", "priorProviderStatus",
             "hasTransactionKey", "openedAt", "elapsedSeconds", "handoffAt", "promiseAt", "checkAttempts", "nextCheckAt",
-            "refundRequestedAt", "concludedAt");
+            "refundRequestedAt", "concludedAt", "lastCheckAt", "lastCheckOutcome", "lastCheckCause");
         assertThat(newest.get("providerOrderId").asText()).isEqualTo("PO-" + personNew);
         assertThat(newest.get("providerId").asText()).isEqualTo("test-pg");
         assertThat(newest.get("amount").asLong()).isEqualTo(1000);
@@ -180,6 +180,24 @@ class AdminUnresolvedRefundCaseApiIntegrationTest {
         mvc.perform(get(PATH).param("refundOwner", "PERSON").with(csrf()).with(user("customer").roles("USER")))
             .andExpect(status().isForbidden());
         mvc.perform(get(PATH).param("refundOwner", "PERSON").with(csrf())).andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("C9: 환불 확인 대상 항목에 마지막 확인 시각·분류(대문자 enum 이름)·원인을 주고 확인한 적 없는 대상은 세 칸이 null이다")
+    void listsLastCheckColumns() throws Exception {
+        jdbc.update("update payment_refund_cases set last_check_at = ?, last_check_outcome = 'APPLY_FAILED',"
+            + " last_check_cause = 'IllegalStateException' where order_id = ?", utc(NOW.minusSeconds(60)), personNew);
+
+        JsonNode data = list(get(PATH).param("refundOwner", "PERSON"));
+
+        JsonNode newest = data.get(2);
+        assertThat(newest.get("orderId").asLong()).isEqualTo(personNew);
+        assertThat(newest.get("lastCheckAt").asText()).isEqualTo("2026-10-20T23:59:00Z");
+        assertThat(newest.get("lastCheckOutcome").asText()).isEqualTo("APPLY_FAILED");
+        assertThat(newest.get("lastCheckCause").asText()).isEqualTo("IllegalStateException");
+        assertThat(data.get(0).get("lastCheckAt").isNull()).isTrue();
+        assertThat(data.get(0).get("lastCheckOutcome").isNull()).isTrue();
+        assertThat(data.get(0).get("lastCheckCause").isNull()).isTrue();
     }
 
     private String body(MockHttpServletRequestBuilder request) throws Exception {
