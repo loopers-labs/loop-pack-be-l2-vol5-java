@@ -53,6 +53,11 @@ public class OrderRepositoryAdapter implements OrderRepository {
     }
 
     @Override
+    public long countUnresolvedPaymentOrders() {
+        return jpaRepository.countByPayment_StatusIn(List.of(PaymentStatus.PENDING, PaymentStatus.UNKNOWN));
+    }
+
+    @Override
     public List<Order> findAllByBuyerId(Long buyerId, int page, int size) {
         return jpaRepository.findAllByBuyerId(buyerId, pageRequest(page, size));
     }
