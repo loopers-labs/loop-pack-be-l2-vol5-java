@@ -1,11 +1,12 @@
 # Week 10 — 결제 사고 관측
 
-이 문서는 10주차 결제 사고 대응의 결정을 적는다. 1~7절은 1단계(관측과 테스트 PG fixture 사고 제어), 8절은 사고 연결 테스트, 9절은 4단계 4a 운영 도구, 10절은 4b 운영 도구 확장이다.
+이 문서는 10주차 결제 사고 대응의 결정을 적는다. 1~7절은 1단계(관측과 테스트 PG fixture 사고 제어), 8절은 사고 연결 테스트, 9절은 4단계 4a 운영 도구, 10절은 4b 운영 도구 확장, 11절은 5단계 늦은 성공 자동 환불이다.
 나머지 설계(1~29절)는 `docs/week8/commerce-coupon.md`를 따른다.
 
 - **[사용자 결정]**: 사용자가 정한 것(결정 기록 week10). 바꾸려면 승인이 필요하다.
 - **[참모 지시]**: 참모 지시문·고정 규칙이다. 바꾸려면 참모 확인이 필요하다.
 - **[구현 판단]**: 사용자 결정 범위 안에서 AI(PL·DEVELOPER)가 정한 내부 선택이다. 근거와 함께 적고 뒤집을 수 있다.
+- **[가정]**: 과정 PG 계약에 없어 우리가 정한 외부 계약이다(11절 취소 API).
 
 ## 1. 진단 기준 [사용자 결정]
 
@@ -168,7 +169,7 @@
 
 - **[사용자 결정 D, 계획 수정 1]** Piling의 "증가 중"은 gauge `deriv`가 아니라 유입 counter로 잰다. 만료(2분)가 미확인을 빼 가서, PG가 길게 죽으면 유입과 만료가 비슷해져 gauge가 높은 채 평평해진다. 그러면 `deriv > 0`이 거짓이 되어 가장 심각할 때 울리지 않는다. 같은 이유로 만료 누적을 잡는 Abandoned를 새로 두었다.
 - **[구현 판단]** 유입 0이고 unknown만 남은 정체는 Piling이 울리지 않는다. 새 유입이 없으면 자동 재조회·만료가 처리 중이다. 만료가 쌓이면 Abandoned가 잡는다.
-- 5단계 환불 규칙은 주석 자리만 있다.
+- ~~5단계 환불 규칙은 주석 자리만 있다.~~ → 5단계 환불 규칙 3개를 더했다(11-8).
 
 라우팅(`docker/alertmanager/alertmanager.yml`):
 
@@ -377,3 +378,190 @@
 - B1 수정 뒤에는 기본 경로 파일 생성만 확인했고, Loki 수집까지 다시 돌리지는 않았다.
 - Grafana 이미지(`grafana/grafana`)는 버전을 고정하지 않았다(범위 밖).
 - 실제 Slack은 여전히 연결하지 않았다.
+
+## 11. 늦은 성공 자동 환불(5단계)
+
+원칙 **[사용자 결정 D168·D175·D186·D188]**: 돈이 나갔는데 주문이 종결되면 결국 환불로 끝난다. 대형 장애 때 수천 건이 몰릴 수 있어 자동으로 한다. 경계가 잡힌 전용 스케줄러가 맡는다. 환불 요청은 한 번만 보내고, 모르면 다시 보내지 않고 조회한다.
+
+### 11-1. 무엇이 바뀌나
+
+- 5주차 설계(`docs/week5/commerce-payment.md`)의 두 문장을 이 절로 **대체한다**. 5주차 문서는 고치지 않는다.
+  - "늦은 성공은 사람이 환불한다"(상태 전이 표·만료 주문 표) → 만료 주문의 늦은 성공은 자동 추적·자동 환불한다. 자동 추적 기한 안에 결론이 없거나 자동 판단 근거가 깨지면 사람에게 넘긴다.
+  - 범위 밖 "PG 취소 API 연동(늦은 성공의 자동 환불)" → 이번 범위다. 취소 API 모양은 [가정]이다(11-6).
+- 그대로인 것: 만료 주문은 EXPIRED로 남는다. 재고는 만료 때 이미 반환했다. 환불로 주문을 되살리지 않는다. 결제 기록(`payment_records`)은 손대지 않는다. 종결 주문의 반대 결과는 지금처럼 덮어쓰지 않고 `CONFLICTING_RESULT` 이상과 WARN을 남긴다(2-2).
+- 과제 금지 문장은 그대로다. 재결제 없음, DB 강제 변경 없음, 조회·callback 검증·예약 소비/반환·중복 방지를 약화하지 않는다.
+- **[사용자 결정 Q4]** 고객 주문 조회 응답은 바꾸지 않는다. 환불 상태는 관리자 목록에만 보인다(11-7).
+- 취소 API는 [가정]이다. 실제 PG가 다르면 어댑터만 바꾼다.
+
+### 11-2. 환불 확인 대상 `payment_refund_cases` [PL 결정 P1·P2]
+
+- payment 컨텍스트가 소유한다. 한 행 = 만료된 PG 결제 하나. 주문당 결제 기록이 하나라 `order_id`가 PK다.
+- 신규 도메인 `payment/domain/RefundCase`는 `BaseEntity`를 상속하지 않는다. 운영 스키마는 `sql/create-payment-refund-cases.sql`(IF NOT EXISTS, 엔티티와 같은 모양), local·test는 ddl create다.
+
+| 컬럼 | 뜻 |
+| --- | --- |
+| `order_id` | PK. 주문 ID |
+| `provider_id` | 조회·환불할 PG |
+| `provider_order_id` | PG 주문 번호 |
+| `amount` | 결제 금액. 조회 일치 판정과 취소 금액 |
+| `status` | 대상 상태(아래 6값) |
+| `prior_provider_status` | 만료 직전 PG 상태(SEND_STARTED·PENDING·UNKNOWN·NEEDS_REVIEW). 만료가 결제 기록의 상태를 EXPIRED로 덮기 전에 복사한다. 기능 이전 만료면 null |
+| `transaction_key` | 만료 때 알던 거래 키, 또는 늦은 성공·조회로 알게 된 키. 처음 알게 된 값만 남기고 덮지 않는다 |
+| `opened_at` | 대상이 열린 시각(보통 만료 시각) |
+| `handoff_at` | 자동 추적 기한. `opened_at` + 2일 [임시] |
+| `promise_at` | 고객 환불 약속 기한. `opened_at` + 4일 [임시] |
+| `next_check_at` | 다음 조회 시각. 결론 상태면 null |
+| `check_attempts` | 결론 없이 끝난 조회 횟수 |
+| `refund_requested_at` | 환불(취소) 요청을 기록한 시각 |
+| `concluded_at` | 결론 시각 |
+| `reason` | 사람에게 넘긴 사유 코드 |
+
+- 인덱스: `(status, next_check_at)`.
+- 사유 코드 **[PL 결정 P11]**: `HANDOFF_DEADLINE`(기한 경과) · `TRANSACTION_MISMATCH`(금액·주문·키 불일치) · `MULTIPLE_TRANSACTIONS`(복수 거래) · `REFUND_REJECTED`(PG가 효과 없이 취소 거절) · `RESULT_REVERSED`(결과 뒤집힘).
+
+### 11-3. 상태와 전이
+
+상태 6값: `TRACKING`(결론 대기) · `REFUND_REQUESTED`(환불 요청 기록) · `REFUND_UNKNOWN`(환불 결과 모름) · `REFUNDED`(환불 완료) · `CLOSED_NO_CHARGE`(돈 안 나감 닫기) · `HANDED_TO_HUMAN`(사람에게 넘김). 결론 상태는 `REFUNDED`·`CLOSED_NO_CHARGE`·`HANDED_TO_HUMAN`이다.
+
+| 지금 | 사건 | 다음 |
+| --- | --- | --- |
+| (없음) | 만료 TX(`expireLocked`) | TRACKING. 첫 `next_check_at` = `opened_at`(만료 직후 1회 조회) |
+| TRACKING | 조회: 금액·주문(·키)이 맞는 단일 SUCCESS | REFUND_REQUESTED를 **commit한 뒤** 취소 1회(11-4) |
+| TRACKING | 조회: 맞는 단일 FAILED 또는 CANCELED | CLOSED_NO_CHARGE |
+| TRACKING | 조회: PENDING · 0건 · 조회 실패 · 조회 예외 | TRACKING. `check_attempts` +1, 간격 늘림 |
+| TRACKING | 조회 회로가 막힘(PG 미호출) | TRACKING. `check_attempts` 그대로, 다음 조회만 미룸 |
+| TRACKING | 조회: 금액·주문·키 불일치 / 복수 거래 | HANDED_TO_HUMAN 즉시(`TRANSACTION_MISMATCH`·`MULTIPLE_TRANSACTIONS`). 취소 없음 |
+| REFUND_REQUESTED | 취소 응답 Canceled | REFUNDED |
+| REFUND_REQUESTED | 취소 응답 Unknown · NotSent · 호출 예외 | REFUND_UNKNOWN. 다시 보내지 않음. 호출 예외도 요청이 나갔는지 모르는 경우라 REFUND_REQUESTED로 두지 않는다(결과 모름 알림이 보게) |
+| REFUND_REQUESTED | 취소 응답 RejectedNoEffect | HANDED_TO_HUMAN(`REFUND_REJECTED`) |
+| REFUND_REQUESTED(취소 결과 없이 중단) · REFUND_UNKNOWN | 다음 회차 조회: CANCELED | REFUNDED. 취소 재호출 0 |
+| REFUND_REQUESTED · REFUND_UNKNOWN | 다음 회차 조회: 아직 SUCCESS · 모름 · 불일치 · 복수 | 상태 유지, `check_attempts` +1. 기한이 처리한다 |
+| TRACKING · REFUND_REQUESTED · REFUND_UNKNOWN | now ≥ `handoff_at` | HANDED_TO_HUMAN(`HANDOFF_DEADLINE`). 조회하지 않고 넘긴다 |
+| REFUND_REQUESTED가 아닌 상태(응답을 기다리는 사이 다른 회차가 기한 이관·조회 결론을 냄) | 늦게 온 취소 결과 | 반영하지 않는다. WARN 한 줄(orderId, 지금 상태, 결과 종류만) |
+| 결론 상태 | — | 끝. 스케줄러는 조회·취소하지 않는다 |
+
+- **[사용자 결정 Q1 ①]** 거래 0건은 "돈 안 나감"의 근거가 아니다(8주차 설계 23절 [확정] 유지). 계속 추적하고 기한이 지나면 사람에게 넘긴다.
+- 조회 CANCELED는 TRACKING에서는 돈 안 나감으로 닫고, 환불 요청 뒤에는 환불 완료로 본다.
+- 키 없이 만료된 대상은 주문 번호로 조회한다. 찾은 일치 거래의 키를 대상에 남기고 그 키로 취소한다.
+
+**늦은 성공 합류** (callback·본인/관리자 reconcile이 종결 주문에서 CONFLICT(SUCCESS)를 낼 때, 같은 반영 TX 안)
+
+| 주문·대상 | 처리 |
+| --- | --- |
+| 만료 주문 · 대상 TRACKING | 키 저장, `next_check_at` = 지금(바로 조회) |
+| 만료 주문 · 대상 REFUND_REQUESTED·REFUND_UNKNOWN | 키만 저장, 상태 유지(재전송 없음) |
+| 만료 주문 · 대상 CLOSED_NO_CHARGE | 결과 뒤집힘. HANDED_TO_HUMAN(`RESULT_REVERSED`), `next_check_at` null **[PL 결정 P8]** |
+| 만료 주문 · 대상 REFUNDED·HANDED_TO_HUMAN | 그대로 |
+| 만료 주문 · 대상 없음(기능 이전 만료) | 새로 TRACKING. `prior_provider_status` null, `opened_at`·기한은 지금부터 **[PL 결정 P8]** |
+| 결제 실패(PAYMENT_FAILED) 주문 | 결과 뒤집힘. 대상을 HANDED_TO_HUMAN(`RESULT_REVERSED`)으로 바로 만든다. `handoff_at`·`concluded_at` = 지금, `promise_at` = 지금 + 4일, `next_check_at` null. 자동 환불 없음 **[사용자 결정 Q2 ①]** |
+
+- 환불 요청은 합류 경로에서 보내지 않는다. 스케줄러 한 곳에서만 보낸다 **[PL 결정 P3]**.
+- 이유: PG가 FAILED(또는 우리가 닫은 근거)라 했다가 SUCCESS가 된 것은 자동 판단의 근거가 깨진 것이다. 그래서 사람에게 넘긴다.
+
+### 11-4. 한 번만 규칙 [PL 결정 P3·P11]
+
+- 취소는 REFUND_REQUESTED로 바꾸는 TX를 **commit한 뒤에만** 보낸다. 그 뒤로 어떤 경로도 그 주문의 취소를 다시 보내지 않는다. 상태로 보장한다.
+- 취소 결과가 NotSent(연결 전 실패)여도 REFUND_UNKNOWN으로 두고 조회만 한다. 요청 기록이 이미 commit됐으므로 "보내지 않았음"을 믿고 다시 보내지 않는다. 대가: 연결 거부가 계속되면 환불이 나가지 않고 2일 뒤 사람에게 넘어간다.
+- 취소 전에 프로세스가 멈춰도 다음 회차는 REFUND_REQUESTED를 조회만 한다. 프로세스 중단은 REFUND_REQUESTED로 남고, 살아 있는 프로세스의 취소 호출 예외는 REFUND_UNKNOWN이 된다(11-3).
+- 스케줄러는 조회 뒤 대상 행을 잠그고 다시 읽는다. 그 사이 다른 인스턴스가 REFUND_REQUESTED로 바꿨으면 취소를 보내지 않는다.
+- **행 잠금 순서:** 늦은 성공 합류 = 주문 → 대상(`findByOrderIdForUpdate`). 스케줄러 = 대상만. 스케줄러는 주문 행을 잠그지 않아 순서가 엇갈리지 않는다.
+- **합류는 대상 행이 있을 때만 잠근다.** 먼저 잠금 없이 있는지 확인하고, 있으면 FOR UPDATE로 다시 읽고, 없으면 새로 INSERT한다. 없는 행을 FOR UPDATE로 읽으면 gap lock이 잡혀, 서로 다른 두 주문의 합류 INSERT끼리 데드락(1213)이 난다. 없을 때 잠그지 않아도 되는 이유: 대상을 만드는 경로(만료·합류)는 모두 주문 행 잠금 아래라 같은 주문은 이미 직렬화된다.
+- 금액·주문 불일치·복수 거래·PG 거절에서는 취소하지 않고 멈춘다(사람).
+
+### 11-5. 기한과 회차 [임시]
+
+| 값 | [임시] 수치 | 위치 | 근거 |
+| --- | --- | --- | --- |
+| 자동 추적 기한(`handoff_at`) | 2일 | 도메인 상수 | 시스템 복구는 보통 하루면 된다. 이틀간 자동으로 안 되면 사람이 볼 마지막 상황이다(사용자 D188) |
+| 고객 약속(`promise_at`) | 4일 | 도메인 상수 | 사용자 "3~4일". 사람에게 1일 이상, 카드사 반영 여유 포함 |
+| 결론 없는 조회 뒤 간격 | 1m에서 배증, 최대 1h | 코드 상수 | 2일 동안 약 50회 이내 |
+| 환불 요청·결과 모름 뒤 다음 조회 | 1m | 코드 상수 | 취소 결과를 빨리 확인한다 |
+| 회차 상한 | 20건(`next_check_at` 순) | 코드 상수 | 대형 장애 때 PG를 다시 쓰러뜨리지 않는다 |
+| 회차 주기 | fixed-delay 30s | yml `payment.refund.scheduler.fixed-delay` | — |
+
+- 2일·4일은 설정으로 빼지 않았다 **[PL 결정 P8]**.
+- 조회 회로가 막힌 PG(`PaymentCircuitBreakers.blocksLookup`, 9-6)의 대상은 조회하지 않고 미룬다. 다른 PG의 대상은 상한 안에서 조회한다.
+- 건별 예외는 그 대상만 멈추고(ERROR, causeType) 같은 회차의 다음 대상을 계속 처리한다.
+
+### 11-6. PG 취소 [가정 — 사용자 결정 Q3]
+
+**과정 PG 계약에 취소 API가 없다.** 아래는 우리가 정한 가정이다. test-pg(`TestPgServer`)가 이 가정을 구현한다.
+
+- 요청: `POST /api/v1/payments/{transactionKey}/cancel`, 본문 `{orderId, amount}`. 멱등 키는 없다.
+
+| 경우 | 응답 |
+| --- | --- |
+| 승인(SUCCESS) 거래, 주문·금액 일치 | 200 `{transactionKey, orderId, amount, status: "CANCELED"}` |
+| 이미 CANCELED | 같은 200 |
+| 주문·금액 불일치, PENDING·FAILED 거래 | 422 `{code: "TEST_PG_CANCEL_REJECTED", transactionKey, orderId, amount, canceled: false}`. 효과 없음 |
+| 거래 없음 | 404. 결과 모름으로 보고 조회로 잇는다 |
+
+- 포트: `PaymentGateway.cancel(PaymentCancelCommand(providerOrderId, transactionKey, amount))` → `PaymentCancelResult`. 입력 검증은 없다(대상 기록에서 만든 내부 입력, P9).
+- **어댑터 분류는 create와 같다:** 의심스러우면 Unknown이다. 자동 재전송은 없다.
+
+| 결과 | 조건 |
+| --- | --- |
+| Canceled | 200이고 본문이 CANCELED이며 키·주문·금액이 요청과 같음 |
+| RejectedNoEffect | 422이고 code가 `TEST_PG_CANCEL_REJECTED`, `canceled:false`, 키·주문·금액이 요청과 같음 |
+| NotSent | 요청이 나가기 전 실패(본문 생성 실패, 연결 전 실패)만 |
+| Unknown | 그 밖 전부(200 형식 오류·값 불일치, 다른 422, 404, 5xx, timeout, 연결 끊김) |
+
+- 조회 상태에 **CANCELED**를 더했다(`PaymentTransactionStatus`). 기존 결제 흐름에서 조회 CANCELED는 `ProviderStatus.FAILED`로 매핑한다. 결제 대기 주문이면 실패 종결이고 지표 `result=failed`다 **[PL 결정 P5·P9]**. 새 enum은 없다. 지금 PG가 결제 대기 주문에 CANCELED를 내는 일은 없어 기존 동작은 같다.
+- create 응답(202)의 status가 CANCELED면 지금처럼 Unknown이다. 접수 계약 밖이기 때문이다(create 분류 불변, P9).
+- 취소 결과 확인은 기존 주문 단위 조회(`verifyOrder`)로 한다. 별도 취소 조회 API는 없다.
+- test-pg 사고 제어(test 소스):
+  - `loseCancelResponse(providerOrderId)`: 그 주문의 취소를 CANCELED로 확정한 뒤 read timeout보다 늦게 응답한다. 앱은 결과를 모른다. `clearLostCancel`로 해제한다.
+  - 제어 endpoint `/control/lost-cancels/{providerOrderId}`(PUT 지정·DELETE 해제), 래퍼 `scripts/ops/test-pg.sh lose-cancel|clear-cancel`.
+  - 취소 호출은 요청을 받은 순간 주문별로 센다(`cancelCalls(providerOrderId)`). create 수와 섞지 않는다. `/control/status`에 `cancelCalls`·`lostCancelOrderIds`가 있다.
+
+### 11-7. 전용 스케줄러 [사용자 결정, 7절 규칙]
+
+| 작업 | 스케줄러 빈 | 스레드 이름 접두사 | 켜기 설정 |
+| --- | --- | --- | --- |
+| 환불 추적(`payment/in/RefundTrackingScheduler`) | `paymentRefundTaskScheduler` | `sched-payment-refund-` | `payment.refund.scheduler.enabled`(test 프로필 false) |
+
+- 결제 자동 재조회·만료와 섞지 않는다. 사용자 기준: 목적이 다른 일은 경계를 나눈다.
+- 빈은 `payment/config/PaymentSchedulingConfig`가 만든다 **[PL 결정 P11]**. order 쪽 `OrderSchedulingConfig`가 아니다(ArchUnit 컨텍스트 경계).
+- 회차 반복과 건별 catch는 서비스 `payment/app/RefundTrackingService.trackDueCases()`가 한다. 스케줄러는 호출만 한다.
+- 대상마다 MDC `orderId`를 건다. slf4j MDC에 같은 키로 직접 넣는다(payment → order 의존을 만들지 않기 위해, P11).
+- 격벽: 환불 추적이 붙잡혀도 결제 재조회·relay·gauge 갱신은 진행하고, 그 반대도 같다(`ScheduledJobIsolationTest`).
+
+### 11-8. 관측·알림
+
+**지표** **[PL 결정 P6·P10]** (label은 소문자 유한 값, orderId 없음)
+
+| 이름 | 태그 | 갱신 |
+| --- | --- | --- |
+| gauge `commerce.payment.refund_cases` | `status`: tracking · refund_requested · refund_unknown · refunded · closed_no_charge · handed_to_human | DB 주기 조회. 기존 gauge 갱신 스케줄러(`sched-unresolved-metric-`, 4-1)에 더했다. 첫 갱신 전 NaN, 갱신 실패면 마지막 값 유지 |
+| counter `commerce.payment.refund_outcome` | `result`: refunded · closed_no_charge · handed_to_human | 결론 도달이 commit된 뒤 1. 합류 경로의 `RESULT_REVERSED` 이관도 handed_to_human으로 센다. REFUND_UNKNOWN은 결론이 아니라 세지 않는다 |
+
+- counter 합계는 대상 수와 다를 수 있다. CLOSED_NO_CHARGE로 닫은 뒤 늦은 성공으로 뒤집혀 이관되면 closed_no_charge와 handed_to_human을 둘 다 센다.
+
+- 경계 로그: 대상 생성 INFO, 환불 요청 INFO, 취소 호출 예외 WARN(causeType), 환불 결과 모름 WARN, 상태가 바뀐 뒤 늦게 온 취소 결과 WARN(결과 종류만), 사람 이관 WARN, 건별 실패 ERROR(causeType). 2-1 레벨 기준을 따른다.
+
+**알림 규칙** (`docker/prometheus/rules/payment.yml`, promtool 케이스 `payment_test.yml`, runbook 앵커 `docs/runbook/week10.md`)
+
+| 규칙 | severity | 식(요지) | [임시] 값 | 근거 |
+| --- | --- | --- | --- | --- |
+| `PaymentRefundHandedToHuman` | warning | `max(refund_cases{status="handed_to_human"}) > 0`, `for: 15m` | 15m | 사람 확인은 자동으로 풀리지 않는다. 아침 확인으로 남기고 깨우지 않는다 |
+| `PaymentRefundUnknown` | warning | `max(refund_cases{status="refund_unknown"}) > 0`, `for: 30m` | 30m | 결과 모름은 다음 조회로 풀린다. 30분 넘게 못 풀면 PG 취소 조회가 막힌 것이다 |
+| `PaymentRefundPiling` | critical | `max(refund_cases{status="handed_to_human"}) ≥ 10` AND `increase(refund_outcome{result="handed_to_human"}[30m]) > 0`, `for: 10m` | 10건, 증가 창 30m, 10m | 대형 장애 뒤 이관이 몰리면 사람 몫이 하루를 넘을 수 있다 |
+
+- Piling의 "증가"는 gauge가 아니라 이관 counter로 잰다 **[PL 결정 P10]**. 사람 처리를 표시하는 수단이 없어 gauge가 내려가지 않는다. 건수만 보면 한 번 10건을 넘은 뒤 계속 울린다.
+- critical 가이드 서버(10-4)에 근거 두 개를 더했다: 상태별 대상 수, 사람 이관 증가(30분). 집계만 보내고 식별자는 없다. 리허설 규칙(10-7)에는 환불 규칙을 넣지 않았다.
+- 대시보드 `commerce-payment-incident`에 환불 확인 대상 패널을 더했다.
+
+**사람 조치** **[PL 결정 P7]** (새 전용 API 없음)
+
+- 기존 `GET /api-admin/v1/payments/unresolved`(9-5)의 `status`에 `HANDED_TO_HUMAN`·`REFUND_UNKNOWN`을 허용한다. 이 값이면 환불 확인 대상을 보여 준다. 같은 목록, 다른 원천이다. 카드·userId는 없다. 비관리자는 403이다.
+  - 예: `scripts/ops/admin-curl.sh GET '/api-admin/v1/payments/unresolved?status=HANDED_TO_HUMAN'`
+- 사람은 목록으로 대상을 고정하고 PG 콘솔 등에서 수동으로 처리한다.
+
+### 11-9. 범위 밖
+
+- 사람이 처리한 환불·종결을 시스템에 표시하는 수단(그래서 HANDED_TO_HUMAN gauge는 내려가지 않는다)
+- 정산 파일 대사
+- 실제 PG 연동(취소 API는 [가정])
+- 고객 알림(메일 등)
+- 부분 환불
+- 주문 되살리기, 고객 주문 응답에 환불 상태 노출(Q4)
