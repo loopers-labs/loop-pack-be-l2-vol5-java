@@ -80,6 +80,8 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-actuator")
     implementation("org.springframework.boot:spring-boot-starter-security")
     implementation("org.springframework.boot:spring-boot-starter-validation")
+    // Outbox 의 trace 문맥 저장·복원. 구현체(OTel bridge)는 supports:monitoring 이 런타임에 둔다.
+    implementation("io.micrometer:micrometer-tracing")
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:${project.properties["springDocOpenApiVersion"]}")
 
     // PG 조회의 재시도·회로 차단. annotation 은 AOP 프록시로 동작하므로 aop 스타터가 필요하다. 스타터가 이미 있다고 가정하지 않고 버전을 명시한다.
@@ -95,8 +97,6 @@ dependencies {
     testImplementation(testFixtures(project(":modules:kafka")))
 
     testImplementation("org.springframework.security:spring-security-test")
-    // 추적 전파 테스트가 현재 span 을 연다. 구현체(OTel bridge)는 supports:monitoring 이 런타임에 둔다.
-    testImplementation("io.micrometer:micrometer-tracing")
 
     // architecture test
     testImplementation("com.tngtech.archunit:archunit:1.5.0")

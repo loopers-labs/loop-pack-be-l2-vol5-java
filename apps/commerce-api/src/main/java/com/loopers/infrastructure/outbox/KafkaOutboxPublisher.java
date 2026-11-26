@@ -7,6 +7,9 @@ import com.loopers.domain.outbox.Outbox;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
+import io.micrometer.tracing.Span;
+import io.micrometer.tracing.Tracer;
+import io.micrometer.tracing.propagation.Propagator;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.errors.ApiException;
@@ -18,6 +21,7 @@ import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
+import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -40,15 +44,19 @@ public class KafkaOutboxPublisher implements OutboxPublisher {
     private final String topic;
     private final Duration sendTimeout;
     private final CircuitBreaker circuitBreaker;
+    private final Tracer tracer;
+    private final Propagator propagator;
 
     @Autowired
     public KafkaOutboxPublisher(
         KafkaTemplate<Object, Object> kafkaTemplate,
         @Value("${order-event.topic}") String topic,
         @Value("${outbox.relay.send-timeout}") Duration sendTimeout,
-        CircuitBreakerRegistry circuitBreakerRegistry
+        CircuitBreakerRegistry circuitBreakerRegistry,
+        Tracer tracer,
+        Propagator propagator
     ) {
-        this(kafkaTemplate, topic, sendTimeout, circuitBreakerRegistry.circuitBreaker(CIRCUIT_BREAKER));
+        this(kafkaTemplate, topic, sendTimeout, circuitBreakerRegistry.circuitBreaker(CIRCUIT_BREAKER), tracer, propagator);
     }
 
     KafkaOutboxPublisher(
@@ -57,22 +65,50 @@ public class KafkaOutboxPublisher implements OutboxPublisher {
         Duration sendTimeout,
         CircuitBreaker circuitBreaker
     ) {
+        this(kafkaTemplate, topic, sendTimeout, circuitBreaker, Tracer.NOOP, Propagator.NOOP);
+    }
+
+    private KafkaOutboxPublisher(
+        KafkaTemplate<Object, Object> kafkaTemplate,
+        String topic,
+        Duration sendTimeout,
+        CircuitBreaker circuitBreaker,
+        Tracer tracer,
+        Propagator propagator
+    ) {
         this.kafkaTemplate = kafkaTemplate;
         this.topic = topic;
         this.sendTimeout = sendTimeout;
         this.circuitBreaker = circuitBreaker;
+        this.tracer = tracer;
+        this.propagator = propagator;
     }
 
     @Override
     public void publish(Outbox outbox) {
+        // 기록한 요청의 trace 를 부모로 열어 두면 Kafka observation 이 같은 traceId 를 레코드 헤더에 싣는다.
+        Span span = publishSpan(outbox).start();
         RecordMetadata metadata;
-        try {
+        try (Tracer.SpanInScope ignored = tracer.withSpan(span)) {
             metadata = circuitBreaker.executeSupplier(() -> send(outbox));
         } catch (CallNotPermittedException e) {
+            span.error(e);
             throw new OutboxPublishException("회로 열림: 브로커 장애로 전송을 멈춘 상태", e);
+        } catch (RuntimeException e) {
+            span.error(e);
+            throw e;
+        } finally {
+            span.end();
         }
         log.info("Outbox 전송 성공. eventId={}, orderId={}, topic={}, partition={}, offset={}",
             outbox.getEventId(), outbox.getOrderId(), metadata.topic(), metadata.partition(), metadata.offset());
+    }
+
+    private Span.Builder publishSpan(Outbox outbox) {
+        Span.Builder builder = outbox.getTraceParent() == null
+            ? tracer.spanBuilder()
+            : propagator.extract(Map.of("traceparent", outbox.getTraceParent()), Map::get);
+        return builder.name("outbox publish").tag("outbox.event_id", outbox.getEventId());
     }
 
     @Override

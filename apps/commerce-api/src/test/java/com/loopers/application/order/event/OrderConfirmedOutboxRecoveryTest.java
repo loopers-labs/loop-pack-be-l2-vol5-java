@@ -68,7 +68,7 @@ class OrderConfirmedOutboxRecoveryTest extends PaymentFlowTestSupport {
         )).id();
         orderFacade.confirm(command(user, orderId, "attempt-1"));
         // W6 경로: 확정 TX 는 그대로 실행하고 Outbox 만 남기지 않는다.
-        OrderConfirmedOutboxRecorder w6NoOutbox = new OrderConfirmedOutboxRecorder(null) {
+        OrderConfirmedOutboxRecorder w6NoOutbox = new OrderConfirmedOutboxRecorder(null, null) {
             @Override
             public void record(Order order, ZonedDateTime recordedAt) {
             }
@@ -115,7 +115,7 @@ class OrderConfirmedOutboxRecoveryTest extends PaymentFlowTestSupport {
         Product shoes = saveProduct("러닝화", 3_500, 5);
         Long orderId = orderFacade.create(user.getId(), List.of(new OrderItemCommand(shoes.getId(), 2))).id();
         orderFacade.confirm(command(user, orderId, "attempt-1"));
-        OrderConfirmedOutboxRecorder w6NoOutbox = new OrderConfirmedOutboxRecorder(null) {
+        OrderConfirmedOutboxRecorder w6NoOutbox = new OrderConfirmedOutboxRecorder(null, null) {
             @Override
             public void record(Order order, ZonedDateTime recordedAt) {
             }

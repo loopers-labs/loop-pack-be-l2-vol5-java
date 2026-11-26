@@ -23,6 +23,8 @@
 - 기록: `OrderConfirmedOutboxRecorder`가 현재 trace 문맥을 application 포트(예: `TraceContextReader`)로 읽어 저장. 포트 구현은 infrastructure(Micrometer `Tracer`·`Propagator`). 문맥이 없으면 null.
 - 발행: `KafkaOutboxPublisher`(infrastructure)가 저장된 traceparent를 부모로 span을 열고 그 안에서 `KafkaTemplate.send` → Kafka observation이 레코드 헤더에 같은 trace를 넣는다. null이면 새 trace.
 - trace 범위: 한 요청의 인과 흐름(consumer 포함). reconcile·주간 batch는 별도 trace, orderId·eventId·snapshotId로 연결. traceId로 업무 동일성을 판단하지 않는다.
+- 기존 테스트 호환: `Outbox.record(...)` 7인자는 traceParent null로 위임(호출 32곳 유지). `KafkaOutboxPublisher` 테스트용 생성자는 `Tracer.NOOP`·`Propagator.NOOP`.
+- 운영 DDL(`ddl-auto: none`, 마이그레이션 도구 없음): `ALTER TABLE outbox ADD COLUMN trace_parent VARCHAR(55) NULL;` 기존 행은 null → 새 trace로 발행된다.
 - 결과: 장애 3건의 Outbox는 reconcile 요청 TX에서 기록되므로 그 trace는 **원 결제 trace가 아니라 reconcile trace**다(증거로 남김).
 
 | 대안 | 탈락 이유 |
