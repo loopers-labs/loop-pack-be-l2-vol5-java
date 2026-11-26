@@ -22,6 +22,7 @@ spring:
       - jpa.yml
       - redis.yml
       - kafka.yml
+      - ranking.yml
       - logging.yml
       - monitoring.yml
 

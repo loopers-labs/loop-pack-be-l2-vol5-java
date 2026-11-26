@@ -82,7 +82,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  */
 @SpringBootTest(classes = CommerceApiApplication.class)
 @AutoConfigureMockMvc
-@TypeExcludeFilters(ExcludeStreamerFromScan.class)
+@TypeExcludeFilters({ExcludeStreamerFromScan.class, ExcludeBatchFromScan.class})
 @Import(PurchaseActivityConsumerConfig.class)
 @ExtendWith({TestPgResetExtension.class, OutputCaptureExtension.class})
 class OutboxDeliveryE2ETest {
