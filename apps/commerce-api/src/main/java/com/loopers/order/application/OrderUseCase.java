@@ -171,6 +171,9 @@ public class OrderUseCase {
         if (result == null || result instanceof PaymentGateway.Unknown) {
             return order;
         }
+        if (result instanceof PaymentGateway.ProviderError providerError && providerError.httpStatus() != 200) {
+            return order;
+        }
         if (result instanceof PaymentGateway.Approved approved
             && (!payment.paymentKey().equals(approved.paymentKey())
                 || !payment.getProviderOrderId().equals(approved.providerOrderId())
