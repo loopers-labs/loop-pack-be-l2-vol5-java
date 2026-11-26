@@ -28,6 +28,8 @@ public final class PgFixtureServer {
         HttpServer control = HttpServer.create(new InetSocketAddress("127.0.0.1", controlPort), 0);
         control.createContext("/approve", exchange -> approve(fixture, exchange));
         control.createContext("/stats", exchange -> stats(fixture, exchange));
+        control.createContext("/drop-next", exchange -> dropNext(fixture, exchange));
+        control.createContext("/succeed", exchange -> succeed(fixture, exchange));
         control.start();
         System.out.printf("PG fixture %s, control http://127.0.0.1:%d%n", fixture.baseUrl(), controlPort);
     }
@@ -39,6 +41,33 @@ public final class PgFixtureServer {
         exchange.sendResponseHeaders(200, bytes.length);
         try (OutputStream out = exchange.getResponseBody()) {
             out.write(bytes);
+        }
+        exchange.close();
+    }
+
+    private static void dropNext(PgFixture fixture, HttpExchange exchange) throws IOException {
+        fixture.dropNextCreateResponse();
+        respond(exchange, 200, "다음 생성 호출은 거래를 저장한 뒤 응답 없이 연결을 닫는다");
+    }
+
+    private static void succeed(PgFixture fixture, HttpExchange exchange) throws IOException {
+        String orderId = exchange.getRequestURI().getQuery().replaceFirst("^orderId=", "");
+        List<PgFixture.Transaction> transactions = fixture.transactionsOf(orderId);
+        transactions.forEach(transaction ->
+            fixture.changeStatus(transaction.transactionKey(), PgFixture.Status.SUCCESS));
+        String body = transactions.stream()
+            .map(transaction -> transaction.transactionKey() + " SUCCESS callback=none")
+            .collect(Collectors.joining("\n"));
+        respond(exchange, transactions.isEmpty() ? 404 : 200, body);
+    }
+
+    private static void respond(HttpExchange exchange, int status, String body) throws IOException {
+        byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
+        exchange.sendResponseHeaders(status, bytes.length == 0 ? -1 : bytes.length);
+        if (bytes.length > 0) {
+            try (OutputStream out = exchange.getResponseBody()) {
+                out.write(bytes);
+            }
         }
         exchange.close();
     }
