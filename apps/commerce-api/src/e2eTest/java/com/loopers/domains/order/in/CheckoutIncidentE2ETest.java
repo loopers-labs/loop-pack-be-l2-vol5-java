@@ -248,6 +248,7 @@ class CheckoutIncidentE2ETest {
             assertThat(evidence.sha256("fault")).as("복구·후속 뒤에도 fault.json이 S3 때와 같다").isEqualTo(faultSha256);
             for (Path file : evidence.files()) {
                 assertNoCardNumber(Files.readString(file), file.getFileName().toString());
+                assertNoLocalPath(Files.readString(file), file.getFileName().toString());
             }
         } catch (Throwable failure) {
             primary = failure;
@@ -1263,6 +1264,11 @@ class CheckoutIncidentE2ETest {
 
     private static void assertNoCardNumber(String text, String source) {
         assertThat(text).as("카드번호 없음: %s", source).doesNotContain(TestPgFixture.CARD_NO).doesNotContain(CARD_DIGITS);
+    }
+
+    // 커밋하는 증거에 로컬 사용자명이 든 경로가 남지 않아야 한다(홈은 ~, 저장소 루트는 $REPO로 바뀐다).
+    private static void assertNoLocalPath(String text, String source) {
+        assertThat(text).as("로컬 경로 없음: %s", source).doesNotContain("/Users/").doesNotContain("/home/");
     }
 
     private void deleteOwnRankingRows() {
