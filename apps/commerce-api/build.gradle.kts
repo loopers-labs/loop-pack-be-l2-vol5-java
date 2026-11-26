@@ -95,6 +95,8 @@ dependencies {
     testImplementation(testFixtures(project(":modules:kafka")))
 
     testImplementation("org.springframework.security:spring-security-test")
+    // 추적 전파 테스트가 현재 span 을 연다. 구현체(OTel bridge)는 supports:monitoring 이 런타임에 둔다.
+    testImplementation("io.micrometer:micrometer-tracing")
 
     // architecture test
     testImplementation("com.tngtech.archunit:archunit:1.5.0")

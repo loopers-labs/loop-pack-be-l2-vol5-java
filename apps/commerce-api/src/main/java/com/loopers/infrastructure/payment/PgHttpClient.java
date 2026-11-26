@@ -46,7 +46,8 @@ public class PgHttpClient {
     private final RestClient createClient;
     private final RestClient lookupClient;
 
-    public PgHttpClient(PaymentPgProperties properties, ObjectMapper objectMapper) {
+    // 자동 설정된 builder 를 받아야 observation 이 붙어 PG 요청에 traceparent 가 실린다.
+    public PgHttpClient(PaymentPgProperties properties, ObjectMapper objectMapper, RestClient.Builder restClientBuilder) {
         this.properties = properties;
         this.objectMapper = objectMapper;
         this.parser = new PgResponseParser(objectMapper);
@@ -54,14 +55,14 @@ public class PgHttpClient {
                 .version(HttpClient.Version.HTTP_1_1)
                 .connectTimeout(properties.connectTimeout())
                 .build();
-        this.createClient = restClient(properties.createReadTimeout());
-        this.lookupClient = restClient(properties.lookupReadTimeout());
+        this.createClient = restClient(restClientBuilder, properties.createReadTimeout());
+        this.lookupClient = restClient(restClientBuilder, properties.lookupReadTimeout());
     }
 
-    private RestClient restClient(Duration readTimeout) {
+    private RestClient restClient(RestClient.Builder builder, Duration readTimeout) {
         JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
         requestFactory.setReadTimeout(readTimeout);
-        return RestClient.builder()
+        return builder.clone()
                 .baseUrl(properties.baseUrl())
                 .requestFactory(requestFactory)
                 .defaultHeader("X-USER-ID", properties.userId())

@@ -43,7 +43,10 @@ public class KafkaConfig {
 
     @Bean
     public KafkaTemplate<Object, Object> kafkaTemplate(ProducerFactory<Object, Object> producerFactory) {
-        return new KafkaTemplate<>(producerFactory);
+        KafkaTemplate<Object, Object> template = new KafkaTemplate<>(producerFactory);
+        // 직접 만든 template 은 spring.kafka.template.observation-enabled 가 적용되지 않아 여기서 켠다(헤더에 traceparent).
+        template.setObservationEnabled(true);
+        return template;
     }
 
     @Bean
@@ -67,6 +70,7 @@ public class KafkaConfig {
         ConcurrentKafkaListenerContainerFactory<Object, Object> factory = new ConcurrentKafkaListenerContainerFactory<>();
         factory.setConsumerFactory(new DefaultKafkaConsumerFactory<>(consumerConfig));
         factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.MANUAL); // 수동 커밋
+        factory.getContainerProperties().setObservationEnabled(true);
         factory.setBatchMessageConverter(new BatchMessagingMessageConverter(converter));
         factory.setConcurrency(3);
         factory.setBatchListener(true);

@@ -32,9 +32,20 @@ management:
       enabled: true
   server:
     port: 8081
+  tracing:
+    sampling:
+      probability: 1.0
   observations:
     annotations:
       enabled: true
     key-values:
       application:
         ${spring.application.name}
+
+---
+# endpoint 가 없으면 OTLP exporter 가 만들어지지 않는다. 로컬에서만 Tempo 로 보낸다.
+spring.config.activate.on-profile: local
+management:
+  otlp:
+    tracing:
+      endpoint: http://localhost:4318/v1/traces

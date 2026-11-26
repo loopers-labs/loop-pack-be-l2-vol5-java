@@ -38,6 +38,8 @@ public class OrderActivityKafkaConfig {
         factory.setBatchListener(false);
         factory.setConcurrency(1);
         factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.MANUAL_IMMEDIATE);
+        // 레코드 헤더의 traceparent 를 이어받아 처리 로그에 같은 traceId 가 붙는다.
+        factory.getContainerProperties().setObservationEnabled(true);
         factory.setCommonErrorHandler(new CommonContainerStoppingErrorHandler());
         return factory;
     }

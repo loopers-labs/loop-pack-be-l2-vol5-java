@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.springframework.web.client.RestClient;
 
 import java.io.IOException;
 import java.time.Duration;
@@ -61,7 +62,7 @@ class PaymentProviderContractTest {
         PaymentPgProperties properties = new PaymentPgProperties(
             pg.baseUrl(), CALLBACK_URL, FakePgServer.USER_ID, Duration.ofSeconds(1), readTimeout, readTimeout
         );
-        client = new PgHttpClient(properties, MAPPER);
+        client = new PgHttpClient(properties, MAPPER, RestClient.builder());
         gateway = new PaymentGatewayImpl(client);
     }
 
