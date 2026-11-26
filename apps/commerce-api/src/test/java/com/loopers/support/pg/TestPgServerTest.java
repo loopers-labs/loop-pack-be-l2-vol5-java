@@ -18,6 +18,7 @@ import java.net.http.HttpResponse;
 import java.net.http.HttpTimeoutException;
 import java.time.Duration;
 import java.util.List;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -221,6 +222,155 @@ class TestPgServerTest {
 
             // act & assert
             assertThatThrownBy(() -> pg.dropNextCreateResponse()).isInstanceOf(IllegalStateException.class);
+        }
+    }
+
+    @DisplayName("주문 번호로 고른 생성 응답을 붙잡을 때, ")
+    @Nested
+    class HoldByOrder {
+
+        private static final String TARGET = "LP-ORD-0000000101";
+        private static final String OTHER = "LP-ORD-0000000102";
+
+        @DisplayName("대상 주문만 거래를 저장한 뒤 응답을 붙잡아 클라이언트가 timeout되고, 다른 주문은 바로 202를 받는다.")
+        @Test
+        void holdsOnlyTargetOrders() throws Exception {
+            // arrange
+            pg.holdCreateResponsesFor(Set.of(TARGET));
+
+            // act
+            assertThatThrownBy(() -> post(createBody(TARGET, AMOUNT), TestPgContract.PROVIDER_ACCOUNT, SHORT_TIMEOUT))
+                .isInstanceOf(HttpTimeoutException.class);
+            HttpResponse<String> other = post(createBody(OTHER, AMOUNT), TestPgContract.PROVIDER_ACCOUNT, NORMAL_TIMEOUT);
+
+            // assert
+            assertThat(other.statusCode()).isEqualTo(202);
+            assertThat(pg.transactionsOf(TARGET)).singleElement()
+                .satisfies(transaction -> assertThat(transaction.status()).isEqualTo(TestPgStatus.PENDING));
+            assertThat(pg.transactionsOf(OTHER)).hasSize(1);
+            assertThat(pg.isCreateHoldActive()).isTrue();
+        }
+
+        @DisplayName("한 번 붙잡은 뒤에도 해제하기 전까지는 같은 대상의 다음 요청을 또 붙잡는다.")
+        @Test
+        void keepsHolding_untilReleased() throws Exception {
+            // arrange
+            pg.holdCreateResponsesFor(Set.of(TARGET));
+
+            // act & assert
+            assertThatThrownBy(() -> post(createBody(TARGET, AMOUNT), TestPgContract.PROVIDER_ACCOUNT, SHORT_TIMEOUT))
+                .isInstanceOf(HttpTimeoutException.class);
+            assertThatThrownBy(() -> post(createBody(TARGET, AMOUNT), TestPgContract.PROVIDER_ACCOUNT, SHORT_TIMEOUT))
+                .isInstanceOf(HttpTimeoutException.class);
+        }
+
+        @DisplayName("해제하면 대상이 비고 이후 요청은 바로 202를 받는다. 저장된 거래와 호출 기록은 남는다.")
+        @Test
+        void releasesHolds_keepingTransactionsAndCounts() throws Exception {
+            // arrange
+            pg.holdCreateResponsesFor(Set.of(TARGET));
+            assertThatThrownBy(() -> post(createBody(TARGET, AMOUNT), TestPgContract.PROVIDER_ACCOUNT, SHORT_TIMEOUT))
+                .isInstanceOf(HttpTimeoutException.class);
+
+            // act
+            pg.releaseCreateHolds();
+            HttpResponse<String> after = post(createBody(OTHER, AMOUNT), TestPgContract.PROVIDER_ACCOUNT, NORMAL_TIMEOUT);
+
+            // assert
+            assertThat(pg.isCreateHoldActive()).isFalse();
+            assertThat(after.statusCode()).isEqualTo(202);
+            assertThat(pg.transactionsOf(TARGET)).hasSize(1);
+            assertThat(pg.createCountOf(TARGET)).isEqualTo(1);
+        }
+
+        @DisplayName("다른 생성 통제가 걸려 있으면 겹쳐 걸 수 없고, 붙잡기가 걸려 있으면 다른 생성 통제를 걸 수 없다.")
+        @Test
+        void refusesOverlappingControls() {
+            // arrange
+            pg.rejectNextCreate();
+
+            // act & assert
+            assertThatThrownBy(() -> pg.holdCreateResponsesFor(Set.of(TARGET))).isInstanceOf(IllegalStateException.class);
+            pg.reset();
+            pg.holdCreateResponsesFor(Set.of(TARGET));
+            assertThatThrownBy(() -> pg.dropNextCreateResponse()).isInstanceOf(IllegalStateException.class);
+            assertThatThrownBy(() -> pg.holdCreateResponsesFor(Set.of(OTHER))).isInstanceOf(IllegalStateException.class);
+            assertThatThrownBy(() -> pg.holdCreateResponsesFor(Set.of())).isInstanceOf(IllegalArgumentException.class);
+        }
+
+        @DisplayName("reset은 붙잡기 대상을 지운다.")
+        @Test
+        void resetClearsTargets() throws Exception {
+            // arrange
+            pg.holdCreateResponsesFor(Set.of(TARGET));
+
+            // act
+            pg.reset();
+
+            // assert
+            assertThat(pg.isCreateHoldActive()).isFalse();
+            assertThat(post(createBody(TARGET, AMOUNT), TestPgContract.PROVIDER_ACCOUNT, NORMAL_TIMEOUT).statusCode()).isEqualTo(202);
+        }
+    }
+
+    @DisplayName("주문별 생성 요청 수를 셀 때, ")
+    @Nested
+    class CreateCountByOrder {
+
+        @DisplayName("주문 번호마다 받은 생성 요청을 세고, 두 번 이상 받은 주문을 중복으로 알려 준다.")
+        @Test
+        void countsPerOrder_andReportsDuplicates() throws Exception {
+            // act
+            post(createBody("LP-ORD-0000000201", AMOUNT), TestPgContract.PROVIDER_ACCOUNT, NORMAL_TIMEOUT);
+            post(createBody("LP-ORD-0000000202", AMOUNT), TestPgContract.PROVIDER_ACCOUNT, NORMAL_TIMEOUT);
+            post(createBody("LP-ORD-0000000202", AMOUNT), TestPgContract.PROVIDER_ACCOUNT, NORMAL_TIMEOUT);
+
+            // assert
+            assertThat(pg.createCountOf("LP-ORD-0000000201")).isEqualTo(1);
+            assertThat(pg.createCountOf("LP-ORD-0000000202")).isEqualTo(2);
+            assertThat(pg.createCountOf("LP-ORD-0000000299")).isZero();
+            assertThat(pg.duplicateCreates()).containsExactly("LP-ORD-0000000202");
+        }
+
+        @DisplayName("통제로 거절한 생성 요청도 받은 기록으로 센다. 오류로 응답했다고 두 번째 호출 사실을 지우지 않는다.")
+        @Test
+        void countsRejectedRequests() throws Exception {
+            // arrange
+            pg.rejectNextCreate();
+
+            // act
+            HttpResponse<String> rejected = post(createBody(ORDER_ID, AMOUNT), TestPgContract.PROVIDER_ACCOUNT, NORMAL_TIMEOUT);
+            post(createBody(ORDER_ID, AMOUNT), TestPgContract.PROVIDER_ACCOUNT, NORMAL_TIMEOUT);
+
+            // assert
+            assertThat(rejected.statusCode()).isEqualTo(422);
+            assertThat(pg.createCountOf(ORDER_ID)).isEqualTo(2);
+            assertThat(pg.duplicateCreates()).containsExactly(ORDER_ID);
+        }
+
+        @DisplayName("형식이 틀린 요청은 주문 번호를 알 수 없어 주문별로는 세지 않지만, 전체 생성 요청 수에는 들어간다.")
+        @Test
+        void excludesInvalidRequestsFromPerOrderCount() throws Exception {
+            // act
+            post(createBody(ORDER_ID, AMOUNT), null, NORMAL_TIMEOUT);
+
+            // assert
+            assertThat(pg.createCount()).isEqualTo(1);
+            assertThat(pg.createCountOf(ORDER_ID)).isZero();
+        }
+
+        @DisplayName("reset은 주문별 생성 요청 수를 지운다.")
+        @Test
+        void resetClearsPerOrderCounts() throws Exception {
+            // arrange
+            post(createBody(ORDER_ID, AMOUNT), TestPgContract.PROVIDER_ACCOUNT, NORMAL_TIMEOUT);
+
+            // act
+            pg.reset();
+
+            // assert
+            assertThat(pg.createCountOf(ORDER_ID)).isZero();
+            assertThat(pg.duplicateCreates()).isEmpty();
         }
     }
 

@@ -1,6 +1,7 @@
 package com.loopers.support.pg;
 
 import java.time.Duration;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -35,6 +36,8 @@ final class TestPgControls {
 
     private final AtomicReference<CreateControl> nextCreate = new AtomicReference<>();
     private final AtomicReference<CountDownLatch> holdGate = new AtomicReference<>(new CountDownLatch(1));
+    // 주문 번호로 고른 생성 응답 붙잡기 (W10 사고 실험). 요청 순서가 아니라 실제 주문 번호로 대상을 정한다
+    private final AtomicReference<Set<String>> createHoldTargets = new AtomicReference<>(Set.of());
 
     private final Object lookupLock = new Object();
     private TestPgLookupFailure persistentLookupFailure;
@@ -43,9 +46,42 @@ final class TestPgControls {
 
     /** 이미 걸린 통제가 있으면 겹쳐 걸지 않는다. 한 테스트 안에서 어느 통제가 적용됐는지 헷갈리지 않게 한다. */
     void setNextCreate(CreateControl control) {
+        if (!createHoldTargets.get().isEmpty()) {
+            throw new IllegalStateException("주문 번호로 고른 응답 붙잡기가 걸려 있다: " + createHoldTargets.get());
+        }
         if (!nextCreate.compareAndSet(null, control)) {
             throw new IllegalStateException("다음 생성 요청에 이미 통제가 걸려 있다: " + nextCreate.get());
         }
+    }
+
+    /**
+     * 이 주문 번호들의 생성 요청은 거래를 저장한 뒤 응답을 붙잡는다. {@link #releaseCreateHolds()}까지 유지한다.
+     * 다른 생성 통제와 겹쳐 걸지 않는다.
+     */
+    void holdCreateResponsesFor(Set<String> orderIds) {
+        if (orderIds == null || orderIds.isEmpty()) {
+            throw new IllegalArgumentException("붙잡을 주문 번호가 하나 이상 있어야 한다.");
+        }
+        if (nextCreate.get() != null) {
+            throw new IllegalStateException("다음 생성 요청에 이미 통제가 걸려 있다: " + nextCreate.get());
+        }
+        if (!createHoldTargets.compareAndSet(Set.of(), Set.copyOf(orderIds))) {
+            throw new IllegalStateException("주문 번호로 고른 응답 붙잡기가 이미 걸려 있다: " + createHoldTargets.get());
+        }
+    }
+
+    boolean isCreateHoldTarget(String orderId) {
+        return createHoldTargets.get().contains(orderId);
+    }
+
+    boolean isCreateHoldActive() {
+        return !createHoldTargets.get().isEmpty();
+    }
+
+    /** 주문 번호로 고른 붙잡기를 지우고, 지금 붙잡힌 응답을 모두 푼다. */
+    void releaseCreateHolds() {
+        createHoldTargets.set(Set.of());
+        releaseHeld();
     }
 
     /** 걸린 생성 통제를 꺼내고 지운다. 없으면 null이다. */
@@ -108,6 +144,7 @@ final class TestPgControls {
 
     /** 붙잡은 응답을 풀고 모든 통제를 지운다. */
     void reset() {
+        createHoldTargets.set(Set.of());
         releaseHeld();
         nextCreate.set(null);
         healLookups();
