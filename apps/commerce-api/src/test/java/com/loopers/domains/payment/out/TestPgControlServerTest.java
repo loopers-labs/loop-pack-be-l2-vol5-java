@@ -113,6 +113,56 @@ class TestPgControlServerTest {
     }
 
     @Test
+    @DisplayName("전역 조회 동작을 ERROR_500으로 지정하면 이후 주문 번호 조회가 500으로 답한다")
+    void changesLookupBehavior() throws Exception {
+        create(ORDER_ID);
+
+        HttpResponse<String> changed = control("PUT", "/control/lookup-behavior", "{\"behavior\":\"ERROR_500\"}");
+        HttpResponse<String> looked = lookup(ORDER_ID);
+
+        assertThat(changed.statusCode()).isEqualTo(204);
+        assertThat(looked.statusCode()).isEqualTo(500);
+    }
+
+    @Test
+    @DisplayName("조회 동작을 NORMAL로 되돌리면 주문 번호 조회가 다시 200으로 거래 목록을 돌려준다")
+    void restoresNormalLookupBehavior() throws Exception {
+        create(ORDER_ID);
+        control("PUT", "/control/lookup-behavior", "{\"behavior\":\"ERROR_500\"}");
+
+        HttpResponse<String> restored = control("PUT", "/control/lookup-behavior", "{\"behavior\":\"NORMAL\"}");
+        HttpResponse<String> looked = lookup(ORDER_ID);
+
+        assertThat(restored.statusCode()).isEqualTo(204);
+        assertThat(looked.statusCode()).isEqualTo(200);
+        assertThat(objectMapper.readTree(looked.body()).get(0).path("orderId").asText()).isEqualTo(ORDER_ID);
+    }
+
+    @Test
+    @DisplayName("없는 조회 동작 이름이면 400으로 거절하고 조회는 기존 NORMAL 동작을 유지한다")
+    void rejectsUnknownLookupBehavior() throws Exception {
+        create(ORDER_ID);
+
+        HttpResponse<String> changed = control("PUT", "/control/lookup-behavior", "{\"behavior\":\"NOT_A_BEHAVIOR\"}");
+        HttpResponse<String> looked = lookup(ORDER_ID);
+
+        assertThat(changed.statusCode()).isEqualTo(400);
+        assertThat(changed.body()).contains("UNKNOWN_LOOKUP_BEHAVIOR");
+        assertThat(looked.statusCode()).isEqualTo(200);
+    }
+
+    @Test
+    @DisplayName("상태 조회는 현재 조회 동작을 기본 NORMAL, 지정 뒤에는 지정한 이름으로 돌려준다")
+    void reportsLookupBehaviorInStatus() throws Exception {
+        JsonNode before = objectMapper.readTree(control("GET", "/control/status", null).body());
+        control("PUT", "/control/lookup-behavior", "{\"behavior\":\"DELAY\"}");
+        JsonNode after = objectMapper.readTree(control("GET", "/control/status", null).body());
+
+        assertThat(before.path("lookupBehavior").asText()).isEqualTo("NORMAL");
+        assertThat(after.path("lookupBehavior").asText()).isEqualTo("DELAY");
+    }
+
+    @Test
     @DisplayName("없는 제어 경로는 404로 답한다")
     void rejectsUnknownControlPath() throws Exception {
         HttpResponse<String> response = control("POST", "/control/unknown", null);
