@@ -6,12 +6,40 @@
 
 ## 읽기 전용 진단
 
-1. health 응답과 관찰 시각을 그대로 저장한다.
-2. `/actuator/prometheus`의 `commerce_payment_unresolved` sample과 scrape 시각을 저장한다. Prometheus naming convention에 따라 exposition 이름이 변환될 수 있다.
-3. 요청 고객이 소유한 주문 상세 API에서 주문 상태·payment 상태·금액·시각을 읽는다.
-4. 주문 ID와 payment attempt key로 상관 로그를 찾아 adapter operation/outcome과 transaction 적용 결과를 확인한다.
-5. 합성 PG fixture를 쓰는 로컬 실험에서는 같은 계정/주문/금액의 거래 상태·transaction key·create attempt 수를 조회한다.
-6. 주문의 예약 상태·Outbox eventId/상태·구매 활동·주간 snapshot/publication을 각 저장소에서 읽는다.
+1. health JSON과 관찰 시각을 저장한다. 기본 management port는 8081이고 테스트는 동적 포트를 사용한다.
+2. `/actuator/prometheus` exposition의 `commerce_payment_unresolved` sample과 scrape 시각을 저장한다. Prometheus 이름 표기에는 점이 밑줄로 바뀐다.
+3. 요청 고객이 소유한 주문 상세 API에서 상태·결제 금액·시각을 읽는다.
+4. DB에서 대상 주문만 읽는다. 아래 예시에서 ID 목록은 확인된 영향 주문으로 바꾼다.
+
+   ```sql
+   select o.id as order_id,
+          case o.status when 0 then 'DRAFT' when 1 then 'CONFIRMED' when 2 then 'CANCELED' end as order_status,
+          o.confirmed_at,
+          o.stock_reservation_status,
+          p.payment_attempt_key,
+          p.payment_key,
+          p.provider_order_id,
+          p.amount,
+          p.status as payment_status,
+          p.transaction_key
+   from orders o
+   left join payments p on p.id = o.payment_id
+   where o.id in (:affected_order_ids);
+   ```
+
+5. 주문 ID와 attempt key로 상관 로그를 찾아 adapter operation/outcome과 내부 적용/rollback 결과를 확인한다.
+6. 로컬 합성 PG fixture에서는 같은 주문의 거래 상태·transaction key·create 횟수를 조회한다.
+7. Outbox 및 후속 업무를 각각 읽는다.
+
+   ```sql
+   select event_id, order_id, status, attempt_count, published_at
+   from order_confirmed_outbox where order_id in (:affected_order_ids);
+
+   select order_id, product_id, quantity, confirmed_at
+   from product_purchase_activity where order_id in (:affected_order_ids);
+   ```
+
+   이어 새 weekly snapshot ID와 publication 상태를 확인하고, 랭킹 API 응답의 점수·순위를 저장한다.
 
 ### 경쟁 가설
 

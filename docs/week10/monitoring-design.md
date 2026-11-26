@@ -35,7 +35,9 @@ health UP과 주문 완료는 서로 다른 질문이다. health는 애플리케
 
 ## 상관 로그 필드
 
-각 실제 경계에서 최소한 다음 필드를 연결한다.
+승인 adapter 경계는 `providerOrderId`, `paymentAttemptKey`, `pgOperation`, `pgOutcome`, 제한된 `adapterFailure`, UTC `observedAt`를 기록한다. 주문의 reconcile 경계는 실제 `orderId`와 같은 attempt key로 조회 결과·내부 전 상태·후 상태·적용/rollback 결과를 남긴다. 두 경계는 attempt key와 provider order ID로 연결한다.
+
+각 경계에서 최소한 다음 필드를 연결한다.
 
 | 필드 | 의미 |
 | --- | --- |
