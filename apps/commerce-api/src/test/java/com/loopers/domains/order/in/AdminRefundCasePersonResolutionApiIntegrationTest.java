@@ -137,14 +137,35 @@ class AdminRefundCasePersonResolutionApiIntegrationTest {
     }
 
     @Test
-    @DisplayName("PG가 돈이 나갔다고 한 청구 확인 대상에 청구 없음을 적으면 돈 칸과 모순이라 409이고 그대로다")
-    void rejectsNoChargeOnCharged() throws Exception {
+    @DisplayName("결과가 뒤집혀 사람 담당이 된 청구 확인 대상에 관리자가 청구 없음을 적으면 200이고 청구 없음·담당 종료가 저장되며 담당 사유는 그대로 남고 no_charge/person counter가 1 는다")
+    void recordsNoChargeOnChargedKeepingOwnerReason() throws Exception {
         long orderId = refundCase("CHARGED", null, "PERSON", "RESULT_REVERSED", null, null);
+        double before = outcome("no_charge", "person");
+
+        JsonNode data = data(admin(orderId, "{\"result\":\"NO_CHARGE\"}").andExpect(status().isOk()));
+
+        assertThat(data.get("moneyStatus").asText()).isEqualTo("NO_CHARGE");
+        Map<String, Object> row = row(orderId);
+        assertThat(row.get("money_status")).isEqualTo("NO_CHARGE");
+        assertThat(row.get("refund_actor")).isNull();
+        assertThat(row.get("owner_reason")).isEqualTo("RESULT_REVERSED");
+        assertThat(row.get("owner_closed_by")).isEqualTo("admin");
+        assertThat(time(orderId, "owner_closed_at")).isEqualTo(utc(NOW));
+        assertThat(time(orderId, "concluded_at")).isEqualTo(utc(NOW));
+        assertThat(time(orderId, "next_check_at")).isNull();
+        assertThat(outcome("no_charge", "person") - before).isEqualTo(1.0);
+    }
+
+    @ParameterizedTest(name = "돈의 상태={0}")
+    @ValueSource(strings = {"REFUND_REQUESTED", "REFUND_UNKNOWN"})
+    @DisplayName("우리가 환불을 요청한 뒤인 사람 담당 대상(환불 요청함·결과 모름)에 청구 없음을 적으면 취소를 보냈을 수 있는 돈이라 409이고 그대로다")
+    void rejectsNoChargeAfterRefundRequested(String moneyStatus) throws Exception {
+        long orderId = refundCase(moneyStatus, null, "PERSON", "HANDOFF_DEADLINE", null, null);
         double before = outcome("no_charge", "person");
 
         admin(orderId, "{\"result\":\"NO_CHARGE\"}").andExpect(status().isConflict());
 
-        assertThat(state(orderId)).isEqualTo("CHARGED/PERSON/-/-");
+        assertThat(state(orderId)).isEqualTo(moneyStatus + "/PERSON/-/-");
         assertThat(outcome("no_charge", "person") - before).isZero();
     }
 

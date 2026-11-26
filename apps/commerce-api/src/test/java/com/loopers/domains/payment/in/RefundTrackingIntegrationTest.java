@@ -34,6 +34,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -357,6 +358,30 @@ class RefundTrackingIntegrationTest {
     }
 
     @Test
+    @DisplayName("R3: 조회를 고른 뒤 이관 기한이 지난 자동 담당 대상은 PG가 SUCCESS여도 담당을 먼저 사람(HANDOFF_DEADLINE)으로 바꿔 청구 확인으로만 기록하고 취소를 보내지 않으며 이관 counter가 1 는다")
+    void assignsPersonBeforeApplyingLookupWhenDeadlinePassesDuringLookup() {
+        double handedBefore = assigned("handoff_deadline");
+        long orderId = expiredOrder();
+        server.changeStatus(transactionKey(orderId), "SUCCESS");
+        Instant deadline = EXPIRES_AT.plus(RefundCase.HANDOFF_AFTER);
+        clock.set(deadline.minusSeconds(1));
+        failingCircuitState.moveClockAfterNextCheck(deadline);
+
+        refundTracking.trackDueCases();
+
+        RefundCase refundCase = refundCase(orderId);
+        assertThat(pg.cancelCalls(providerOrderId(orderId))).isZero();
+        assertThat(pgStatus(orderId)).isEqualTo("SUCCESS");
+        assertThat(refundCase.getMoneyStatus()).isEqualTo(MoneyStatus.CHARGED);
+        assertThat(refundCase.getRefundRequestedAt()).isNull();
+        assertThat(refundCase.getOwner()).isEqualTo(Owner.PERSON);
+        assertThat(refundCase.getOwnerReason()).isEqualTo(RefundCase.HANDOFF_DEADLINE);
+        assertThat(refundCase.getOwnerChangedAt()).isEqualTo(deadline);
+        assertThat(refundCase.getNextCheckAt()).isEqualTo(deadline.plus(RefundCase.PERSON_CHECK_DELAY));
+        assertThat(assigned("handoff_deadline") - handedBefore).isEqualTo(1.0);
+    }
+
+    @Test
     @DisplayName("기한이 된 대상이 상한 20건보다 많으면 한 회차에 다음 조회 시각이 이른 20건만 조회하고 나머지는 손대지 않는다")
     void looksUpAtMostBatchLimitPerRun() {
         for (int index = 1; index <= 25; index++) {
@@ -567,26 +592,35 @@ class RefundTrackingIntegrationTest {
 
         @Bean
         @Primary
-        FailingCircuitState failingCircuitState(PaymentCircuitBreakers delegate) {
-            return new FailingCircuitState(delegate);
+        FailingCircuitState failingCircuitState(PaymentCircuitBreakers delegate, MutablePaymentClock refundTrackingClock) {
+            return new FailingCircuitState(delegate, refundTrackingClock);
         }
     }
 
     // 건별 처리 실패를 만드는 테스트 설정이다. 회로 확인은 조회·취소 예외 처리 밖(잠금 트랜잭션 안)이라 예외가 회차의 건별 catch까지 간다.
+    // 회로 확인은 조회 직전 준비(기한 판단 뒤)의 마지막 단계라, 여기서 시계를 옮기면 "조회하는 동안 기한이 지남"을 만든다.
     static class FailingCircuitState implements PaymentLookupCircuitState {
         private final PaymentLookupCircuitState delegate;
+        private final MutablePaymentClock clock;
         private final AtomicBoolean failNext = new AtomicBoolean();
+        private final AtomicReference<Instant> clockAfterNextCheck = new AtomicReference<>();
 
-        FailingCircuitState(PaymentLookupCircuitState delegate) {
+        FailingCircuitState(PaymentLookupCircuitState delegate, MutablePaymentClock clock) {
             this.delegate = delegate;
+            this.clock = clock;
         }
 
         void failNextCheck() {
             failNext.set(true);
         }
 
+        void moveClockAfterNextCheck(Instant instant) {
+            clockAfterNextCheck.set(instant);
+        }
+
         void disarm() {
             failNext.set(false);
+            clockAfterNextCheck.set(null);
         }
 
         @Override
@@ -594,7 +628,12 @@ class RefundTrackingIntegrationTest {
             if (failNext.getAndSet(false)) {
                 throw new IllegalStateException("주입된 회로 확인 실패");
             }
-            return delegate.blocksLookup(providerId);
+            boolean blocked = delegate.blocksLookup(providerId);
+            Instant moved = clockAfterNextCheck.getAndSet(null);
+            if (moved != null) {
+                clock.set(moved);
+            }
+            return blocked;
         }
     }
 }

@@ -578,6 +578,32 @@ class RefundTrackingServiceTest {
     }
 
     @Test
+    @DisplayName("R3: 조회하는 동안 이관 기한이 지난 자동 담당 확인 중 대상은 SUCCESS가 보여도 담당을 먼저 사람(HANDOFF_DEADLINE)으로 바꾼 뒤 청구 확인으로 기록해 취소를 보내지 않고 이관은 commit 뒤 한 번 센다")
+    void assignsPersonBeforeApplyingLookupWhenDeadlinePassesDuringLookup() {
+        refundCases.put(tracking(1, PG_A, "TR-1"));
+        Instant deadline = OPENED_AT.plus(RefundCase.HANDOFF_AFTER);
+        when(gatewayA.verifyOrder(anyString(), any())).thenAnswer(invocation -> {
+            clock.set(deadline);
+            return found(tx("TR-1", 1, AMOUNT, PaymentTransactionStatus.SUCCESS));
+        });
+
+        service.trackDueCases();
+
+        verify(gatewayA, never()).cancel(any());
+        RefundCase refundCase = refundCases.get(1);
+        assertThat(refundCase.getMoneyStatus()).isEqualTo(MoneyStatus.CHARGED);
+        assertThat(refundCase.getTransactionKey()).isEqualTo("TR-1");
+        assertThat(refundCase.getRefundRequestedAt()).isNull();
+        assertThat(refundCase.getOwner()).isEqualTo(Owner.PERSON);
+        assertThat(refundCase.getOwnerReason()).isEqualTo(RefundCase.HANDOFF_DEADLINE);
+        assertThat(refundCase.getOwnerChangedAt()).isEqualTo(deadline);
+        assertThat(refundCase.isPersonOpen()).isTrue();
+        assertThat(refundCase.getNextCheckAt()).isEqualTo(deadline.plus(HALF_PERSON));
+        assertThat(outcomes).containsExactly("assigned:" + RefundCase.HANDOFF_DEADLINE);
+        assertThat(events).containsSubsequence("save:1:CHARGED", "commit", "assigned:" + RefundCase.HANDOFF_DEADLINE);
+    }
+
+    @Test
     @DisplayName("취소 응답 전에 대상이 이미 다른 상태로 바뀌었으면 늦게 온 취소 결과를 반영하지 않고 orderId와 결과 종류만 WARN 한 줄로 남긴다")
     void logsDiscardedLateCancelResult() {
         refundCases.put(tracking(1, PG_A, "TR-1"));
@@ -768,7 +794,7 @@ class RefundTrackingServiceTest {
         }
     }
 
-    // 결론은 "돈의 상태/주체", 사람 담당은 "assigned:사유"로 남긴다. 결론은 commit 순서도 보도록 events에도 남긴다.
+    // 결론은 "돈의 상태/주체", 사람 담당은 "assigned:사유"로 남긴다. commit 순서도 보도록 events에도 남긴다.
     private class RecordingOutcomes implements RefundOutcomeRecorder {
         @Override
         public void recordOutcome(Result result, RefundActor actor) {
@@ -778,6 +804,7 @@ class RefundTrackingServiceTest {
 
         @Override
         public void recordPersonAssigned(String reason) {
+            events.add("assigned:" + reason);
             outcomes.add("assigned:" + reason);
         }
     }
