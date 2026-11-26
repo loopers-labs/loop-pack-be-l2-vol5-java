@@ -18,6 +18,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Queue;
+import java.util.Set;
+import java.util.TreeMap;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
@@ -105,6 +108,8 @@ public final class TestPgServer implements AutoCloseable {
     private final AtomicInteger lookupCount = new AtomicInteger();
     private final AtomicInteger sequence = new AtomicInteger();
     private final Queue<LookupStep> lookupSteps = new ConcurrentLinkedQueue<>();
+    private final Map<String, AtomicInteger> createCountsByOrder = new ConcurrentHashMap<>();
+    private final Set<String> dropTargets = ConcurrentHashMap.newKeySet();
 
     private volatile CreateBehavior createBehavior = CreateBehavior.ACCEPT;
     private volatile LookupBehavior lookupBehavior = LookupBehavior.NORMAL;
@@ -154,6 +159,8 @@ public final class TestPgServer implements AutoCloseable {
         transactions.clear();
         requests.clear();
         createCount.set(0);
+        createCountsByOrder.clear();
+        dropTargets.clear();
         lookupCount.set(0);
         createBehavior = CreateBehavior.ACCEPT;
         lookupBehavior = LookupBehavior.NORMAL;
@@ -169,6 +176,19 @@ public final class TestPgServer implements AutoCloseable {
 
     public void willDropResponseAfterCreate() {
         this.createBehavior = CreateBehavior.ACCEPT_THEN_DROP;
+    }
+
+    /** 목록의 주문만 거래를 만든 뒤 응답 없이 끊고, 나머지는 현재 응답 방식을 따름. 호출 순서에 기대지 않도록 주문으로 고름 (10주차 D-199) */
+    public void willDropResponseFor(Set<String> orderIds) {
+        dropTargets.addAll(orderIds);
+    }
+
+    public void stopDroppingResponses() {
+        dropTargets.clear();
+    }
+
+    public Set<String> dropTargets() {
+        return Set.copyOf(dropTargets);
     }
 
     public void willDelayResponseAfterCreate(Duration delay) {
@@ -247,6 +267,22 @@ public final class TestPgServer implements AutoCloseable {
         return createCount.get();
     }
 
+    public int createCountOf(String orderId) {
+        AtomicInteger count = createCountsByOrder.get(orderId);
+        return count == null ? 0 : count.get();
+    }
+
+    /** 같은 주문에 create 가 두 번 이상 온 주문과 그 횟수. 계약대로 거래는 만들고 사실만 남김 */
+    public Map<String, Integer> duplicateCreates() {
+        Map<String, Integer> duplicates = new TreeMap<>();
+        createCountsByOrder.forEach((orderId, count) -> {
+            if (count.get() > 1) {
+                duplicates.put(orderId, count.get());
+            }
+        });
+        return duplicates;
+    }
+
     public int lookupCount() {
         return lookupCount.get();
     }
@@ -295,6 +331,12 @@ public final class TestPgServer implements AutoCloseable {
         JsonNode request = objectMapper.readTree(body);
         String orderId = request.path("orderId").asText();
         long amount = request.path("amount").asLong();
+        createCountsByOrder.computeIfAbsent(orderId, key -> new AtomicInteger()).incrementAndGet();
+        if (dropTargets.contains(orderId)) {
+            createPending(orderId, amount);
+            exchange.close();
+            return;
+        }
         switch (createBehavior) {
             case ACCEPT -> respond(exchange, 202, transactionJson(createPending(orderId, amount)).toString());
             case ACCEPT_THEN_DROP -> {
