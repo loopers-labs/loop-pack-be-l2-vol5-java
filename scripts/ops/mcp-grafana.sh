@@ -10,6 +10,9 @@
 #   받기만: scripts/ops/mcp-grafana.sh --install-only
 # 토큰은 Grafana 서비스 계정(Viewer) 토큰이다. 환경 변수로만 받고 저장소·출력에 남기지 않는다.
 # 쓰기 도구는 끈다(--disable-write). 읽는 도구 범주만 켠다.
+# loki 범주는 켜지 않는다. 로그 원문에는 주문 번호 등 내부 식별자가 있어 LLM으로 보내지 않는다(w10s4b-4 ①).
+#   --enabled-tools는 범주 단위라 query_loki_patterns만 따로 켤 수 없고, 패턴에 식별자가 남지 않는다는 공식 보장도 없다.
+#   주문 번호로 로그 찾기는 사람이 Grafana Explore(Loki)에서 한다. AI는 지표·대시보드·알림으로 큰 틀만 본다.
 # 익명 사용 통계는 기본으로 켜져 있어(Grafana Labs로 전송) 끈다(--usage-stats=disabled).
 set -euo pipefail
 
@@ -65,4 +68,4 @@ fi
 
 export GRAFANA_URL="${GRAFANA_URL:-http://localhost:3000}"
 exec "$BIN" -t stdio --disable-write --usage-stats=disabled \
-    --enabled-tools search,datasource,prometheus,loki,dashboard,alerting,navigation "$@"
+    --enabled-tools search,datasource,prometheus,dashboard,alerting,navigation "$@"
