@@ -19,4 +19,7 @@ public interface PaymentAttemptRepository {
 
     // 주문 목록·관리자 목록에 결제 상태를 붙일 때 주문마다 조회하지 않도록 한 번에 읽는다
     List<PaymentAttemptModel> findAllByOrderIds(Collection<Long> orderIds);
+
+    // 운영 지표용 집계. 상태별 시도 수만 세고 식별자는 읽지 않는다
+    long countByStatus(PaymentAttemptStatus status);
 }

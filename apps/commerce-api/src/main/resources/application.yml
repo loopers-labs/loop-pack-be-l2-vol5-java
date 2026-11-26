@@ -90,6 +90,9 @@ payment:
       failure-rate-threshold: 50
       wait-duration-in-open-state: 10s
       permitted-calls-in-half-open-state: 2 # 2건 모두 성공해야 닫힌다
+  metrics:
+    unresolved:
+      cache-ttl: 5s # commerce.payment.unresolved를 scrape마다 DB로 세지 않고 이 시간 동안 마지막 값을 쓴다. 지표가 그만큼 늦을 수 있다
 
 ---
 spring:
@@ -106,6 +109,11 @@ spring:
 order-outbox:
   relay:
     scheduling-enabled: false # 테스트는 relay를 직접 한 회차씩 부른다. 백그라운드 회차가 테스트의 Outbox 행을 바꾸지 않게 한다
+
+payment:
+  metrics:
+    unresolved:
+      cache-ttl: 0s # 테스트는 상태를 바꾼 직후의 지표 값을 확인한다
 
 coupon:
   admission:
