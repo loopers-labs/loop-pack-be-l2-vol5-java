@@ -1,0 +1,30 @@
+# Week 10 결제 사고·복구 도메인 규칙
+# IDs continue the existing commerce-api sequence. Existing rules are not rewritten.
+
+requirements:
+  R-W10-01: []
+  R-W10-02: [INV-ORDER-56]
+  R-W10-03: [INV-PAYMENT-52]
+  R-W10-04: [INV-PAYMENT-53, INV-PAYMENT-55]
+  R-W10-05: []
+  R-W10-06: []
+  R-W10-07: []
+  R-W10-08: [INV-PAYMENT-53, INV-PAYMENT-54]
+  R-W10-09: [INV-PAYMENT-54]
+  R-W10-10: [INV-PAYMENT-55]
+  R-W10-11: []
+  R-W10-12: [INV-ORDER-56]
+  R-W10-13: []
+  R-W10-14: []
+  R-W10-15: []
+  R-W10-16: []
+
+rules:
+  Payment:
+    INV-PAYMENT-52: PG 응답 유실 이후 내부 결제가 UNKNOWN이어도 같은 payment key로 조회한 PG 거래의 최종 상태는 독립적으로 확인된다.
+    INV-PAYMENT-53: 결제 대사는 주문에 저장된 기존 payment key와 attempt key를 사용해 PG 거래를 조회하며 승인 생성 요청을 보내지 않는다.
+    INV-PAYMENT-54: PG 승인 결과를 내부 성공으로 적용하려면 payment key·provider order ID·금액이 저장된 결제 시도와 주문 합계에 모두 일치한다.
+    INV-PAYMENT-55: 같은 성공 거래를 반복 대사해도 주문 확정·예약 소비·주문별 Outbox 사실은 한 번만 존재한다.
+
+  Order:
+    INV-ORDER-56: 주문의 confirmedAt은 내부에서 최초 확정한 시각이며 이후 재조정 실행 시각으로 바뀌지 않는다.
