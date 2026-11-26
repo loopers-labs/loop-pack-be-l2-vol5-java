@@ -1,6 +1,6 @@
 # Week 10 — 결제 사고 관측
 
-이 문서는 10주차 결제 사고 대응의 결정을 적는다. 1~7절은 1단계(관측과 테스트 PG fixture 사고 제어), 8절은 사고 연결 테스트, 9절은 4단계 4a 운영 도구, 10절은 4b 운영 도구 확장, 11절은 5단계 늦은 성공 자동 환불, 12절은 검증 범위·남은 위험이다.
+이 문서는 10주차 결제 사고 대응의 결정을 적는다. 1~7절은 1단계(관측과 테스트 PG fixture 사고 제어), 8절은 사고 연결 테스트, 9절은 4단계 4a 운영 도구, 10절은 4b 운영 도구 확장, 11절은 5단계 늦은 성공 자동 환불, 12절은 검증 범위·남은 위험, 13절은 7단계 판단 근거는 DB에다.
 나머지 설계(1~29절)는 `docs/week8/commerce-coupon.md`를 따른다.
 
 > 이 문서의 검증은 로컬·테스트 환경 검증이며 운영 배포·운영 완료가 아니다(12절).
@@ -15,6 +15,7 @@
 - 원인은 경계 기록으로 가른다. 두 사고 모두 health는 정상이다.
 - **응답 유실:** create 결과 모름 WARN 한 줄(`result=Unknown`, reason에 timeout 예외 이름) + 그 뒤 반영 줄 없음. 주문은 결제 대기·`UNKNOWN`으로 남는다.
 - **내부 반영 실패:** 조회 판정 INFO(`result=Verified`, `providerStatus=SUCCESS`) + 반영 실패 ERROR(`causeType`=예외 종류). 주문은 결제 대기로 남는다.
+  - 7단계부터 판단 근거는 DB 이상 `APPLY_FAILED`(13-1)다. ERROR 줄은 보조다. 로그가 없다는 것만으로 기각하지 않는다(13-2).
 - 진단에 쓰는 줄은 모두 INFO 이상이다. DEBUG를 켜지 않아도 가를 수 있다.
 
 **가설별 예상 / 실제 / 부족한 증거** — 사고 E2E(8절)가 유실 주문마다 `diagnosis.json`의 `judgments[].hypotheses[]`에 같은 세 칸(`expectedEvidence`·`verdict`·`missingEvidence`)을 남기고, `missingEvidence`가 비어 있지 않음을 단언한다. 부족한 증거 문장은 테스트 문장 그대로다.
@@ -22,10 +23,10 @@
 | 가설 | 예상(이 가설이면 보일 것) | 실제(사고 E2E, 유실 주문마다) | 부족한 증거(보지 못한 것) |
 | --- | --- | --- | --- |
 | H1 응답 유실: PG는 성공했지만 create 응답을 받지 못했다 | create Unknown WARN(HttpTimeoutException) 1, 반영 ERROR 0, PG 조회 SUCCESS·금액 일치 | 채택. 세 조건 모두 맞음 | PG가 요청을 받고 응답을 보냈다는 것은 test-pg 내부 상태(createCalls·거래 SUCCESS)로만 봤다. 실제 PG 로그는 없다 / 응답이 어디서 끊겼는지 네트워크 계층(패킷·프록시·LB 로그)은 보지 않았다. 근거는 우리 쪽 HttpTimeoutException뿐이다 |
-| H2 내부 반영 실패: PG 결과를 받거나 조회했지만 우리 DB 반영이 실패했다 | create Accepted INFO 또는 조회 Verified INFO가 있고 반영 ERROR가 있다 | 기각. 반영 ERROR 0 | "반영 ERROR 0"은 MDC orderId로 거른 캡처 로그에 ERROR가 없다는 부재 판단이다. 로그 유실·MDC 누락이면 구분할 수 없다 / DB 쪽 오류 기록(MySQL error log·rollback 통계)은 보지 않았다 |
+| H2 내부 반영 실패: PG 결과를 받거나 조회했지만 우리 DB 반영이 실패했다 | create Accepted INFO 또는 조회 Verified INFO가 있고 반영 ERROR가 있다 | 기각. ~~반영 ERROR 0~~ → 7단계: DB `APPLY_FAILED` 0건 + 같은 주문 시작 INFO·Unknown WARN 있음(로그 통로 생존) 교차 확인(13-2) | ~~"반영 ERROR 0"은 … 부재 판단이다. 로그 유실·MDC 누락이면 구분할 수 없다~~ → 7단계에서 DB 근거로 바꿈. 새 문장: `APPLY_FAILED` 이상 기록 자체가 실패하면 DB에는 남지 않고 기록기 ERROR만 남는다. 그 경우는 errorLines(로그)로만 보인다 / DB 쪽 오류 기록(MySQL error log·rollback 통계)은 보지 않았다 |
 | H3 PG 실패·미발송: 돈이 움직이지 않았다 | PG 거래가 없거나 FAILED, 또는 create NotSent WARN | 기각. PG 조회 SUCCESS·금액 일치, NotSent WARN 0 | 돈이 움직였다는 근거는 PG 조회 SUCCESS·금액 일치뿐이다. PG 정산 파일·카드사 승인 내역 대조는 없다 / "NotSent WARN 0"도 캡처 로그 기준 부재 판단이다 |
 
-- 실제 칸은 `CheckoutIncidentE2ETest`의 단언(H1 참, H2·H3 거짓)이다. 최종 코드로 다시 뽑은 evidence(`20261126T120742Z-f9dbdfde`, `diagnosis.json`의 `missingEvidence`가 위 "부족한 증거" 칸)는 8절·12-1에 적는다.
+- 실제 칸은 `CheckoutIncidentE2ETest`의 단언(H1 참, H2·H3 거짓)이다. 최종 코드로 다시 뽑은 evidence는 `docs/week10/evidence/20261126T140219Z-4ab238b7/`다(`diagnosis.json`의 `missingEvidence`가 위 "부족한 증거" 칸, H2 교차 확인은 13-2). 6단계 기록은 `20261126T120742Z-f9dbdfde`다(8절·12-1).
 
 ## 2. 로그 레벨과 경계 로그
 
@@ -148,11 +149,11 @@
 
 - 테스트: `apps/commerce-api/src/e2eTest/.../order/in/CheckoutIncidentE2ETest.java`. 같은 DB·같은 PG 거래로 정상 10건 → 응답 유실 3건 → 증거 보존 → 가설 판정 → 본인 reconcile 복구 → 반복·보호 → 구매 활동·주간 랭킹을 잇는다.
 - 실행 증거는 `build/incident-evidence/<runId>/`에 실행마다 새로 쌓인다(빌드 산출물이라 `clean`이면 지워진다).
-- 제출용 한 벌: `docs/week10/evidence/20261126T120742Z-f9dbdfde/`(최종 코드: 실행 당시 3d08c71 + 쿠폰 발급 시각을 테스트 시계로 고정한 한 줄, 실행 뒤 1c1889d로 커밋·단언 불변. 실패·skip 없음). 단계별 JSON 7개(`summary.json` 포함)와 `SHA256SUMS`, `README.md`가 있다.
+- 제출용 한 벌: `docs/week10/evidence/20261126T140219Z-4ab238b7/`(최종 코드: 실행 당시 7cb8f44 + E2E 교차 확인 Green 작업 트리, 실행 뒤 7865fc4로 커밋. `src/main`은 7cb8f44와 같다. 실패·skip 없음). 단계별 JSON 7개(`summary.json` 포함)와 `SHA256SUMS`, `README.md`가 있다. 6단계 기록: `20261126T120742Z-f9dbdfde`(3d08c71 + 1c1889d).
   - `diagnosis.json` 판정: 유실 주문 11·12·13 모두 H1(응답 유실) 채택, H2(내부 반영 실패)·H3(PG 실패·미발송) 기각. 가설마다 `missingEvidence`(보지 못한 증거) 2문장(1절 표의 "부족한 증거" 칸과 같다).
   - `summary.json`(확정·UNKNOWN·PG 성공 수): 장애 집합(사용자 2) FAULT 7·3·10 → RECOVERY·REPEAT·FOLLOWUP 모두 10·0·10. FAULT 뒤 create 증가 0(복구·반복·후속). 기준 집합(사용자 1)은 모든 단계 10·0·10.
   - fault 시점 자산(포인트 5,000·10,000, 사용자 2 쿠폰 1장, 가용 재고 10, 잡힌 수량 20)이 복구·반복·후속에서 그대로다.
-  - `fault.json` sha256 `d7243b24…05484d`(복구 뒤에도 같음을 테스트가 단언).
+  - `fault.json` sha256 `9f5664b2…babd3e`(복구 뒤에도 같음을 테스트가 단언).
   - 카드번호·인증 헤더·비밀값 문자열 없음(복사 전 검사).
 - 기록(11-25 코드): `docs/week10/evidence/20261125T082202Z-068161dd/`(커밋 873d848 실행). `missingEvidence`·`summary.json`·0이 아닌 포인트·쿠폰이 없던 때의 한 벌이라 제출 근거로 쓰지 않고 그대로 둔다.
 
@@ -866,10 +867,10 @@ REFUNDED일 때만 값이 있다. **우리가 본 경로**로 정한다.
 
 | 검사 | 결과 | 비고 |
 | --- | --- | --- |
-| `./gradlew :apps:commerce-api:check`(test·e2eTest·Checkstyle·ArchUnit) | test 1143·e2eTest 4, 실패·skip 0 (`docs/week10/evidence/20261126T120742Z-f9dbdfde/`) | 직전 기록: 84dcede에서 test 1135·e2eTest 4, 실패·skip 0 |
-| 다른 모듈 검사 | commerce-streamer test 47·commerce-batch test 54, 실패·skip 0 (`docs/week10/evidence/20261126T120742Z-f9dbdfde/`) | — |
+| `./gradlew :apps:commerce-api:check`(test·e2eTest·Checkstyle·ArchUnit) | test 1157·e2eTest 4, 실패·skip 0 (7단계 회귀 `--rerun-tasks`, `docs/week10/evidence/20261126T140219Z-4ab238b7/`) | 6단계 기록: test 1143·e2eTest 4(`20261126T120742Z-f9dbdfde`) |
+| 다른 모듈 검사 | commerce-streamer test 47·commerce-batch test 54, 실패·skip 0 (7단계 회귀 `--rerun-tasks`, `docs/week10/evidence/20261126T140219Z-4ab238b7/`) | — |
 | `scripts/ops/check-alerting.sh`(promtool·amtool·대시보드·가이드 테스트) | promtool 40·guide 16 (6단계 2번 회귀) | 직전 기록: rules 12, promtool 40, guide 16, ALL CHECKS PASSED |
-| 사고 연결 E2E(8절) | 제출용 한 벌 `docs/week10/evidence/20261126T120742Z-f9dbdfde/`(3d08c71 + 시계 한 줄 1c1889d) | H1 채택·H2·H3 기각(가설별 `missingEvidence` 2문장), 장애 집합 FAULT 7·3·10 → RECOVERY·REPEAT·FOLLOWUP 10·0·10, create 증가 0, 기준 집합 10·0·10, fault 시점 자산 불변, 복구 뒤 증거 해시 같음. 기록(11-25 코드): `20261125T082202Z-068161dd` |
+| 사고 연결 E2E(8절) | 제출용 한 벌 `docs/week10/evidence/20261126T140219Z-4ab238b7/`(7cb8f44 + Green 작업 트리, 커밋 7865fc4) | H1 채택·H2·H3 기각(가설별 `missingEvidence` 2문장, H2는 DB `APPLY_FAILED` 0·로그 통로 생존 교차 확인), 장애 집합 FAULT 7·3·10 → RECOVERY·REPEAT·FOLLOWUP 10·0·10, create 증가 0, 기준 집합 10·0·10, fault 시점 자산 불변, 복구 뒤 증거 해시 같음. 기록: 6단계 `20261126T120742Z-f9dbdfde`, 11-25 코드 `20261125T082202Z-068161dd` |
 
 **변이(판별력)** — 결함을 넣어 테스트가 실패하는지 본 것. 모두 원복을 diff·바이트 비교로 확인했다.
 
@@ -886,6 +887,9 @@ REFUNDED일 때만 값이 있다. **우리가 본 경로**로 정한다.
 | 5c 막힌 원인·지금 처리 | 7 + 규칙 2 | 원인 기록을 반영 TX 안에서, 사람 트리거 분기를 스케줄러에, 요청 뒤 재전송, 담당 검사 제거, counter 사전 등록 제거, MISMATCH→OK, 기록기 예외로 덮기 | C1·C4·C5·C7·C8·C9·R3, QA 보강 |
 | 6단계 지금 처리 INFO(5280c59) | 2 | 누름 INFO 제거, 거절 사유 바꿈 | `RefundTrackingServiceTest` |
 | 6단계 C2 자산 불변(42ee823, 커밋 메시지 근거) | 1 | 복구 경로 포인트 추가 차감(격리 복사본) | `CheckoutIncidentE2ETest` RECOVERY 단언 |
+| 7단계 APPLY_FAILED·기동 경로(e53e0f0, 커밋 메시지 근거) | 3 | 이상 기록을 반영 TX 안에서, counter 사전 등록 제거, 기동 INFO 연결 제거 | e53e0f0의 새 테스트(변이별 대응은 review 파일) |
+| 7단계 사고 E2E H2 교차 확인(7865fc4) | 2 | 판정식에서 DB 조건 제거, `APPLY_FAILED` 질의를 0으로 고정 | `h2Holds(0, 0, 0, 1)` 단언, 질의 대조군 |
+| 7단계 알림·가이드(c85a50a, 커밋 메시지 근거) | 7 | 로그 수집 끊김 규칙·가이드 교차 확인(변이별 내용은 review 파일) | promtool, `test_guide.py` |
 
 - 변이 기록 원본은 단계별 review 파일이다(저장소 밖). 이 표는 요지만 옮겼다.
 - 판별하지 못한 변이: 4b 가이드 LLM 여유 0 되돌리기는 5회 중 3회만 검출(시간 의존). 5단계 F3는 재요청 변이를 못 잡는다(F4·서비스 테스트가 판별).
@@ -917,6 +921,12 @@ REFUNDED일 때만 값이 있다. **우리가 본 경로**로 정한다.
 | Alertmanager 그룹 재통지 지연·누락 | 같은 그룹(`alertname`·`severity`)이 다시 울리면 통지가 최대 `group_interval`(5m) 늦고, 그 사이 풀리면 통지가 빠질 수 있다. 리허설 2회차에서 resolved 통지 뒤 다시 울린 PaymentUnresolvedPiling이 다음 통지 전에 풀려 Slack 자리에 오지 않았다(B6). 만료 알림(PaymentAbandonedPiling)이 겹으로 받친다 **[참모 22:32 A — Alertmanager 값 그대로]** | runbook: 알림이 늦거나 안 오면 Prometheus·Grafana firing 이력을 본다 |
 | 실제 Slack·LLM·Grafana MCP | 연결·호출하지 않았다(9-8·10-8). Viewer 토큰 생성은 승인 대상 | 가짜 수신기, 결정적 요약 |
 | 만료 경로 리허설 | ~~`PaymentAbandonedPiling`은 리허설하지 않았다(10-8)~~ → 6단계 2회차 장면 B·C에서 로컬로 1회 따라 했다(evidence `20261126T121317Z-965d8579`). 운영 규모·반복 실행은 없다 | promtool 테스트 + 로컬 리허설 1회 |
+| 사고 진단 H2 기각의 근거 | ~~H2 기각이 "반영 ERROR 0줄"이라는 로그 부재에 기댄다. 로그 수집이 끊겨도 0줄이다~~ → 고쳐짐(7단계, 13-2): DB `APPLY_FAILED` 0건 + 같은 주문 시작 INFO·Unknown WARN(로그 통로 생존)을 교차 확인한다. 근거 한 벌은 `docs/week10/evidence/20261126T140219Z-4ab238b7/` | E2E 단언(`CheckoutIncidentE2ETest` H2 `crossCheck`) |
+| 이상 기록 자체 실패 | `APPLY_FAILED` 기록(별도 TX)이 실패하면 DB에 남지 않는다. ERROR 로그 한 줄(`결제 반영 실패 이상 기록 실패`)만 남고 counter도 세지 않는다. 그때 DB 근거는 "0건"으로 보인다. 같은 주문의 첫 기록 두 개가 동시에 들면 고유 키(order_id, kind) 충돌로 하나가 실패할 수 있다(추론, 잠금 밖 기록) **[PL 결정 w10s7-P1]** | 원래 예외·응답은 그대로. runbook: DB 0건이어도 같은 시각 ERROR `결제 반영 실패 이상 기록 실패`가 있으면 반영 실패로 읽는다 |
+| 잠금 대기 초과도 `APPLY_FAILED` | 반영 TX의 잠금 대기 초과도 반영 실패로 남긴다. 경합(일시)과 DB·버그(지속)가 같은 kind다. summary의 `causeType`으로만 가른다 **[PL 결정 w10s7-P1]** | runbook: `latestAnomaly.summary`의 `causeType`을 본다 |
+| `APPLY_FAILED` counter 컨텍스트 안 등록 테스트 | `registersEverySourceAtStartup`은 실행 순서상 판별력이 약하다(다른 테스트가 먼저 counter를 만들 수 있음). 남겨 둔다 **[PL 결정 w10s7-P2]** | 판별은 `MicrometerPaymentApplyFailureCounterTest`가 맡는다(사전 등록 제거 변이 검출) |
+| `CommerceLogIngestionSilent` 적용 범위 | local·local-dev 파일 로그 + Alloy 구성 전제다. prd는 콘솔 로그라 이 규칙 대상이 아니다. 끊김 판정은 최대 약 20분 늦다(창 10m + for 10m). Loki에 앱별 구분이 없어 다른 로그가 들어오면 끊김을 못 본다 **[PL 결정 w10s7-P2]** | 그동안은 DB 근거(13-1)로 판단한다. 운영 수집 구성이 정해지면 규칙을 다시 본다 |
+| 로그 경로 한 출처의 실제 기동 | `docker/.env` 값을 바꿔 앱·Alloy를 함께 띄워 본 적은 없다. `docker compose config`와 기동 INFO 테스트로만 확인했다 | 기동 INFO의 경로와 `.env` 값을 비교(runbook) |
 
 **그 밖에 남은 사실** (단계별 review "사실로 남기는 것" 중 HEAD에서 아직 유효한 것)
 
@@ -931,7 +941,7 @@ REFUNDED일 때만 값이 있다. **우리가 본 경로**로 정한다.
 | 4a | pacer 대기가 interrupt되면 요청 전체가 예외로 끝나 부분 결과를 잃는다 |
 | 4a | 미확인 목록의 결제 대기 수만 건 규모 쿼리 계획은 확인하지 않았다(9-8) |
 | 4b | streamer의 `spring.application.name`이 `commerce-api`다. local로 함께 띄우면 같은 로그 파일·같은 8081을 쓴다(10-8) |
-| 4b | ~~Alloy 읽기 위치(`/var/lib/alloy/data`)가 볼륨이 아니다~~ → 7단계에서 named volume `alloy-data`로 고침(`docker compose config`로 확인, 실제 재기동 중복 없음은 기동해 보지 않았다). 옛 기록: 재기동하면 같은 줄이 다시 들어갈 수 있다(추정). 근거 관찰: 리허설 2회차 B9 — 실행 사이에 남은 `logs/commerce-api.json`을 새로 띄운 스택이 다시 읽어 Loki 질의에 이전 실행 줄이 섞였다(`docs/week10/rehearsal.md`). 같은 컨테이너 재기동에서의 중복은 직접 보지 않았다 |
+| 4b | ~~Alloy 읽기 위치(`/var/lib/alloy/data`)가 볼륨이 아니다~~ → 7단계에서 named volume `alloy-data`로 해소(13-3, `docker compose config`로 확인. 재기동 실측은 하지 않았다 — 같은 줄이 다시 들어가지 않는다는 것은 Alloy 동작에 기댄 판단이다). 옛 기록: 재기동하면 같은 줄이 다시 들어갈 수 있다(추정). 근거 관찰: 리허설 2회차 B9 — 실행 사이에 남은 `logs/commerce-api.json`을 새로 띄운 스택이 다시 읽어 Loki 질의에 이전 실행 줄이 섞였다(`docs/week10/rehearsal.md`). 같은 컨테이너 재기동에서의 중복은 직접 보지 않았다 |
 | 4b | `grafana/grafana` 이미지 버전 미고정. 가이드 실패 시 Slack 자리에 원본 두 번, resolved 통지 최대 5분 늦음(10-4·10-8) |
 | 5단계 | 관리자 환불 목록은 `opened_at` 순 정렬인데 그 칸 인덱스가 없다. 대상이 많이 쌓이면 정렬 비용이 커진다 |
 | 5단계 | 기능 이전에 만료된 주문은 늦은 성공이 와야 대상이 생긴다(소급 생성 없음). 취소 호출 예외 때 WARN이 2줄 남는다 |
@@ -963,12 +973,12 @@ REFUNDED일 때만 값이 있다. **우리가 본 경로**로 정한다.
 | 72h | `docker/loki/loki.yml:32` | Loki 보존 | Loki 설정 | 10-3 | 일치 |
 | 10s | `docker/guide/guide.py:96`(환경 변수 `:110`) | 가이드 근거 수집 제한 시간 | `GUIDE_TIMEOUT_SECONDS` | 10-4 | 일치 |
 | 5m | `rules:205` | `GuideServerDown` 지속 | 규칙 | 10-4 | 일치 |
-| 10m 창·10m | `rules:227·229·230` | `CommerceLogIngestionSilent` 창·지속(지속 = Alloy 재전송으로 자동 복구될 시간) | 규칙 + `payment_test.yml` S1~S6·S5b | 10-3 | 일치 |
+| 10m 창·10m | `rules:227·229·230`(근거 주석 `:219·220`) | `CommerceLogIngestionSilent` 앱 로그 창·Loki 수신 창·지속(지속 = Alloy 재전송으로 자동 복구될 시간). 끊김 판정 최대 약 20분 | 규칙 + `payment_test.yml` S1~S6·S5b | 10-3·13-4 | 일치 |
 | 2일 | `RC:28` | 자동 추적 기한 `handoff_at` | 도메인 상수(P8: 설정 아님) | 11-2·11-5 | 일치 |
 | 4일 | `RC:29` | 고객 약속 `promise_at` | 도메인 상수 | 11-2·11-5 | 일치 |
-| 1m | `RC:37`(사용 `RTS:283·360`, `order/app/OrderApplicationService.java:312`) | 첫 조회·환불 요청 뒤·결과 모름 뒤 jitter 상한, 배증 시작값 | 도메인 상수 | 11-5·11-14 | 일치 |
+| 1m | `RC:37`(사용 `RTS:283·360`, `order/app/OrderApplicationService.java:325`) | 첫 조회·환불 요청 뒤·결과 모름 뒤 jitter 상한, 배증 시작값 | 도메인 상수 | 11-5·11-14 | 일치 |
 | 1h | `RC:38`(배증 `RC:321~325`) | 결론 없는 조회 뒤 상한의 최대 | 도메인 상수 | 11-5·11-14 | 일치 |
-| 30m | `RC:39`(사용 `RTS:341·382`, `OrderApplicationService.java:521·526`) | 사람 담당 조회 jitter 상한 | 도메인 상수 | 11-13·11-14 | 일치 |
+| 30m | `RC:39`(사용 `RTS:341·382`, `OrderApplicationService.java:536·541`) | 사람 담당 조회 jitter 상한 | 도메인 상수 | 11-13·11-14 | 일치 |
 | 20건 | `RTS:37` | 환불 추적 회차 상한(AUTO·PERSON 합계) | 코드 상수 | 11-5·11-15 | 일치 |
 | 30s | `app.yml:98` | 환불 추적 회차 주기 | yml `payment.refund.scheduler.fixed-delay` | 11-5 | 일치 |
 | 100자 | `RC:41` | `last_check_cause` 최대 길이(칸 `VARCHAR(100)`) | 도메인 상수 + DDL | 11-19 | 일치([임시] 아님, P4) |
@@ -991,3 +1001,68 @@ REFUNDED일 때만 값이 있다. **우리가 본 경로**로 정한다.
 | 사고 E2E·e2eTest | Testcontainers가 띄운 MySQL·Redis·Kafka 컨테이너(테스트 종료 때 자동 정리) | 평소 `docker` compose 프로젝트 컨테이너·볼륨(`docker_mysql-8-data` 등), 다른 프로젝트 컨테이너 |
 | 리허설 1회(`docs/week10/rehearsal.md`)·6단계 1회차(중단) | 리허설 compose 프로젝트 `w10r-*`만 `scripts/ops/rehearsal.sh down`(`docker compose down -v`, 스크립트는 `w10r-infra`·`w10r-mon`만 내린다), 리허설로 띄운 test-pg·앱 프로세스(직접 종료, 스크립트 밖) | 위와 같음 |
 | 리허설 2회차 | 앱(bootRun 2회)·test-pg(2회) 프로세스(직접 종료), 리허설 compose 프로젝트 `w10r-mon`·`w10r-infra`만 `rehearsal.sh down`(down -v). 종료 뒤 `w10r` 컨테이너 0, 실행 중 컨테이너 0, 8080~8083 LISTEN 없음 | 평소 `docker` 프로젝트 볼륨(`docker_mysql-8-data`·`docker_kafka-data`·`docker_redis_*`), 다른 프로젝트 볼륨·네트워크(시작 전과 목록 같음), 저장소 `logs/commerce-api.json` |
+
+## 13. 판단 근거는 DB에(7단계) [사용자 결정 2026-11-26, 참모 22:31·22:32]
+
+- 사용자: "이런 건 구조적으로 보장해 줘야 편할 거 같은데" / "중요한 사실은 DB에 등록하는 게 좋을 것 같아. 알럿도 진짜 필요한 것만 가야 해."
+- 배경: 사고 진단 H2(내부 반영 실패) 기각이 "반영 ERROR 0줄"이라는 **로그 부재**에 기댔다. 로그 수집이 끊겨도(리허설 B1) 0줄이다. 환불 쪽은 5c에서 반영 실패를 DB에 남기는데(11-19) 결제 쪽은 로그에만 남았다.
+- 원칙: 판단에 쓰는 사실은 DB에, 로그는 보조로. 알림은 사람이 할 일이 있을 때만.
+
+### 13-1. 결제 반영 실패 `APPLY_FAILED` [PL 결정 w10s7-P1]
+
+- `PaymentAnomalyRepository.Kind`에 `APPLY_FAILED`를 더했다. 테이블 `payment_anomalies`, 주문·kind당 한 행(고유 키 `(order_id, kind)`, 다시 나면 `last_summary`·`last_seen_at` 갱신).
+- 경로: 결제 결과 반영 TX가 예외로 끝나면 남긴다. source 4값 = 기존 `PaymentSource`.
+
+| source | 경로 |
+| --- | --- |
+| `CREATE` | confirm(PG 호출 뒤 결과 저장 실패) |
+| `CALLBACK` | PG callback |
+| `MANUAL` | 고객·관리자 reconcile, 일괄 확정 |
+| `AUTOMATIC` | 자동 재조회 |
+
+- **별도 TX**: 반영 TX가 rollback된 **뒤**(주문 행 잠금이 풀린 뒤) `order/app/PaymentApplyFailureRecorder`가 `REQUIRES_NEW`로 기록한다. 반영 TX 안에서 쓰면 rollback으로 함께 사라진다(변이로 확인, 12-1). 주문·결제 칸은 그대로다. 호출 위치는 `OrderApplicationService`의 confirm 저장 실패 catch와 결과 반영 catch 두 곳이다.
+- summary 규칙: `causeType=<예외 클래스 단순 이름>, source=<CREATE|CALLBACK|MANUAL|AUTOMATIC>`. 예외 메시지·PG 텍스트는 넣지 않는다(SQL·값이 섞일 수 있다).
+- 잠금 대기 초과도 `APPLY_FAILED`로 남긴다. `causeType`으로 가른다(12-2).
+- 기록 실패: 원래 예외·응답을 바꾸지 않는다. ERROR 한 줄(`결제 반영 실패 이상 기록 실패. orderId, source, applyCauseType, causeType`)만 남기고 삼킨다. 5c(11-19)와 같은 규칙이다. counter도 세지 않는다.
+- counter `commerce.payment.apply_failed{source}`: source 소문자 4값(`create`·`callback`·`manual`·`automatic`), 기동 때 0으로 모두 등록, 이상 행 commit 뒤에만 센다. orderId는 태그가 아니다. 이 counter로 울리는 알림은 없다(가이드 교차 확인·대시보드용).
+- **해소하지 않는다**: 나중에 반영이 성공해도 그대로 둔다("이 주문에서 반영 실패가 있었다"는 이력). `resolveTransient`는 `LOOKUP_FAILED`·`NO_TRANSACTION`만 푼다. E2E는 kind로 센다.
+- 관리자 미확인 목록(9-5) `latestAnomaly`에 보인다(해소되지 않은 이상 중 가장 최근). 목록은 결제 대기 주문만 보이므로, 나중에 반영이 성공한 주문의 `APPLY_FAILED`는 목록이 아니라 DB에만 남는다.
+- 기존 `OrderTransactionTest`의 "반영 실패 뒤 이상 0건" 기대는 새 계약 "`APPLY_FAILED` 1건, 그 밖 kind 0건"으로 바꿨다(Red에서 기대 변경, 약화 아님).
+
+### 13-2. 사고 진단 H2 교차 확인
+
+- H2 기각은 두 근거를 **함께** 본다(`diagnosis.json` H2 가설의 `crossCheck`).
+
+| 칸 | 뜻 | 기각에 필요한 값 |
+| --- | --- | --- |
+| `applyFailedAnomalies` | 그 주문의 DB `payment_anomalies` kind `APPLY_FAILED` 건수(해소 여부 무관) | 0 |
+| `applyFailedAnomaliesSource` | 근거 원천(셈에 쓴 질의 `select count(*) from payment_anomalies where order_id = ? and kind = 'APPLY_FAILED'`) | — |
+| `paymentStartInfo` | 같은 주문의 결제 시작 INFO 줄 수 | 1 |
+| `createUnknownWarn` | 같은 주문의 create Unknown WARN 줄 수 | 1 |
+| `logChannelAlive` | 위 두 줄이 캡처됨 = 그 주문의 로그 통로가 살아 있었다 | true |
+
+- H2 판정(`h2Holds`): DB `APPLY_FAILED` > 0이면 참이다. 아니면 create Accepted INFO 또는 조회 Verified INFO가 있고 반영 ERROR가 함께 있을 때 참이다. E2E는 로그가 없어도 DB가 있으면 채택함(`h2Holds(0, 0, 0, 1)`)과, 기각 때 로그 통로 생존을 함께 단언한다.
+- 질의 대조군: 진단 대상이 아닌 주문 ID로 `APPLY_FAILED` 한 행을 넣어 질의가 1을 세는지 확인하고 바로 지운다. 대상 주문의 0건이 질의 고장(항상 0)이 아님을 보인다.
+- 로그 통로가 살아 있으면 "반영 ERROR 0줄"을 수집 끊김이 아닌 부재로 읽을 수 있다. DB 0건은 로그와 독립인 근거다.
+- `missingEvidence`에서 "구분할 수 없다" 문장은 빠진다(E2E 단언). DB 쪽 오류 기록(MySQL error log 등)을 보지 않았다는 문장은 남는다.
+- 근거 한 벌: `docs/week10/evidence/20261126T140219Z-4ab238b7/`. 유실 주문 11·12·13 모두 `applyFailedAnomalies` 0, `paymentStartInfo` 1, `createUnknownWarn` 1, `logChannelAlive` true, H2 `REJECTED`.
+
+### 13-3. 로그 경로 한 출처·Alloy 읽기 위치 [PL 결정 w10s7-P1·P2]
+
+- 한 출처: `docker/.env`의 `COMMERCE_LOG_DIR`(기본 `logs`). 저장소 루트 기준 **상대 경로만** 쓴다(compose가 `../`를 붙인다). 셸에 같은 이름이 있으면 그 값이 먼저다. `docker/.env`는 비밀값 없는 설정 파일로 커밋한다.
+- 같은 값을 읽는 곳: Alloy 마운트(`docker/monitoring-compose.yml` `../${COMMERCE_LOG_DIR:-logs}`)와 앱을 띄우는 스크립트(`scripts/ops/rehearsal.sh app`의 `LOGGING_FILE_NAME=<저장소>/$COMMERCE_LOG_DIR/commerce-api.json`). 10-2·10-3.
+- 앱 기본값(`logs/commerce-api.json`)과 앱 설정 파일은 바꾸지 않는다. 대신 앱이 기동 때 실제로 연 파일 경로를 INFO 한 줄로 남긴다(`common/config/LogFileLocationReporter`, `ApplicationReadyEvent`, root의 파일 appender 기준 절대 경로. 파일 로그가 없는 프로필은 남기지 않는다). 이 경로와 `.env` 값을 비교해 어긋남을 찾는다.
+- Alloy 읽기 위치 `/var/lib/alloy/data`는 named volume `alloy-data`다. 평소 `docker_alloy-data`, 리허설 `w10r-mon_alloy-data`로 나뉜다. 12-2 "재기동하면 같은 줄 다시" 행은 이것으로 해소했다(재기동 실측은 하지 않았다).
+
+### 13-4. 로그 수집 끊김 알림 `CommerceLogIngestionSilent` [참모 22:31·22:32, PL 결정 w10s7-P2]
+
+- 식(`rules:225~229`, for `:230`): 앱 `up` == 1 AND 10m 창 `logback_events_total` 증가 > 0 AND 10m 창 `loki_distributor_lines_received_total` 증가 = 0(지표가 없어도 0으로 본다). 앱 로그가 없는 조용한 시간·앱 down은 울리지 않는다.
+- `for: 10m` **[임시]**: Alloy 재전송으로 자동 복구될 시간이다. `loki.write`가 실패한 묶음을 backoff(500ms부터 두 배, 최대 5m)로 최대 10회 다시 보낸다(Alloy 기본값, 합계 약 8.5분). 그 안에 풀리면 사람이 할 일이 없다.
+- 최대 지연: 끊긴 뒤 약 20분(창 10m + for 10m).
+- 전제: local·local-dev 파일 로그 + Alloy 구성. prd는 콘솔 로그라 이 규칙 대상이 아니다(12-2).
+- 등급 warning. critical 금지. 결제·환불은 영향이 없고 진단 근거만 약해진다. 사용자: "알럿도 진짜 필요한 것만 가야 해. 아니면 스팸메일처럼 취급돼."
+- runbook `#commercelogingestionsilent`, 대시보드 패널 "로그 수집(앱 로그 이벤트 대비 Loki 수신, 10분)". 10-3.
+
+### 13-5. 가이드 교차 확인 한 줄
+
+- critical 가이드 근거에 집계만 한 줄: `교차 확인(최근 30분): Unknown WARN n줄 중 같은 주문 시작 INFO m/n, APPLY_FAILED counter x`. 주문 번호는 맞춰 보기만 하고 내보내지 않는다. counter가 없으면 0이 아니라 "지표 없음"이다(10-3, runbook "critical 가이드 메시지 읽는 법").
