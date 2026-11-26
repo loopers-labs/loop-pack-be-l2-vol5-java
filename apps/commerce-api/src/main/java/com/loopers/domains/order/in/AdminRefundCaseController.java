@@ -20,10 +20,10 @@ public class AdminRefundCaseController {
     }
 
     @PostMapping("/api-admin/v1/payments/refund-cases/{orderId}/person-resolution")
-    public ApiResponse<RefundPersonResolutionService.Resolution> resolve(@PathVariable long orderId,
+    public ApiResponse<RefundPersonResolutionResponse> resolve(@PathVariable long orderId,
         @RequestBody PersonResolutionRequest request, Principal principal) {
-        return ApiResponse.success(refundPersonResolutionService.resolve(orderId, RequestValues.name(request.result()),
-            principal.getName()));
+        return ApiResponse.success(RefundPersonResolutionResponse.from(
+            refundPersonResolutionService.resolve(orderId, RequestValues.name(request.result()), principal.getName())));
     }
 
     public record PersonResolutionRequest(JsonNode result) { }

@@ -8,7 +8,7 @@ import com.loopers.domains.payment.app.port.PaymentRefundCaseRepository;
 import com.loopers.domains.payment.app.port.PaymentTransaction;
 import com.loopers.domains.payment.app.port.PaymentTransactionsLookup;
 import com.loopers.domains.payment.app.port.RefundOutcomeRecorder;
-import com.loopers.domains.payment.app.port.RefundOutcomeRecorder.Outcome;
+import com.loopers.domains.payment.app.port.RefundOutcomeRecorder.Result;
 import com.loopers.domains.payment.domain.RefundCase;
 import java.time.Clock;
 import java.time.Duration;
@@ -193,12 +193,12 @@ public class RefundTrackingService {
             }
             case FAILED -> {
                 if (checking) {
-                    conclude(refundCase, Outcome.CLOSED_NO_CHARGE, now);
+                    conclude(refundCase, Result.NO_CHARGE, now);
                 } else {
                     recordInconclusive(refundCase, now);
                 }
             }
-            case CANCELED -> conclude(refundCase, Outcome.REFUNDED, now);
+            case CANCELED -> conclude(refundCase, Result.REFUNDED, now);
             case PENDING -> recordInconclusive(refundCase, now);
         }
         return null;
@@ -231,7 +231,7 @@ public class RefundTrackingService {
         RefundCase refundCase = found.get();
         Instant now = clock.instant();
         switch (result) {
-            case PaymentCancelResult.Canceled canceled -> conclude(refundCase, Outcome.REFUNDED, now);
+            case PaymentCancelResult.Canceled canceled -> conclude(refundCase, Result.REFUNDED, now);
             case PaymentCancelResult.RejectedNoEffect rejected -> {
                 boolean assigned = refundCase.getOwner() == RefundCase.Owner.AUTO;
                 refundCase.markRefundRejected(now, jittered(RefundCase.PERSON_CHECK_DELAY));
@@ -251,13 +251,15 @@ public class RefundTrackingService {
             result.getClass().getSimpleName());
     }
 
-    private void conclude(RefundCase refundCase, Outcome outcome, Instant now) {
-        if (outcome == Outcome.REFUNDED) {
+    // 환불됨의 주체는 도메인이 우리가 본 경로로 정한다. 조회로 본 청구 없음은 시스템이 낸 결론이다.
+    private void conclude(RefundCase refundCase, Result result, Instant now) {
+        if (result == Result.REFUNDED) {
             refundCase.markRefunded(now);
         } else {
             refundCase.closeNoCharge(now);
         }
-        afterCommit(() -> refundOutcomeRecorder.record(outcome));
+        RefundCase.RefundActor actor = result == Result.REFUNDED ? refundCase.getRefundActor() : RefundCase.RefundActor.SYSTEM;
+        afterCommit(() -> refundOutcomeRecorder.recordOutcome(result, actor));
     }
 
     private void assignPerson(RefundCase refundCase, String reason, Instant now) {
@@ -267,7 +269,7 @@ public class RefundTrackingService {
 
     private void recordAssigned(long orderId, String reason) {
         afterCommit(() -> {
-            refundOutcomeRecorder.record(Outcome.HANDED_TO_HUMAN);
+            refundOutcomeRecorder.recordPersonAssigned(reason);
             log.warn("환불 확인 대상의 담당을 사람에게 넘겼습니다. orderId={}, reason={}", orderId, reason);
         });
     }

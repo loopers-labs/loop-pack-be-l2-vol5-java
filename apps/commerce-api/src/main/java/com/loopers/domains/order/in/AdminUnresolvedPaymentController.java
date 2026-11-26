@@ -19,13 +19,15 @@ public class AdminUnresolvedPaymentController {
         this.unresolvedPaymentQueryService = unresolvedPaymentQueryService;
     }
 
-    // status가 HANDED_TO_HUMAN·REFUND_UNKNOWN이면 환불 확인 대상 모양, 아니면 결제 대기 PG 결제 모양의 항목을 준다(P7).
+    // refundOwner·refundMoneyStatus가 있으면 환불 확인 대상 모양, 아니면 결제 대기 PG 결제 모양의 항목을 준다(5b 계획 5절).
     @GetMapping("/api-admin/v1/payments/unresolved")
     public ApiResponse<List<Object>> list(@RequestParam(required = false) List<String> status,
+        @RequestParam(required = false) String refundOwner, @RequestParam(required = false) List<String> refundMoneyStatus,
         @RequestParam(defaultValue = "0") long minAgeSeconds, @RequestParam(defaultValue = "0") int page,
         @RequestParam(defaultValue = "20") int size) {
         RequestValues.page(page, size);
-        return ApiResponse.success(unresolvedPaymentQueryService.list(status, minAgeSeconds, page, size).stream()
+        return ApiResponse.success(unresolvedPaymentQueryService.list(status, refundOwner, refundMoneyStatus, minAgeSeconds,
+                page, size).stream()
             .map(AdminUnresolvedPaymentController::response)
             .toList());
     }

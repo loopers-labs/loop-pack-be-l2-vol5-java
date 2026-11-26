@@ -528,7 +528,8 @@ public class OrderApplicationService {
         paymentRefundCaseRepository.save(refundCase);
         // 결과 뒤집힘으로 사람 담당이 된 것을 센다. 이미 사람 담당 중인 대상에 늦은 성공이 다시 와도 다시 세지 않는다.
         if (!wasPersonOpen && refundCase.isPersonOpen()) {
-            afterCommit(() -> refundOutcomeRecorder.record(RefundOutcomeRecorder.Outcome.HANDED_TO_HUMAN));
+            String reason = refundCase.getOwnerReason();
+            afterCommit(() -> refundOutcomeRecorder.recordPersonAssigned(reason));
         }
     }
 

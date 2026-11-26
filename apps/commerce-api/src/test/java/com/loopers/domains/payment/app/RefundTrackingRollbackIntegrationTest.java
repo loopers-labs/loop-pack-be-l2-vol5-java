@@ -26,6 +26,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.slf4j.LoggerFactory;
@@ -41,8 +42,9 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-// 결론 저장 트랜잭션이 실패하면 상태도 counter도 남지 않아야 한다(counter는 commit 뒤에만 센다).
+// 결론 저장 트랜잭션(추적 회차·관리자 사람 기록)이 실패하면 상태도 counter도 남지 않아야 한다(counter는 commit 뒤에만 센다).
 // 실패 주입은 테스트 설정의 저장소에서 한다: 결론 상태 저장 SQL을 flush로 DB에 보낸 뒤 commit 직전(beforeCommit)에 예외를 던지고,
 // 서비스 트랜잭션이 끝난 뒤 새로 읽는다. save 안에서 던지면 저장 뒤에 셈을 등록하는 경로(이관)는 셈 코드에 닿지 못해 판별력이 없다.
 // 전용 테스트 설정이라 캐시에 남으면 DB 연결을 계속 붙잡는다(전체 검사에서 Too many connections). 클래스가 끝나면 닫는다.
@@ -57,6 +59,7 @@ class RefundTrackingRollbackIntegrationTest {
     private static final String ASSIGNED_METRIC = "commerce.payment.refund_person_assigned";
 
     @Autowired private RefundTrackingService refundTracking;
+    @Autowired private RefundPersonResolutionService personResolution;
     @Autowired private FailingRefundCases failingRefundCases;
     @Autowired private MeterRegistry meterRegistry;
     @Autowired private MutablePaymentClock clock;
@@ -108,6 +111,26 @@ class RefundTrackingRollbackIntegrationTest {
         assertThat(outcome(counter) - before).isZero();
         assertThat(logs.list.stream().filter(event -> event.getLevel() == Level.ERROR).toList()).singleElement()
             .satisfies(event -> assertThat(event.getFormattedMessage()).contains("causeType=IllegalStateException"));
+    }
+
+    @Test
+    @DisplayName("관리자 환불함 기록 저장이 flush되고 셈 등록까지 지난 뒤 commit 직전에 실패해 rollback되면 대상은 청구 확인·사람 담당 중 그대로이고 refunded/person counter는 늘지 않는다")
+    void doesNotCountRolledBackPersonResolution() {
+        failingRefundCases.save(RefundCase.restore(ORDER_ID, TestPgFixture.PROVIDER_ID, PROVIDER_ORDER_ID, new Money(1000),
+            MoneyStatus.CHARGED, null, Owner.PERSON, RefundCase.RESULT_REVERSED, NOW, null, null,
+            PaymentRecord.ProviderStatus.PENDING, "TX-1", NOW, NOW, NOW.plus(RefundCase.PROMISE_AFTER),
+            NOW.plus(Duration.ofMinutes(30)), 0, null, null));
+        double before = outcome("refunded/person");
+        failingRefundCases.failOnSaveOf(MoneyStatus.REFUNDED, Owner.PERSON);
+
+        assertThatThrownBy(() -> personResolution.resolve(ORDER_ID, "REFUNDED", "ops-admin"))
+            .hasMessage("주입된 환불 결론 저장 실패");
+
+        assertThat(failingRefundCases.stateBeforeFailure()).as("실패 직전 DB에 나간 상태").isEqualTo("REFUNDED/PERSON");
+        assertThat(state(ORDER_ID)).isEqualTo("CHARGED/PERSON");
+        assertThat(jdbc.queryForObject("select concluded_at is null and owner_closed_at is null and refund_actor is null"
+            + " from payment_refund_cases where order_id = ?", Boolean.class, ORDER_ID)).isTrue();
+        assertThat(outcome("refunded/person") - before).isZero();
     }
 
     private String state(long orderId) {

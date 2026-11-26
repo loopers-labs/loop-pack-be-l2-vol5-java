@@ -1,6 +1,7 @@
 package com.loopers.domains.payment.domain;
 
 import com.loopers.common.domain.Money;
+import com.loopers.common.error.RuleViolationException;
 import java.time.Duration;
 import java.time.Instant;
 
@@ -194,8 +195,28 @@ public final class RefundCase {
         nextCheckAt = now.plus(personCheckDelay);
     }
 
-    // 골격(w10s5b S5 Red): 업무 로직은 Green에서 넣는다.
+    // 사람이 PG로 확인되지 않는 결론을 적는다(계획 5절, PL P7). 사람 담당 중이고 돈이 끝나지 않았을 때만 받는다.
+    // 청구 없음은 확인 중일 때만 받는다. PG가 돈이 나갔다고 한 뒤(청구 확인·환불 요청함·결과 모름)의 청구 없음은 돈 칸과 모순이다.
     public void resolveByPerson(PersonResult result, String closedBy, Instant now) {
+        if (isConcluded()) {
+            throw new RuleViolationException("돈의 상태가 이미 끝난 환불 확인 대상입니다: " + moneyStatus);
+        }
+        if (!isPersonOpen()) {
+            throw new RuleViolationException("사람 담당 중인 환불 확인 대상이 아닙니다.");
+        }
+        if (result == PersonResult.NO_CHARGE && moneyStatus != MoneyStatus.CHECKING) {
+            throw new RuleViolationException("청구가 확인된 환불 확인 대상은 청구 없음으로 기록할 수 없습니다: " + moneyStatus);
+        }
+        if (result == PersonResult.REFUNDED) {
+            refundActor = RefundActor.PERSON;
+            moneyStatus = MoneyStatus.REFUNDED;
+        } else {
+            moneyStatus = MoneyStatus.NO_CHARGE;
+        }
+        concludedAt = now;
+        nextCheckAt = null;
+        ownerClosedAt = now;
+        ownerClosedBy = closedBy;
     }
 
     public void closeNoCharge(Instant now) {

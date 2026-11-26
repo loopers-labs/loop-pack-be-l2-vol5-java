@@ -2,12 +2,14 @@ package com.loopers.architecture;
 
 import com.loopers.domains.order.app.PaymentLookupAssessment;
 import com.loopers.domains.order.app.port.OrderConfirmedOutbox;
+import com.loopers.domains.order.in.AdminRefundCaseController;
 import com.loopers.domains.order.in.PaymentLookupScheduler;
 import com.loopers.domains.order.out.OrderConfirmedOutboxJpaEntity;
 import com.loopers.domains.order.out.OrderConfirmedOutboxJpaRepository;
 import com.loopers.domains.order.out.OrderConfirmedOutboxPersistenceAdapter;
 import com.loopers.domains.payment.app.PaymentGatewayRegistry;
 import com.loopers.domains.payment.app.PaymentLookupPolicy;
+import com.loopers.domains.payment.app.RefundPersonResolutionService;
 import com.loopers.domains.payment.app.RefundTrackingService;
 import com.loopers.domains.payment.app.port.PaymentAnomalyRepository;
 import com.loopers.domains.payment.app.port.PaymentCreateResult;
@@ -256,6 +258,8 @@ class ArchitectureTest {
         assertThat(in.contain(RefundCaseMetrics.class)).isTrue();
         assertThat(out.contain(MicrometerRefundOutcomeRecorder.class)).isTrue();
         assertThat(out.contain(JdbcRefundCaseCounter.class)).isTrue();
+        assertThat(app.contain(RefundPersonResolutionService.class)).isTrue();
+        assertThat(in.contain(AdminRefundCaseController.class)).isTrue();
     }
 
     @Test

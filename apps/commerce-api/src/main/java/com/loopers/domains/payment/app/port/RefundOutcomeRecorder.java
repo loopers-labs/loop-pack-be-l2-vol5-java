@@ -2,20 +2,12 @@ package com.loopers.domains.payment.app.port;
 
 import com.loopers.domains.payment.domain.RefundCase;
 
-// 골격(w10s5b S7 Red): 새 두 메서드는 Green에서 추상 메서드로 바꾸고 옛 record(Outcome)는 지운다.
 public interface RefundOutcomeRecorder {
-    default void record(Outcome outcome) {
-    }
+    // 돈의 상태가 환불됨·청구 없음으로 끝난 것을 결론을 낸 주체별로 센다. 청구 없음의 주체는 PG 조회면 SYSTEM, 관리자 기록이면 PERSON이다.
+    void recordOutcome(Result result, RefundCase.RefundActor actor);
 
-    default void recordOutcome(Result result, RefundCase.RefundActor actor) {
-    }
-
-    default void recordPersonAssigned(String reason) {
-    }
-
-    enum Outcome {
-        REFUNDED, CLOSED_NO_CHARGE, HANDED_TO_HUMAN
-    }
+    // 담당이 사람으로 바뀐 것을 사유(RefundCase의 사유 코드)별로 센다.
+    void recordPersonAssigned(String reason);
 
     enum Result {
         REFUNDED, NO_CHARGE

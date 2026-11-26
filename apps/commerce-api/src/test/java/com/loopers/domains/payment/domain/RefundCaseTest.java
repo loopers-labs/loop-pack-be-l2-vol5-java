@@ -495,8 +495,8 @@ class RefundCaseTest {
 
     @ParameterizedTest(name = "돈의 상태={0}, 기록={1}")
     @CsvSource({"CHECKING, REFUNDED", "CHARGED, REFUNDED", "REFUND_REQUESTED, REFUNDED", "REFUND_UNKNOWN, REFUNDED",
-        "CHECKING, NO_CHARGE", "CHARGED, NO_CHARGE", "REFUND_REQUESTED, NO_CHARGE", "REFUND_UNKNOWN, NO_CHARGE"})
-    @DisplayName("S5: 사람 담당 중인 대상에 관리자가 환불함을 적으면 환불됨(PERSON), 청구 없음을 적으면 청구 없음으로 끝나고 담당은 그 관리자 이름으로 닫히며 조회를 멈춘다")
+        "CHECKING, NO_CHARGE"})
+    @DisplayName("S5: 사람 담당 중인 대상에 관리자가 환불함을 적으면(끝나지 않은 4값) 환불됨(PERSON), 확인 중에 청구 없음을 적으면 청구 없음으로 끝나고 담당은 그 관리자 이름으로 닫히며 조회를 멈춘다")
     void personResolutionConcludesAndClosesOwner(MoneyStatus before, RefundCase.PersonResult result) {
         RefundCase refundCase = personOpen(before);
 
@@ -512,6 +512,19 @@ class RefundCaseTest {
         assertThat(refundCase.getOwnerClosedAt()).isEqualTo(LATE);
         assertThat(refundCase.getOwnerClosedBy()).isEqualTo("ops-admin");
         assertThat(refundCase.isPersonOpen()).isFalse();
+    }
+
+    @ParameterizedTest(name = "돈의 상태={0}")
+    @EnumSource(value = MoneyStatus.class, names = {"CHARGED", "REFUND_REQUESTED", "REFUND_UNKNOWN"})
+    @DisplayName("S5: PG가 돈이 나갔다고 한 사람 담당 대상(청구 확인·환불 요청함·결과 모름)에 청구 없음을 적으면 돈 칸과 모순이라 규칙 위반이고 돈·담당이 그대로다")
+    void rejectsNoChargeAfterChargeKnown(MoneyStatus before) {
+        RefundCase refundCase = personOpen(before);
+
+        assertThatThrownBy(() -> refundCase.resolveByPerson(RefundCase.PersonResult.NO_CHARGE, "ops-admin", LATE))
+            .isInstanceOf(RuleViolationException.class);
+        assertThat(refundCase.getMoneyStatus()).isEqualTo(before);
+        assertThat(refundCase.getConcludedAt()).isNull();
+        assertThat(refundCase.isPersonOpen()).isTrue();
     }
 
     @ParameterizedTest(name = "기록={0}")

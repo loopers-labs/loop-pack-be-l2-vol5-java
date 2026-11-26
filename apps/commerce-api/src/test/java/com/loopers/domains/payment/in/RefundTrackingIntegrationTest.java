@@ -273,7 +273,7 @@ class RefundTrackingIntegrationTest {
 
     @ParameterizedTest(name = "PG 사실={0}")
     @ValueSource(strings = {"CANCELED", "FAILED"})
-    @DisplayName("S3: 기한으로 사람 담당이 된 확인 중 대상도 30분 뒤 조회하고 PG가 CANCELED면 환불됨(EXTERNAL)·FAILED면 청구 없음으로 끝나며 담당을 SYSTEM이 자동 종료한다")
+    @DisplayName("S3: 기한으로 사람 담당이 된 확인 중 대상도 30분 뒤 조회하고 PG가 CANCELED면 환불됨(EXTERNAL)·FAILED면 청구 없음으로 끝나며 담당을 SYSTEM이 자동 종료해 사람 담당 중 gauge가 0이다")
     void closesPersonOwnerByPgFact(String pgStatus) {
         long orderId = expiredOrder();
         Instant deadline = EXPIRES_AT.plus(Duration.ofDays(2));
@@ -300,6 +300,9 @@ class RefundTrackingIntegrationTest {
         assertThat(closed.getOwnerClosedAt()).isEqualTo(closedAt);
         assertThat(closed.getOwnerClosedBy()).isEqualTo(RefundCase.CLOSED_BY_SYSTEM);
         assertThat(pg.cancelCalls(providerOrderId(orderId))).isZero();
+        refundCaseMetrics.refresh();
+        assertThat(gauge(PERSON_OPEN_METRIC, null)).as("담당이 닫힌 사람 담당은 사람 담당 중이 아님").isZero();
+        assertThat(gauge(CASES_METRIC, pgStatus.equals("CANCELED") ? "refunded" : "no_charge")).isEqualTo(1.0);
     }
 
     @ParameterizedTest(name = "조회 장면={0}")

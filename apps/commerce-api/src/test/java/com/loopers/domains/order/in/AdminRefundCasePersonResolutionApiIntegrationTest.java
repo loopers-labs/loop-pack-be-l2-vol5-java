@@ -137,6 +137,18 @@ class AdminRefundCasePersonResolutionApiIntegrationTest {
     }
 
     @Test
+    @DisplayName("PG가 돈이 나갔다고 한 청구 확인 대상에 청구 없음을 적으면 돈 칸과 모순이라 409이고 그대로다")
+    void rejectsNoChargeOnCharged() throws Exception {
+        long orderId = refundCase("CHARGED", null, "PERSON", "RESULT_REVERSED", null, null);
+        double before = outcome("no_charge", "person");
+
+        admin(orderId, "{\"result\":\"NO_CHARGE\"}").andExpect(status().isConflict());
+
+        assertThat(state(orderId)).isEqualTo("CHARGED/PERSON/-/-");
+        assertThat(outcome("no_charge", "person") - before).isZero();
+    }
+
+    @Test
     @DisplayName("환불 확인 대상이 없는 주문이면 404다")
     void rejectsMissingCase() throws Exception {
         admin(999_999L, "{\"result\":\"REFUNDED\"}").andExpect(status().isNotFound());
