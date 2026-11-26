@@ -223,12 +223,13 @@ class RefundCaseTest {
     @DisplayName("청구 확인이 아닌 대상에는 환불을 요청할 수 없어 예외가 나고 돈의 상태·요청 시각이 그대로다(환불 요청은 한 번만)")
     void rejectsRefundRequestOutsideCharged(MoneyStatus moneyStatus) {
         RefundCase refundCase = existing(moneyStatus, Owner.AUTO, "TR-1", LATE, 1);
+        Instant requestedBefore = refundCase.getRefundRequestedAt();
 
         assertThat(refundCase.canRequestRefund()).isFalse();
         assertThatThrownBy(() -> refundCase.requestRefund(LATE, DELAY)).isInstanceOf(IllegalStateException.class);
 
         assertThat(refundCase.getMoneyStatus()).isEqualTo(moneyStatus);
-        assertThat(refundCase.getRefundRequestedAt()).isNull();
+        assertThat(refundCase.getRefundRequestedAt()).isEqualTo(requestedBefore);
     }
 
     @ParameterizedTest(name = "돈의 상태={0} → 환불 주체 {1}")

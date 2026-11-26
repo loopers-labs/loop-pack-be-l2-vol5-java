@@ -75,25 +75,28 @@ public final class RefundCase {
         this.concludedAt = concludedAt;
     }
 
-    // 골격(Red): 업무 규칙은 Green에서 채운다.
+    // 만료가 provider_status를 EXPIRED로 덮기 전에 불러야 만료 직전 상태가 남는다.
     public static RefundCase openOnExpiry(PaymentRecord payment, Instant openedAt, Duration firstCheckDelay) {
         return new RefundCase(payment.getOrderId(), payment.getProviderId(), payment.getProviderOrderId(), payment.getAmount(),
             MoneyStatus.CHECKING, null, Owner.AUTO, null, null, null, null, payment.getProviderStatus(),
-            payment.getTransactionKey(), openedAt, openedAt.plus(HANDOFF_AFTER), openedAt.plus(PROMISE_AFTER), openedAt, 0, null,
-            null);
+            payment.getTransactionKey(), openedAt, openedAt.plus(HANDOFF_AFTER), openedAt.plus(PROMISE_AFTER),
+            openedAt.plus(firstCheckDelay), 0, null, null);
     }
 
+    // 이 기능 이전에 만료되어 대상 기록이 없는 주문이다. 만료 직전 상태는 이미 덮였으므로 비우고, 기한은 알게 된 시각부터 센다.
     public static RefundCase openOnLateSuccess(PaymentRecord payment, String transactionKey, Instant now) {
         return new RefundCase(payment.getOrderId(), payment.getProviderId(), payment.getProviderOrderId(), payment.getAmount(),
             MoneyStatus.CHECKING, null, Owner.AUTO, null, null, null, null, null, transactionKey, now, now.plus(HANDOFF_AFTER),
             now.plus(PROMISE_AFTER), now, 0, null, null);
     }
 
+    // PG가 FAILED라 했다가 SUCCESS가 된 결과 뒤집힘은 자동 판단의 근거가 깨진 것이라 자동 환불 없이 사람이 맡는다(Q2).
+    // 돈은 나갔으므로 청구 확인으로 두고, 끝나지 않았으므로 조회는 계속한다.
     public static RefundCase reverseOnLateSuccess(PaymentRecord payment, String transactionKey, Instant now,
         Duration personCheckDelay) {
         return new RefundCase(payment.getOrderId(), payment.getProviderId(), payment.getProviderOrderId(), payment.getAmount(),
-            MoneyStatus.CHECKING, null, Owner.AUTO, null, null, null, null, payment.getProviderStatus(), transactionKey, now, now,
-            now.plus(PROMISE_AFTER), now, 0, null, null);
+            MoneyStatus.CHARGED, null, Owner.PERSON, RESULT_REVERSED, now, null, null, payment.getProviderStatus(),
+            transactionKey, now, now, now.plus(PROMISE_AFTER), now.plus(personCheckDelay), 0, null, null);
     }
 
     public static RefundCase restore(long orderId, String providerId, String providerOrderId, Money amount,
@@ -106,58 +109,165 @@ public final class RefundCase {
             nextCheckAt, checkAttempts, refundRequestedAt, concludedAt);
     }
 
+    // 환불은 스케줄러 한 곳에서만 보낸다. 여기서는 키를 남기고 확인 중이면 조회를 당길 뿐 돈의 상태를 앞으로 옮기지 않는다.
+    // 청구 없음으로 끝난 뒤의 성공은 사실이 뒤집힌 것이라 청구 확인으로 다시 열고 사람이 맡는다. 환불됨은 끝난 사실이라 그대로 둔다.
     public void joinLateSuccess(String reportedTransactionKey, Instant now, Duration personCheckDelay) {
+        switch (moneyStatus) {
+            case CHECKING -> {
+                storeKey(reportedTransactionKey);
+                nextCheckAt = now;
+            }
+            case CHARGED, REFUND_REQUESTED, REFUND_UNKNOWN -> storeKey(reportedTransactionKey);
+            case NO_CHARGE -> {
+                storeKey(reportedTransactionKey);
+                moneyStatus = MoneyStatus.CHARGED;
+                concludedAt = null;
+                owner = Owner.PERSON;
+                ownerReason = RESULT_REVERSED;
+                ownerChangedAt = now;
+                ownerClosedAt = null;
+                ownerClosedBy = null;
+                nextCheckAt = now.plus(personCheckDelay);
+            }
+            case REFUNDED -> {
+            }
+        }
     }
 
     public boolean isConcluded() {
-        return false;
+        return moneyStatus == MoneyStatus.REFUNDED || moneyStatus == MoneyStatus.NO_CHARGE;
     }
 
     public boolean isPersonOpen() {
-        return false;
+        return owner == Owner.PERSON && ownerClosedAt == null;
     }
 
     public boolean isHandoffDue(Instant now) {
-        return false;
+        return !isConcluded() && owner == Owner.AUTO && !now.isBefore(handoffAt);
     }
 
+    // 자동 환불(취소 호출)을 보낼 수 있는지 판단하는 유일한 곳이다. 사람이 맡은 건에는 시스템이 끼어들지 않는다(to-pl 17:15).
+    // 환불 요청함을 commit한 뒤에만 취소를 보내므로 청구 확인에서만 한 번 요청할 수 있다.
     public boolean canRequestRefund() {
-        return false;
+        return moneyStatus == MoneyStatus.CHARGED && owner == Owner.AUTO;
     }
 
     public void recordCharged(String foundTransactionKey) {
+        requireMoney(MoneyStatus.CHECKING);
+        storeKey(foundTransactionKey);
+        moneyStatus = MoneyStatus.CHARGED;
     }
 
+    // 결과가 기록되지 않은 채 멈춘 경우를 다음 회차가 조회로 확인하도록 결과 확인 시각을 잡아 둔다.
     public void requestRefund(Instant now, Duration resultCheckDelay) {
+        if (!canRequestRefund()) {
+            throw new IllegalStateException("자동 담당의 청구 확인 대상만 환불을 요청할 수 있습니다: " + moneyStatus + "/" + owner);
+        }
+        moneyStatus = MoneyStatus.REFUND_REQUESTED;
+        refundRequestedAt = now;
+        nextCheckAt = now.plus(resultCheckDelay);
     }
 
+    // 환불 주체는 우리가 본 경로로 정한다: 우리가 요청한 뒤면 SYSTEM, 요청한 적 없는데 취소가 보이면 EXTERNAL(계획 2-1).
     public void markRefunded(Instant now) {
+        requireOpen();
+        refundActor = moneyStatus == MoneyStatus.REFUND_REQUESTED || moneyStatus == MoneyStatus.REFUND_UNKNOWN
+            ? RefundActor.SYSTEM : RefundActor.EXTERNAL;
+        conclude(MoneyStatus.REFUNDED, now);
     }
 
     public void markRefundUnknown(Instant now, Duration resultCheckDelay) {
+        requireMoney(MoneyStatus.REFUND_REQUESTED);
+        moneyStatus = MoneyStatus.REFUND_UNKNOWN;
+        nextCheckAt = now.plus(resultCheckDelay);
     }
 
+    // 거절은 효과가 없었으므로 돈은 청구 확인으로 돌아간다. 이미 사람이 맡았으면(요청 중 기한 이관) 처음 사유를 그대로 둔다.
     public void markRefundRejected(Instant now, Duration personCheckDelay) {
+        requireMoney(MoneyStatus.REFUND_REQUESTED);
+        moneyStatus = MoneyStatus.CHARGED;
+        if (owner == Owner.AUTO) {
+            changeOwnerToPerson(REFUND_REJECTED, now);
+        }
+        nextCheckAt = now.plus(personCheckDelay);
     }
 
     public void closeNoCharge(Instant now) {
+        requireMoney(MoneyStatus.CHECKING);
+        conclude(MoneyStatus.NO_CHARGE, now);
     }
 
+    // 담당만 바꾼다. 돈의 사실은 그대로 남고 돈이 끝나지 않았으므로 조회는 계속한다.
     public void assignPerson(String reason, Instant now, Duration personCheckDelay) {
+        requireOpen();
+        if (owner != Owner.AUTO) {
+            throw new IllegalStateException("이미 사람이 맡은 대상입니다: " + ownerReason);
+        }
+        changeOwnerToPerson(reason, now);
+        nextCheckAt = now.plus(personCheckDelay);
     }
 
     public void recordInconclusiveCheck(Instant now, Duration delay) {
+        requireOpen();
+        checkAttempts++;
+        nextCheckAt = now.plus(delay);
     }
 
+    // 회로 때문에 PG를 부르지 못한 것은 조회가 아니므로 횟수를 늘리지 않는다.
     public void postponeCheck(Instant now, Duration delay) {
+        requireOpen();
+        nextCheckAt = now.plus(delay);
     }
 
     public Duration inconclusiveCheckCeiling() {
-        return Duration.ZERO;
+        return owner == Owner.PERSON ? PERSON_CHECK_DELAY : backoffCeiling(checkAttempts + 1);
     }
 
     public Duration postponeCheckCeiling() {
-        return Duration.ZERO;
+        return owner == Owner.PERSON ? PERSON_CHECK_DELAY : backoffCeiling(checkAttempts);
+    }
+
+    private static Duration backoffCeiling(int attempts) {
+        Duration delay = FIRST_CHECK_DELAY;
+        for (int doubled = 1; doubled < attempts && delay.compareTo(MAX_CHECK_DELAY) < 0; doubled++) {
+            delay = delay.multipliedBy(2);
+        }
+        return delay.compareTo(MAX_CHECK_DELAY) > 0 ? MAX_CHECK_DELAY : delay;
+    }
+
+    private void changeOwnerToPerson(String reason, Instant now) {
+        owner = Owner.PERSON;
+        ownerReason = reason;
+        ownerChangedAt = now;
+    }
+
+    // PG 사실로 돈이 끝나면 사람 담당도 같은 때에 닫는다. 사람이 따로 "처리 완료"를 누를 필요가 없다(to-pl 17:15).
+    private void conclude(MoneyStatus concluded, Instant now) {
+        moneyStatus = concluded;
+        concludedAt = now;
+        nextCheckAt = null;
+        if (isPersonOpen()) {
+            ownerClosedAt = now;
+            ownerClosedBy = CLOSED_BY_SYSTEM;
+        }
+    }
+
+    private void requireMoney(MoneyStatus expected) {
+        if (moneyStatus != expected) {
+            throw new IllegalStateException("환불 확인 대상의 돈의 상태가 " + expected + "가 아닙니다: " + moneyStatus);
+        }
+    }
+
+    private void requireOpen() {
+        if (isConcluded()) {
+            throw new IllegalStateException("돈의 상태가 끝난 환불 확인 대상은 바꿀 수 없습니다: " + moneyStatus);
+        }
+    }
+
+    private void storeKey(String reportedTransactionKey) {
+        if (transactionKey == null && reportedTransactionKey != null) {
+            transactionKey = reportedTransactionKey;
+        }
     }
 
     public long getOrderId() {

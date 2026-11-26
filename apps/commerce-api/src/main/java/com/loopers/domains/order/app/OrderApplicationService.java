@@ -35,6 +35,7 @@ import com.loopers.domains.product.app.port.ProductRepository;
 import com.loopers.domains.product.domain.Product;
 import com.loopers.domains.product.domain.ProductId;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
@@ -308,7 +309,7 @@ public class OrderApplicationService {
         returnReservedStock(order);
         orderRepository.save(order);
         // 만료 당시 결과를 몰랐던 결제라 돈이 나갔을 수 있다. 환불 확인 대상을 같은 트랜잭션에서 열어 만료와 함께 commit·rollback한다.
-        RefundCase refundCase = RefundCase.openOnExpiry(payment, now, RefundCase.FIRST_CHECK_DELAY);
+        RefundCase refundCase = RefundCase.openOnExpiry(payment, now, jitteredRefundCheck(RefundCase.FIRST_CHECK_DELAY));
         payment.expire();
         paymentRecordRepository.save(payment);
         paymentRefundCaseRepository.save(refundCase);
@@ -517,17 +518,23 @@ public class OrderApplicationService {
         boolean wasPersonOpen = found.isPresent() && found.get().isPersonOpen();
         if (found.isPresent()) {
             refundCase = found.get();
-            refundCase.joinLateSuccess(transactionKey, now, RefundCase.PERSON_CHECK_DELAY);
+            refundCase.joinLateSuccess(transactionKey, now, jitteredRefundCheck(RefundCase.PERSON_CHECK_DELAY));
         } else if (order.getStatus() == Order.Status.PAYMENT_EXPIRED) {
             refundCase = RefundCase.openOnLateSuccess(payment, transactionKey, now);
         } else {
-            refundCase = RefundCase.reverseOnLateSuccess(payment, transactionKey, now, RefundCase.PERSON_CHECK_DELAY);
+            refundCase = RefundCase.reverseOnLateSuccess(payment, transactionKey, now,
+                jitteredRefundCheck(RefundCase.PERSON_CHECK_DELAY));
         }
         paymentRefundCaseRepository.save(refundCase);
         // 결과 뒤집힘으로 사람 담당이 된 것을 센다. 이미 사람 담당 중인 대상에 늦은 성공이 다시 와도 다시 세지 않는다.
         if (!wasPersonOpen && refundCase.isPersonOpen()) {
             afterCommit(() -> refundOutcomeRecorder.record(RefundOutcomeRecorder.Outcome.HANDED_TO_HUMAN));
         }
+    }
+
+    // 환불 확인 대상의 다음 조회도 결제 확정 조회와 같은 jitter 빈으로 흩뜨린다. 장애로 만료가 몰려도 첫 조회가 한 시각에 모이지 않는다.
+    private Duration jitteredRefundCheck(Duration ceiling) {
+        return Duration.ofMillis(paymentLookupPolicy.jitter().chooseMillis(ceiling.toMillis()));
     }
 
     // 결과 모름 유입은 UNKNOWN이 아닌 상태에서 UNKNOWN으로 처음 바뀐 반영만 센다. 이미 UNKNOWN인 기록의 재보고는 유입이 아니다.
