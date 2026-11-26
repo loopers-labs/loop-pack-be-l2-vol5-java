@@ -828,6 +828,7 @@ REFUNDED일 때만 값이 있다. **우리가 본 경로**로 정한다.
 - 누를 때마다 경계 INFO 한 줄 **[참모 20:42 확정 ①]**: `지금 처리를 눌렀습니다. orderId=…, admin=…, outcome=…`. MDC `orderId`, 누른 관리자 이름(인증 이름), `outcome`(= `last_check_outcome`). 칼럼은 더하지 않는다. 비밀값·PG 텍스트·거래 키는 넣지 않는다.
   - 반영 실패로 끝나도 `outcome=APPLY_FAILED`로 한 줄 남기고 원래 예외를 다시 던진다 **[PL 결정 w10s5c-P5]**.
   - 409·404 거절도 한 줄 남긴다. `outcome` 대신 `rejected=CONCLUDED|NOT_PERSON|NOT_FOUND`(로그 전용 값, enum·칼럼 추가 없음) **[PL 결정 w10s5c-P5]**.
+  - 대상 잠금을 얻지 못해 503으로 끝나면 `rejected=BUSY`로 남긴다. 원인 기록이 없는 경우라 `APPLY_FAILED`와 섞지 않는다 **[PL 결정 w10s5c-P5]**.
 
 **로컬 이전 SQL** (`sql/migrate-payment-refund-cases-v3.sql`): v2 뒤에 실행한다. 세 칸을 NULL 허용으로 더한다(information_schema + PREPARE, v2와 같은 방식). 다시 실행하면 아무것도 바꾸지 않는다.
 

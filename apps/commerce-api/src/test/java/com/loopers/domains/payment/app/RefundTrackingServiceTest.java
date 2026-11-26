@@ -40,6 +40,7 @@ import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.AbstractPlatformTransactionManager;
 import org.springframework.transaction.support.DefaultTransactionStatus;
@@ -996,6 +997,35 @@ class RefundTrackingServiceTest {
             });
     }
 
+    @Test
+    @DisplayName("지금 처리가 대상 잠금을 얻지 못하면 APPLY_FAILED로 섞지 않고 rejected=BUSY인 INFO 한 줄을 남긴 뒤 원래 예외를 던지며 반영 실패 원인은 기록하지 않는다")
+    void processNowLogsBusyPress() {
+        refundCases.put(withState(1, PG_A, "TR-1", MoneyStatus.CHARGED, Owner.PERSON, NOW.plus(HALF_PERSON)));
+        PessimisticLockingFailureException lockFailure = new PessimisticLockingFailureException("LOCK-SECRET 잠금 메시지");
+        refundCases.failNextLock(lockFailure);
+        Logger serviceLogger = (Logger) LoggerFactory.getLogger(RefundTrackingService.class);
+        SnapshotAppender logs = new SnapshotAppender();
+        logs.start();
+        serviceLogger.addAppender(logs);
+
+        try {
+            assertThatThrownBy(() -> service.processNow(1, "ops-admin")).isSameAs(lockFailure);
+        } finally {
+            serviceLogger.detachAppender(logs);
+        }
+
+        verify(gatewayA, never()).verifyOrder(anyString(), any());
+        verify(failureRecorder, never()).recordApplyFailed(anyLong(), anyString());
+        assertThat(pressLogs(logs))
+            .singleElement()
+            .satisfies(event -> {
+                assertThat(event.getLevel()).isEqualTo(Level.INFO);
+                assertThat(event.getMDCPropertyMap()).containsEntry("orderId", "1");
+                assertThat(event.getFormattedMessage()).contains("orderId=1", "admin=ops-admin", "rejected=BUSY")
+                    .doesNotContain("outcome=", "SECRET", "TR-1");
+            });
+    }
+
     private static List<ILoggingEvent> pressLogs(SnapshotAppender logs) {
         return logs.list.stream().filter(event -> event.getFormattedMessage().startsWith("지금 처리를 눌렀습니다.")).toList();
     }
@@ -1077,6 +1107,7 @@ class RefundTrackingServiceTest {
         private final List<String> events;
         private RuntimeException saveFailure;
         private MoneyStatus failingMoneyStatus;
+        private RuntimeException lockFailure;
 
         InMemoryRefundCases(List<String> events) {
             this.events = events;
@@ -1117,8 +1148,17 @@ class RefundTrackingServiceTest {
             return rows.containsKey(orderId);
         }
 
+        void failNextLock(RuntimeException failure) {
+            lockFailure = failure;
+        }
+
         @Override
         public Optional<RefundCase> findByOrderIdForUpdate(long orderId) {
+            if (lockFailure != null) {
+                RuntimeException failure = lockFailure;
+                lockFailure = null;
+                throw failure;
+            }
             return findByOrderId(orderId);
         }
 

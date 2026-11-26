@@ -220,7 +220,7 @@ PG 미발송 종결 · warning · 패널 "종결 결과별 증가(10분)"
    - 그 밖이면 사람 담당 그대로다. `lastCheckOutcome`으로 Diagnosis 3의 표를 다시 본다.
    - 409 = 담당 AUTO, 담당 이미 닫힘, 돈 이미 끝남. 대상은 그대로다. 없는 주문 404.
    - 500(잠금 획득 실패면 503)이면 목록(`?refundOwner=PERSON`)에서 그 건의 `lastCheckOutcome=APPLY_FAILED`·`lastCheckCause`를 확인한다(PaymentRefundApplyFailed).
-   - 누를 때마다 INFO 한 줄이 남는다: `지금 처리를 눌렀습니다. orderId=…, admin=<누른 관리자>, outcome=<lastCheckOutcome>`. 반영 실패면 `outcome=APPLY_FAILED`, 409·404 거절이면 `rejected=CONCLUDED|NOT_PERSON|NOT_FOUND`다. 누가 언제 눌렀는지는 이 줄로 본다(`scripts/ops/rehearsal.sh loki 101`).
+   - 누를 때마다 INFO 한 줄이 남는다: `지금 처리를 눌렀습니다. orderId=…, admin=<누른 관리자>, outcome=<lastCheckOutcome>`. 반영 실패면 `outcome=APPLY_FAILED`, 409·404 거절이면 `rejected=CONCLUDED|NOT_PERSON|NOT_FOUND`, 잠금을 못 얻은 503이면 `rejected=BUSY`다(잠시 뒤 다시 누른다). 누가 언제 눌렀는지는 이 줄로 본다(`scripts/ops/rehearsal.sh loki 101`).
 3. `MISMATCH`·`CANCEL_REJECTED`처럼 PG 콘솔 판단이 필요하면: PG 콘솔에서 실제 승인·취소를 확인한다. 콘솔에서 수동 환불했으면 다음 조회(30m 상한)를 기다린다. 시스템이 환불됨으로 닫는다.
 4. PG 조회가 안 되는데 콘솔·정산으로 결론을 확인했을 때만 사람 기록을 남긴다(환불 확인 대상 읽는 법의 표).
 - 사람 담당은 자동으로 돌아가지 않는다. 되돌리기 기능은 없다. 지금 처리나 사람 기록으로 끝낸다.

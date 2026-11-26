@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
+import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -61,15 +62,40 @@ public class RefundTrackingService {
 
     // 사람 담당 중인 대상 하나에 스케줄러와 같은 회차를 다음 조회 시각과 무관하게 지금 돌리고 그 결과를 돌려준다(10주차 5c).
     // 담당·돈 검사는 회차 첫 잠금 아래에서 한다. 새 타이머·기한은 만들지 않고, 끝나지 않으면 사람 담당 그대로 원인만 갱신된다.
+    // 누를 때마다 누른 사람과 결과를 INFO 한 줄로 남긴다(참모 20:42 확정 ①, PL 결정 w10s5c-P5). 거래 키·PG 텍스트·예외 메시지는 넣지 않는다.
+    // 잠금 획득 실패는 원인 기록이 없는 경우라 APPLY_FAILED와 섞지 않고 BUSY로 남긴다.
     public ProcessNowResult processNow(long orderId, String adminName) {
         String previousOrderId = MDC.get(ORDER_ID_KEY);
         MDC.put(ORDER_ID_KEY, String.valueOf(orderId));
         try {
             track(orderId, new Round(CheckTrigger.PERSON, adminName));
+            RefundCase refundCase = paymentRefundCaseRepository.findByOrderId(orderId)
+                .orElseThrow(RefundCaseNotFoundException::new);
+            log.info("지금 처리를 눌렀습니다. orderId={}, admin={}, outcome={}", orderId, adminName,
+                refundCase.getLastCheckOutcome());
+            return toProcessNowResult(refundCase);
+        } catch (RefundCaseNotFoundException e) {
+            logRejectedPress(orderId, adminName, "NOT_FOUND");
+            throw e;
+        } catch (PersonRoundRejectedException e) {
+            logRejectedPress(orderId, adminName, e.reason);
+            throw e;
+        } catch (PessimisticLockingFailureException e) {
+            logRejectedPress(orderId, adminName, "BUSY");
+            throw e;
+        } catch (RuntimeException e) {
+            log.info("지금 처리를 눌렀습니다. orderId={}, admin={}, outcome={}", orderId, adminName, CheckOutcome.APPLY_FAILED);
+            throw e;
         } finally {
             restoreOrderId(previousOrderId);
         }
-        RefundCase refundCase = paymentRefundCaseRepository.findByOrderId(orderId).orElseThrow(RefundCaseNotFoundException::new);
+    }
+
+    private static void logRejectedPress(long orderId, String adminName, String reason) {
+        log.info("지금 처리를 눌렀습니다. orderId={}, admin={}, rejected={}", orderId, adminName, reason);
+    }
+
+    private static ProcessNowResult toProcessNowResult(RefundCase refundCase) {
         return new ProcessNowResult(refundCase.getOrderId(), refundCase.getMoneyStatus().name(),
             refundCase.getRefundActor() == null ? null : refundCase.getRefundActor().name(), refundCase.getOwner().name(),
             refundCase.getOwnerClosedAt(), refundCase.getOwnerClosedBy(), refundCase.getLastCheckAt(),
@@ -162,10 +188,11 @@ public class RefundTrackingService {
 
     private static void requirePersonOpen(RefundCase refundCase) {
         if (refundCase.isConcluded()) {
-            throw new RuleViolationException("돈의 상태가 이미 끝난 환불 확인 대상입니다: " + refundCase.getMoneyStatus());
+            throw new PersonRoundRejectedException("CONCLUDED",
+                "돈의 상태가 이미 끝난 환불 확인 대상입니다: " + refundCase.getMoneyStatus());
         }
         if (!refundCase.isPersonOpen()) {
-            throw new RuleViolationException("사람 담당 중인 환불 확인 대상이 아닙니다.");
+            throw new PersonRoundRejectedException("NOT_PERSON", "사람 담당 중인 환불 확인 대상이 아닙니다.");
         }
     }
 
@@ -387,6 +414,16 @@ public class RefundTrackingService {
     // 회차를 누가 돌렸는지와, 돈이 끝나 사람 담당을 닫을 때 남길 주체다.
     private record Round(CheckTrigger trigger, String closedBy) {
         static final Round SCHEDULED = new Round(CheckTrigger.SCHEDULER, RefundCase.CLOSED_BY_SYSTEM);
+    }
+
+    // 공개 오류 계약(409 RuleViolationException)은 그대로 두고, 누름 로그에 남길 거절 사유만 붙인다.
+    private static final class PersonRoundRejectedException extends RuleViolationException {
+        private final String reason;
+
+        PersonRoundRejectedException(String reason, String message) {
+            super(message);
+            this.reason = reason;
+        }
     }
 
     public record ProcessNowResult(long orderId, String moneyStatus, String refundActor, String owner, Instant ownerClosedAt,
