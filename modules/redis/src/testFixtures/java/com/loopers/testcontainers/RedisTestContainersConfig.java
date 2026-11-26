@@ -1,26 +1,50 @@
 package com.loopers.testcontainers;
 
+import com.github.dockerjava.api.model.ExposedPort;
+import com.github.dockerjava.api.model.PortBinding;
+import com.github.dockerjava.api.model.Ports;
 import com.redis.testcontainers.RedisContainer;
 import org.springframework.context.annotation.Configuration;
 import org.testcontainers.containers.Container;
 import org.testcontainers.utility.DockerImageName;
 
 import java.io.IOException;
+import java.util.Arrays;
 
 @Configuration
 public class RedisTestContainersConfig {
-    private static final RedisContainer redisContainer = new RedisContainer(DockerImageName.parse("redis:latest"));
+    /**
+     * Docker Desktop 기본 공개(IPv6 와일드카드)는 같은 번호의 127.0.0.1 바인딩을 막지 못해 테스트 HTTP 서버가 Redis 연결을
+     * 가로챌 수 있다. 127.0.0.1 로 공개하면 운영체제가 같은 번호의 루프백 바인딩을 거부한다.
+     */
+    private static final String LOOPBACK = "127.0.0.1";
+    private static final int REDIS_PORT = 6379;
+    private static final RedisContainer redisContainer = new RedisContainer(DockerImageName.parse("redis:latest"))
+        .withCreateContainerCmdModifier(cmd -> cmd.getHostConfig()
+            .withPublishAllPorts(false)
+            .withPortBindings(new PortBinding(Ports.Binding.bindIp(LOOPBACK), ExposedPort.tcp(REDIS_PORT))));
 
     static {
         redisContainer.start();
+        requireLoopbackBinding();
     }
 
     public RedisTestContainersConfig() {
         System.setProperty("datasource.redis.database", "0");
-        System.setProperty("datasource.redis.master.host", redisContainer.getHost());
-        System.setProperty("datasource.redis.master.port", String.valueOf(redisContainer.getFirstMappedPort()));
-        System.setProperty("datasource.redis.replicas[0].host", redisContainer.getHost());
-        System.setProperty("datasource.redis.replicas[0].port", String.valueOf(redisContainer.getFirstMappedPort()));
+        System.setProperty("datasource.redis.master.host", host());
+        System.setProperty("datasource.redis.master.port", String.valueOf(port()));
+        System.setProperty("datasource.redis.replicas[0].host", host());
+        System.setProperty("datasource.redis.replicas[0].port", String.valueOf(port()));
+    }
+
+    private static void requireLoopbackBinding() {
+        Ports.Binding[] bindings = redisContainer.getContainerInfo().getNetworkSettings().getPorts().getBindings()
+            .get(ExposedPort.tcp(REDIS_PORT));
+        if (bindings == null || bindings.length == 0
+            || !Arrays.stream(bindings).allMatch(binding -> LOOPBACK.equals(binding.getHostIp()))) {
+            throw new IllegalStateException("Redis 테스트 컨테이너가 127.0.0.1 로만 공개되지 않았습니다. [bindings = "
+                + Arrays.toString(bindings) + "]");
+        }
     }
 
     /*
@@ -30,7 +54,7 @@ public class RedisTestContainersConfig {
      */
 
     public static String host() {
-        return redisContainer.getHost();
+        return LOOPBACK;
     }
 
     public static int port() {
