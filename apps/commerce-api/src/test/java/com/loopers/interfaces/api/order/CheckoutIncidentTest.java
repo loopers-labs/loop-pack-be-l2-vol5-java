@@ -3,6 +3,7 @@ package com.loopers.interfaces.api.order;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.loopers.application.brand.BrandFacade;
+import com.loopers.application.order.OrderEventRelay;
 import com.loopers.application.product.ProductFacade;
 import com.loopers.domain.common.Quantity;
 import com.loopers.domain.payment.Payment;
@@ -11,8 +12,11 @@ import com.loopers.domain.payment.PaymentStatus;
 import com.loopers.domain.product.Price;
 import com.loopers.domain.product.ProductService;
 import com.loopers.interfaces.api.ApiResponse;
+import com.loopers.support.kafka.TopicRecords;
 import com.loopers.support.pg.PgFixture;
+import com.loopers.testcontainers.KafkaTestContainersConfig;
 import com.loopers.utils.DatabaseCleanUp;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -59,12 +63,14 @@ class CheckoutIncidentTest {
     private static final int STOCK = 25;
     private static final String CARD_NUMBER = "0000-0000-0000-0000";
     private static final PgFixture PG = PgFixture.shared();
+    private static final String TOPIC = KafkaTestContainersConfig.ORDER_EVENTS;
     private static final ParameterizedTypeReference<ApiResponse<OrderV1Dto.OrderResponse>> ORDER =
         new ParameterizedTypeReference<>() {};
     private static final ParameterizedTypeReference<ApiResponse<OrderV1Dto.ReconcileResponse>> RECONCILE =
         new ParameterizedTypeReference<>() {};
 
     private final TestRestTemplate testRestTemplate;
+    private final OrderEventRelay relay;
     private final BrandFacade brandFacade;
     private final ProductFacade productFacade;
     private final ProductService productService;
@@ -79,10 +85,12 @@ class CheckoutIncidentTest {
     private Long coat;
 
     @Autowired
-    CheckoutIncidentTest(TestRestTemplate testRestTemplate, BrandFacade brandFacade, ProductFacade productFacade,
+    CheckoutIncidentTest(TestRestTemplate testRestTemplate, OrderEventRelay relay,
+                         BrandFacade brandFacade, ProductFacade productFacade,
                          ProductService productService, PaymentRepository paymentRepository,
                          JdbcTemplate jdbcTemplate, ObjectMapper objectMapper, DatabaseCleanUp databaseCleanUp) {
         this.testRestTemplate = testRestTemplate;
+        this.relay = relay;
         this.brandFacade = brandFacade;
         this.productFacade = productFacade;
         this.productService = productService;
@@ -238,6 +246,32 @@ class CheckoutIncidentTest {
             .isEqualTo(20);
         assertThat(faultRecord.get("unresolvedMetricLines").toString()).contains("status=\\\"unknown\\\"} 3.0");
         assertThat(recoveryRecord.get("boundaryLogLines")).hasSize(3);
+
+        phase[0] = "follow-up";
+        List<Long> confirmed = Stream.concat(baseline.stream(), fault.stream()).toList();
+        assertThat(outboxStatuses(confirmed)).hasSize(20).containsOnly("PENDING");
+
+        List<ConsumerRecord<String, byte[]>> relayed = TopicRecords.during(TOPIC, () -> relay.relayOnce(100));
+
+        assertThat(relayed.stream().map(ConsumerRecord::key))
+            .containsExactlyInAnyOrderElementsOf(confirmed.stream().map(String::valueOf).toList());
+        assertThat(relayed).allSatisfy(record -> {
+            JsonNode message = json(record.value());
+            assertThat(message.get("eventId").asText()).isEqualTo("order-confirmed:v1:" + record.key());
+            assertThat(message.get("items")).hasSize(1);
+            assertThat(message.get("items").get(0).get("productId").asLong()).isEqualTo(coat);
+            assertThat(message.get("items").get(0).get("quantity").asInt()).isEqualTo(1);
+        });
+        assertThat(outboxStatuses(confirmed)).hasSize(20).containsOnly("PUBLISHED");
+        assertThat(TopicRecords.during(TOPIC, () -> relay.relayOnce(100))).isEmpty();
+        Map<String, Object> followUp = new LinkedHashMap<>();
+        followUp.put("relayedOrderIds", relayed.stream().map(ConsumerRecord::key).sorted().toList());
+        followUp.put("relayedEventIds", relayed.stream()
+            .map(record -> json(record.value()).get("eventId").asText()).sorted().toList());
+        followUp.put("outboxStatuses", outboxStatuses(confirmed));
+        followUp.put("notLinkedInThisRun", List.of("purchase_activity", "weekly_ranking"));
+        evidence.record("follow-up", followUp);
+
         assertThat(evidence.contents()).allSatisfy(content -> assertThat(content).doesNotContain(CARD_NUMBER));
         assertThat(PG.createCount()).isEqualTo(20);
         assertThat(productService.getStock(coat)).isEqualTo(Quantity.of(STOCK - 20));
@@ -425,6 +459,21 @@ class CheckoutIncidentTest {
 
     private Payment paymentOf(Long orderId) {
         return paymentRepository.findByOrderId(orderId).orElseThrow();
+    }
+
+    private List<String> outboxStatuses(List<Long> orderIds) {
+        return orderIds.stream()
+            .map(orderId -> jdbcTemplate.queryForObject(
+                "select status from order_event_outbox where order_id = ?", String.class, orderId))
+            .toList();
+    }
+
+    private JsonNode json(byte[] payload) {
+        try {
+            return objectMapper.readTree(payload);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
     }
 
     private int outboxRows(Long orderId) {
