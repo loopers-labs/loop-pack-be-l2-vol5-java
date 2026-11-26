@@ -99,6 +99,8 @@ class CheckoutIncidentE2ETest {
     private static final Duration RESULT_DEADLINE = Duration.ofSeconds(60);
     // 2026-10-05(월) 00:00 UTC ~ 2026-10-12(월) 00:00 UTC(제외). 다른 e2e가 쓰지 않는 주이고 batch 고정 시각(11-02) 기준으로 끝난 주다.
     private static final LocalDate WEEK = LocalDate.parse("2026-10-05");
+    // 준비(쿠폰 발급) 시각. 테스트 시계 초기값(epoch)이 증거에 남지 않게 기준선 전으로 맞춘다.
+    private static final Instant PREPARED_AT = Instant.parse("2026-10-06T00:00:00Z");
     private static final Instant BASELINE_AT = Instant.parse("2026-10-06T01:00:00Z");
     private static final Instant FAULT_AT = Instant.parse("2026-10-07T01:00:00Z");
     // 복구·반복은 결제 대기 상한(2분) 안에서 한다. 운영이라면 만료 스케줄러가 먼저 종결했을 시각으로 가지 않는다.
@@ -290,6 +292,7 @@ class CheckoutIncidentE2ETest {
         assertThat(availableStock()).isEqualTo(STOCK);
         chargePoints(NORMAL_USER, NORMAL_USER_POINTS);
         chargePoints(FAULT_USER, FAULT_USER_POINTS);
+        clock.set(PREPARED_AT);
         issueCoupon(FAULT_USER);
         confirmedAtStart = confirmedCounter(scrape(managementPort));
 
