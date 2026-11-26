@@ -288,6 +288,9 @@ class CheckoutIncidentE2ETest {
         long brandId = brandApplicationService.create("사고 브랜드").id();
         productId = productApplicationService.create(brandId, "사고 상품", PRICE, STOCK).id();
         assertThat(availableStock()).isEqualTo(STOCK);
+        chargePoints(NORMAL_USER, NORMAL_USER_POINTS);
+        chargePoints(FAULT_USER, FAULT_USER_POINTS);
+        issueCoupon(FAULT_USER);
         confirmedAtStart = confirmedCounter(scrape(managementPort));
 
         String url = environment.getRequiredProperty("datasource.mysql-jpa.main.jdbc-url");
@@ -475,11 +478,17 @@ class CheckoutIncidentE2ETest {
             judgment.put("observed", observed);
             List<Map<String, Object>> hypotheses = List.of(
                 hypothesis("H1", "응답 유실: PG는 성공했지만 create 응답을 받지 못했다",
-                    "create Unknown WARN(HttpTimeoutException) 1, 반영 ERROR 0, PG 조회 SUCCESS·금액 일치", h1, List.of()),
+                    "create Unknown WARN(HttpTimeoutException) 1, 반영 ERROR 0, PG 조회 SUCCESS·금액 일치", h1, List.of(
+                        "PG가 요청을 받고 응답을 보냈다는 것은 test-pg 내부 상태(createCalls·거래 SUCCESS)로만 봤다. 실제 PG 로그는 없다",
+                        "응답이 어디서 끊겼는지 네트워크 계층(패킷·프록시·LB 로그)은 보지 않았다. 근거는 우리 쪽 HttpTimeoutException뿐이다")),
                 hypothesis("H2", "내부 반영 실패: PG 결과를 받거나 조회했지만 우리 DB 반영이 실패했다",
-                    "create Accepted INFO 또는 조회 Verified INFO가 있고 반영 ERROR가 있다", h2, List.of()),
+                    "create Accepted INFO 또는 조회 Verified INFO가 있고 반영 ERROR가 있다", h2, List.of(
+                        "\"반영 ERROR 0\"은 MDC orderId로 거른 캡처 로그에 ERROR가 없다는 부재 판단이다. 로그 유실·MDC 누락이면 구분할 수 없다",
+                        "DB 쪽 오류 기록(MySQL error log·rollback 통계)은 보지 않았다")),
                 hypothesis("H3", "PG 실패·미발송: 돈이 움직이지 않았다",
-                    "PG 거래가 없거나 FAILED, 또는 create NotSent WARN", h3, List.of()));
+                    "PG 거래가 없거나 FAILED, 또는 create NotSent WARN", h3, List.of(
+                        "돈이 움직였다는 근거는 PG 조회 SUCCESS·금액 일치뿐이다. PG 정산 파일·카드사 승인 내역 대조는 없다",
+                        "\"NotSent WARN 0\"도 캡처 로그 기준 부재 판단이다")));
             for (Map<String, Object> hypothesis : hypotheses) {
                 String bucket = "ADOPTED".equals(hypothesis.get("verdict")) ? "adopted" : "rejected";
                 verdict.get(bucket).computeIfAbsent((String) hypothesis.get("id"), id -> new ArrayList<Long>())
@@ -742,6 +751,12 @@ class CheckoutIncidentE2ETest {
     }
 
     private void recordSetCounts(String stage) {
+        setCountsByStage.computeIfAbsent("normal", name -> new LinkedHashMap<String, Map<String, Long>>())
+            .put(stage, setCounts(set("normal")));
+        if (FAULT_SET_STAGES.contains(stage)) {
+            setCountsByStage.computeIfAbsent("fault-set", name -> new LinkedHashMap<String, Map<String, Long>>())
+                .put(stage, setCounts(faultSet()));
+        }
     }
 
     private Map<String, Long> setCounts(List<TrackedOrder> orders) {
