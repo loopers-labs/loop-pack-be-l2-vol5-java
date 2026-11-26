@@ -49,11 +49,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest(
     webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-    properties = {
-        "management.server.port=0",
-        "payment.unresolved-metrics.enabled=true",
-        "payment.unresolved-metrics.interval=200ms"
-    })
+    properties = "management.server.port=0")
 @AutoConfigureObservability(tracing = false)
 @ExtendWith(OutputCaptureExtension.class)
 class CheckoutIncidentTest {

@@ -31,6 +31,7 @@ import com.loopers.support.pg.PgFixture;
 import com.loopers.utils.DatabaseCleanUp;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.Timer;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
@@ -88,7 +89,6 @@ class PaymentFacadeIntegrationTest {
     private final PaymentTransactions paymentTransactions;
     private final PaymentGateway paymentGateway;
     private final PaymentSweeper paymentSweeper;
-    private final PaymentUnresolvedMetrics unresolvedMetrics;
     private final CircuitBreaker lookupCircuit;
     private final MeterRegistry meterRegistry;
     private final PaymentRepository paymentRepository;
@@ -110,7 +110,6 @@ class PaymentFacadeIntegrationTest {
         PaymentTransactions paymentTransactions,
         PaymentGateway paymentGateway,
         PaymentSweeper paymentSweeper,
-        PaymentUnresolvedMetrics unresolvedMetrics,
         CircuitBreaker lookupCircuit,
         MeterRegistry meterRegistry,
         PaymentRepository paymentRepository,
@@ -126,7 +125,6 @@ class PaymentFacadeIntegrationTest {
         this.paymentTransactions = paymentTransactions;
         this.paymentGateway = paymentGateway;
         this.paymentSweeper = paymentSweeper;
-        this.unresolvedMetrics = unresolvedMetrics;
         this.lookupCircuit = lookupCircuit;
         this.meterRegistry = meterRegistry;
         this.paymentRepository = paymentRepository;
@@ -690,25 +688,31 @@ class PaymentFacadeIntegrationTest {
             return meterRegistry.get(name).tag("status", status).gauge().value();
         }
 
-        @DisplayName("9.1: 미완료 결제를 상태별로 세고, 가장 오래된 요청의 나이를 초로 낸다. 끝난 결제는 세지 않는다")
+        @DisplayName("남은 미완료 결제 수는 DB 를 세지 않고, 상태가 바뀌는 순간 그 상태의 수를 올리고 내려서 낸다")
         @Test
-        void gaugesUnresolvedPayments() {
+        void unresolvedGaugeFollowsTransitions() {
             productFacade.adjustStock(coat, Quantity.of(100));
+            double requested = gauge("payment.unresolved", "requested");
+            double pending = gauge("payment.unresolved", "pending");
+            double unknown = gauge("payment.unresolved", "unknown");
+
             confirm(place(1).getId(), "attempt-pending");
-            Order unknown = place(1);
+            Order lost = place(1);
             PG.dropNextCreateResponse();
-            paymentFacade.confirm(new PaymentConfirmCommand(
-                USER, unknown.getId(), PaymentAttemptKey.of("attempt-unknown"), CardType.TEST, CARD), NOW.plusSeconds(30));
+            Payment payment = confirm(lost.getId(), "attempt-unknown");
             PG.rejectNextCreate();
             confirm(place(1).getId(), "attempt-failed");
 
-            unresolvedMetrics.refresh(NOW.plusSeconds(90));
+            assertThat(gauge("payment.unresolved", "requested") - requested).isZero();
+            assertThat(gauge("payment.unresolved", "pending") - pending).isEqualTo(1);
+            assertThat(gauge("payment.unresolved", "unknown") - unknown).isEqualTo(1);
 
-            assertThat(gauge("payment.unresolved", "pending")).isEqualTo(1);
-            assertThat(gauge("payment.unresolved.oldest", "pending")).isEqualTo(90);
-            assertThat(gauge("payment.unresolved", "unknown")).isEqualTo(1);
-            assertThat(gauge("payment.unresolved.oldest", "unknown")).isEqualTo(60);
-            assertThat(gauge("payment.unresolved", "conflict")).isZero();
+            PG.changeStatus(
+                PG.transactionsOf(payment.getProviderOrderId().value()).get(0).transactionKey(), PgFixture.Status.SUCCESS);
+            paymentFacade.reconcile(USER, lost.getId(), NOW.plusSeconds(10));
+
+            assertThat(gauge("payment.unresolved", "pending") - pending).isEqualTo(1);
+            assertThat(gauge("payment.unresolved", "unknown") - unknown).isZero();
         }
 
         @DisplayName("접수는 payment.create{result=accepted} 와 payment.observe{to=pending} 를 하나씩 센다")
@@ -768,6 +772,48 @@ class PaymentFacadeIntegrationTest {
 
             assertThat(count("payment.observe", "from", "unknown", "to", "success") - left).isEqualTo(1);
             assertThat(unknownNow() - unknownBefore).isZero();
+        }
+
+        @DisplayName("결제가 끝나면 요청부터 걸린 시간을 결과와 함께 남긴다. 응답을 잃었다가 80 초 뒤 조회로 닫힌 결제는 80 초로 남는다")
+        @Test
+        void recordsTimeToSettle() {
+            long settled = settledCount("success");
+            double seconds = settledSeconds("success");
+            Order order = place(2);
+            PG.dropNextCreateResponse();
+            Payment payment = confirm(order.getId(), "attempt-1");
+
+            assertThat(settledCount("success") - settled).isZero();
+
+            PG.changeStatus(
+                PG.transactionsOf(payment.getProviderOrderId().value()).get(0).transactionKey(), PgFixture.Status.SUCCESS);
+            paymentFacade.reconcile(USER, order.getId(), NOW.plusSeconds(80));
+
+            assertThat(settledCount("success") - settled).isEqualTo(1);
+            assertThat(settledSeconds("success") - seconds).isEqualTo(80);
+        }
+
+        @DisplayName("거절로 바로 끝난 결제도 걸린 시간을 실패로 남기고, 이미 끝난 결제를 다시 봐도 더 남기지 않는다")
+        @Test
+        void recordsSettleOnce() {
+            long failed = settledCount("failed");
+            Order order = place(2);
+            PG.rejectNextCreate();
+
+            confirm(order.getId(), "attempt-1");
+            paymentFacade.reconcile(USER, order.getId(), NOW.plusSeconds(10));
+
+            assertThat(settledCount("failed") - failed).isEqualTo(1);
+        }
+
+        private long settledCount(String outcome) {
+            return meterRegistry.find("payment.settle").tags("outcome", outcome).timers().stream()
+                .mapToLong(Timer::count).sum();
+        }
+
+        private double settledSeconds(String outcome) {
+            return meterRegistry.find("payment.settle").tags("outcome", outcome).timers().stream()
+                .mapToDouble(timer -> timer.totalTime(TimeUnit.SECONDS)).sum();
         }
 
         private double unknownNow() {

@@ -21,7 +21,10 @@ import lombok.RequiredArgsConstructor;
 
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
@@ -70,6 +73,7 @@ public class PaymentTransactions {
             .forEach(item -> stockDeduction.deductStock(item.productId(), item.quantity().toQuantity()));
         Payment payment = paymentService.save(
             Payment.request(order.getId(), attemptKey, order.getTotalAmount(), cardType, now));
+        afterCommit(paymentMetrics::started);
         orderService.save(order);
         return new Begin.Granted(payment);
     }
@@ -106,7 +110,15 @@ public class PaymentTransactions {
         PaymentStatus before = payment.getStatus();
 
         PaymentOutcome outcome = observation.apply(payment);
-        paymentMetrics.observed(before, payment.getStatus());
+        PaymentStatus after = payment.getStatus();
+        Duration sinceRequested = Duration.between(payment.getRequestedAt(), now);
+        boolean settledNow = before != after && payment.isSettled();
+        afterCommit(() -> {
+            paymentMetrics.observed(before, after);
+            if (settledNow) {
+                paymentMetrics.settled(after, sinceRequested);
+            }
+        });
 
         switch (outcome.effect()) {
             case NONE -> {
@@ -129,5 +141,18 @@ public class PaymentTransactions {
             paymentService.recordDiscrepancy(paymentId, outcome.discrepancy(), source, now);
         }
         return paymentService.save(payment);
+    }
+
+    private static void afterCommit(Runnable action) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            action.run();
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                action.run();
+            }
+        });
     }
 }
