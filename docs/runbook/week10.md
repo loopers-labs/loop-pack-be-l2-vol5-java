@@ -71,7 +71,7 @@
 - 처리:
   1. 항목의 돈의 상태·담당 사유를 본다. 시스템이 계속 조회 중이므로 PG에서 취소·실패가 확인되면 저절로 닫힌다.
   2. PG 콘솔 등에서 실제 승인·취소 상태를 확인한다. 청구 확인(CHARGED)인데 환불이 안 됐으면 PG 콘솔에서 수동으로 환불한다(시스템은 사람 담당 건에 취소를 보내지 않는다). PG 조회로 취소가 보이면 시스템이 환불됨으로 닫는다.
-  3. PG로 확인되지 않는 결론만 기록한다: `scripts/ops/admin-curl.sh POST /api-admin/v1/payments/refund-cases/{orderId}/person-resolution '{"result":"REFUNDED"}'` 또는 `'{"result":"NO_CHARGE"}'`. 담당이 아니거나 돈의 상태와 모순이면 409다.
+  3. PG로 확인되지 않는 결론만 기록한다: `scripts/ops/admin-curl.sh POST /api-admin/v1/payments/refund-cases/{orderId}/person-resolution '{"result":"REFUNDED"}'` 또는 `'{"result":"NO_CHARGE"}'`. 사람 담당 중인 건만 기록할 수 있다. `REFUNDED`는 돈의 상태가 끝나지 않았을 때(CHECKING·CHARGED·REFUND_REQUESTED·REFUND_UNKNOWN), `NO_CHARGE`는 돈의 상태가 CHECKING일 때만 받는다. 그 밖(사람 담당 아님, 이미 끝남, CHECKING이 아닌데 NO_CHARGE)은 409다.
 - 금지: 위 "환불 확인 대상 읽는 법"의 공통 금지.
 - 확인: 대시보드 "환불 확인 대상 돈의 상태별·사람 담당 중" 패널.
 
