@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.loopers.domains.payment.out.TestPgServer.CreateBehavior;
+import com.loopers.domains.payment.out.TestPgServer.LookupBehavior;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
@@ -21,6 +22,7 @@ public final class TestPgControlServer implements AutoCloseable {
     static final String CONTROL_PATH = "/control";
     private static final String STATUS_PATH = CONTROL_PATH + "/status";
     private static final String CREATE_BEHAVIOR_PATH = CONTROL_PATH + "/create-behavior";
+    private static final String LOOKUP_BEHAVIOR_PATH = CONTROL_PATH + "/lookup-behavior";
     private static final String LOST_RESPONSES_PREFIX = CONTROL_PATH + "/lost-responses/";
 
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -55,6 +57,8 @@ public final class TestPgControlServer implements AutoCloseable {
                 send(exchange, 200, statusJson());
             } else if (method.equals("PUT") && path.equals(CREATE_BEHAVIOR_PATH)) {
                 changeCreateBehavior(exchange);
+            } else if (method.equals("PUT") && path.equals(LOOKUP_BEHAVIOR_PATH)) {
+                changeLookupBehavior(exchange);
             } else if (path.startsWith(LOST_RESPONSES_PREFIX) && path.length() > LOST_RESPONSES_PREFIX.length()) {
                 changeLostResponse(exchange, method, path);
             } else {
@@ -77,6 +81,20 @@ public final class TestPgControlServer implements AutoCloseable {
         send(exchange, 204, null);
     }
 
+    private void changeLookupBehavior(HttpExchange exchange) throws IOException {
+        LookupBehavior behavior;
+        try {
+            JsonNode body = objectMapper.readTree(exchange.getRequestBody().readAllBytes());
+            behavior = LookupBehavior.valueOf(body.path("behavior").asText());
+        } catch (IOException | IllegalArgumentException e) {
+            // 본문이 깨졌거나 없는 동작 이름이면 기존 동작을 그대로 두고 거절한다.
+            send(exchange, 400, "{\"code\":\"UNKNOWN_LOOKUP_BEHAVIOR\"}");
+            return;
+        }
+        testPgServer.lookupBehavior(behavior);
+        send(exchange, 204, null);
+    }
+
     private void changeLostResponse(HttpExchange exchange, String method, String path) throws IOException {
         String providerOrderId = URLDecoder.decode(path.substring(LOST_RESPONSES_PREFIX.length()), StandardCharsets.UTF_8);
         if (method.equals("PUT")) {
@@ -93,6 +111,7 @@ public final class TestPgControlServer implements AutoCloseable {
     private String statusJson() {
         ObjectNode node = objectMapper.createObjectNode();
         node.put("createBehavior", testPgServer.createBehavior().name());
+        node.put("lookupBehavior", testPgServer.lookupBehavior().name());
         node.put("createCalls", testPgServer.createCalls());
         node.put("lookupCalls", testPgServer.lookupCalls());
         ArrayNode lost = node.putArray("lostResponseOrderIds");

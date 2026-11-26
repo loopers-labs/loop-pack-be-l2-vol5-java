@@ -122,6 +122,10 @@ public final class TestPgServer implements AutoCloseable {
         this.lookupBehavior = behavior;
     }
 
+    public LookupBehavior lookupBehavior() {
+        return lookupBehavior;
+    }
+
     public String addTransaction(String orderId, long amount, String status) {
         return store(orderId, amount, status).transactionKey();
     }
