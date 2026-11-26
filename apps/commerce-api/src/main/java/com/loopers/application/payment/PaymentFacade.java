@@ -54,17 +54,27 @@ public class PaymentFacade {
             .orElseThrow(() -> new CoreException(
                 ErrorType.NOT_FOUND, "[providerOrderId = " + providerOrderId + "] 결제 시도를 찾을 수 없습니다."));
 
-        if (!attempt.getStatus().isTerminal()) {
+        if (attempt.getStatus().isTerminal()) {
+            // 중복 callback. 이미 종결된 시도라 PG 조회도 상태 변경도 하지 않는다. 새로운 결제 성공으로 기록하지 않는다.
+            log.info("payment.callback orderId={} attemptId={} attemptStatus={} decision=ALREADY_SETTLED",
+                attempt.getOrderId(), attempt.getId(), attempt.getStatus());
+        } else {
             PaymentLookupResult lookup = paymentGateway.findAllByOrderId(providerOrderId);
             if (lookup.isUnavailable()) {
+                log.warn("payment.callback orderId={} attemptId={} attemptStatus={} decision=LOOKUP_UNAVAILABLE reason={}",
+                    attempt.getOrderId(), attempt.getId(), attempt.getStatus(), lookup.reason());
                 throw new CoreException(ErrorType.INTERNAL_ERROR, "PG 조회에 실패해 결제 결과를 확인하지 못했습니다.");
             }
             Optional<PaymentAttempt.ConflictReason> conflict = lookup.transactions().isEmpty()
                 ? recordConflict(attempt, PaymentAttempt.ConflictReason.NO_TRANSACTION)
                 : applyLookup(attempt, lookup.transactions(), transactionKey);
             if (conflict.isPresent()) {
+                log.warn("payment.callback orderId={} attemptId={} attemptStatus={} decision=CONFLICT reason={}",
+                    attempt.getOrderId(), attempt.getId(), attempt.getStatus(), conflict.get());
                 throw new CoreException(ErrorType.CONFLICT, "PG 조회 결과가 결제 시도와 일치하지 않습니다. (" + conflict.get() + ")");
             }
+            log.info("payment.callback orderId={} attemptId={} attemptStatus={} decision=APPLIED",
+                attempt.getOrderId(), attempt.getId(), attempt.getStatus());
         }
         return toInfo(attempt.getOrderId(), false);
     }
@@ -78,13 +88,28 @@ public class PaymentFacade {
         requireIdentifiedUser(requesterId);
         Order order = orderService.getOrder(orderId);
         if (!order.isOwnedBy(requesterId)) {
+            // 남의 주문 조정 거절. 시스템 장애가 아닌 정상적인 업무 거절이므로 INFO 다. 소유자 ID 는 남기지 않는다.
+            log.info("payment.reconcile orderId={} requesterId={} decision=NOT_OWNED", orderId, requesterId);
             throw new CoreException(ErrorType.NOT_FOUND, "[id = " + orderId + "] 주문을 찾을 수 없습니다.");
         }
         PaymentAttempt attempt = paymentAttemptRepository.findByOrderId(orderId)
             .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "[orderId = " + orderId + "] 결제 시도를 찾을 수 없습니다."));
 
-        boolean lookupUnavailable = !attempt.getStatus().isTerminal() && lookUp(attempt) != LookupOutcome.APPLIED;
-        return toInfo(orderId, lookupUnavailable);
+        if (attempt.getStatus().isTerminal()) {
+            // 반복 reconcile. 조회 없이 저장된 결과를 돌려준다. 새로운 결제 성공으로 기록하지 않는다.
+            log.info("payment.reconcile orderId={} attemptId={} attemptStatus={} decision=ALREADY_SETTLED",
+                orderId, attempt.getId(), attempt.getStatus());
+            return toInfo(orderId, false);
+        }
+        LookupOutcome outcome = lookUp(attempt);
+        if (outcome == LookupOutcome.APPLIED) {
+            log.info("payment.reconcile orderId={} attemptId={} attemptStatus={} decision=APPLIED",
+                orderId, attempt.getId(), attempt.getStatus());
+        } else {
+            log.warn("payment.reconcile orderId={} attemptId={} attemptStatus={} decision={}",
+                orderId, attempt.getId(), attempt.getStatus(), outcome);
+        }
+        return toInfo(orderId, outcome != LookupOutcome.APPLIED);
     }
 
     /**

@@ -13,6 +13,7 @@ import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig;
 import org.springframework.http.HttpRequest;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.http.StreamingHttpOutputMessage;
 import org.springframework.http.client.ClientHttpResponse;
@@ -43,6 +44,7 @@ import java.util.function.Supplier;
  * enabled=false 면 세 메서드 모두 IllegalStateException 을 던지고 서버에 요청을 보내지 않는다. 서킷보다 먼저 검사한다.
  */
 @Component
+@Slf4j
 public class HttpPaymentGateway implements PaymentGateway {
 
     private static final String PAYMENTS_PATH = "/api/v1/payments";
@@ -105,9 +107,40 @@ public class HttpPaymentGateway implements PaymentGateway {
                 .body((StreamingHttpOutputMessage.Body) outputStream -> outputStream.write(body))
                 .exchange(HttpPaymentGateway::readRaw);
         } catch (RestClientException e) {
+            // 외부 경계에서 결과를 잃은 지점. 가설 2(응답 유실)를 지지하는 1차 증거다. 예외 메시지·본문은 남기지 않는다.
+            log.warn("pg.create outcome=UNKNOWN providerOrderId={} cause={}",
+                command.providerOrderId(), rootCauseName(e));
             return PaymentCreateResult.unknown();
         }
-        return mapCreate(command, response);
+        PaymentCreateResult result = mapCreate(command, response);
+        logCreateResult(command, result);
+        return result;
+    }
+
+    /**
+     * create 응답 한 건의 경계 결과. ACCEPTED 는 "거래 수락"이고 결제 성공이 아니다 (최종 결과는 조회·callback 으로 확인한다).
+     * REJECTED_NO_EFFECT 는 업무 거절이라 INFO 로 남긴다. UNKNOWN 만 사람이 봐야 하는 비정상이다.
+     */
+    private void logCreateResult(PaymentCreateCommand command, PaymentCreateResult result) {
+        switch (result.outcome()) {
+            case ACCEPTED -> log.info("pg.create outcome=ACCEPTED providerOrderId={} transactionKey={}",
+                command.providerOrderId(), result.transactionKey());
+            case REJECTED_NO_EFFECT -> log.info("pg.create outcome=REJECTED_NO_EFFECT providerOrderId={}",
+                command.providerOrderId());
+            case UNKNOWN -> log.warn("pg.create outcome=UNKNOWN providerOrderId={} cause=unexpected-response conflict={}",
+                command.providerOrderId(), result.conflictReason());
+        }
+    }
+
+    /**
+     * 예외의 가장 깊은 원인의 클래스 이름만 돌려준다. 메시지에는 주소·본문이 섞일 수 있어 남기지 않는다.
+     */
+    private static String rootCauseName(Throwable e) {
+        Throwable cause = e;
+        while (cause.getCause() != null && cause.getCause() != cause) {
+            cause = cause.getCause();
+        }
+        return cause.getClass().getSimpleName();
     }
 
     /**
@@ -116,7 +149,7 @@ public class HttpPaymentGateway implements PaymentGateway {
     @Override
     public PaymentLookupResult findAllByOrderId(String providerOrderId) {
         requireEnabled();
-        return guardedByCircuit(() -> lookUpList(providerOrderId));
+        return logLookup("orderId", providerOrderId, guardedByCircuit(() -> lookUpList(providerOrderId)));
     }
 
     /**
@@ -125,7 +158,22 @@ public class HttpPaymentGateway implements PaymentGateway {
     @Override
     public PaymentLookupResult findByTransactionKey(String transactionKey) {
         requireEnabled();
-        return guardedByCircuit(() -> lookUpSingle(transactionKey));
+        return logLookup("transactionKey", transactionKey, guardedByCircuit(() -> lookUpSingle(transactionKey)));
+    }
+
+    /**
+     * 권위 조회의 경계 결과. FOUND 는 거래 수(0 건 포함)를 남겨 "거래가 생겼는가"에 답한다.
+     * 조회 불가·서킷 차단은 사람이 봐야 하는 비정상이므로 WARN 이다. 응답 본문은 남기지 않는다.
+     */
+    private PaymentLookupResult logLookup(String keyName, String keyValue, PaymentLookupResult result) {
+        if (result.isUnavailable()) {
+            log.warn("pg.lookup outcome=UNAVAILABLE {}={} reason={}", keyName, keyValue, result.reason());
+        } else {
+            log.info("pg.lookup outcome=FOUND {}={} count={} statuses={}", keyName, keyValue,
+                result.transactions().size(),
+                result.transactions().stream().map(transaction -> transaction.status().name()).toList());
+        }
+        return result;
     }
 
     /**

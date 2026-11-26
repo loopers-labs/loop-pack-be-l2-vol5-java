@@ -20,11 +20,13 @@ import com.loopers.domain.user.UserRepository;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
+@Slf4j
 @RequiredArgsConstructor
 @Component
 public class OrderFacade {
@@ -68,7 +70,7 @@ public class OrderFacade {
         PaymentStart start = paymentStartService.start(
             requesterId, orderId, new PaymentStartCommand(command.paymentAttemptKey(), card.cardType()));
         if (start.isStarted()) {
-            applyCreateResult(start, paymentGateway.create(
+            applyCreateResult(orderId, start, paymentGateway.create(
                 new PaymentCreateCommand(start.providerOrderId(), card.cardType(), card.cardNo(), start.amount())));
         }
 
@@ -82,17 +84,30 @@ public class OrderFacade {
      * create 응답 한 건을 TX B 에 넘긴다 (설계 1-6). 생성 수락과 미확인은 ⑥만, 효과 0건 확정 거절은 ⑥⑦⑧을 실행한다.
      * 응답의 orderId·amount 가 요청과 달랐으면(결정 ⑱·㉕) UNKNOWN 으로 두고 충돌만 기록한다. transactionKey 는 저장하지 않고 예약은 유지한다.
      */
-    private void applyCreateResult(PaymentStart start, PaymentCreateResult result) {
+    private void applyCreateResult(Long orderId, PaymentStart start, PaymentCreateResult result) {
         switch (result.outcome()) {
-            case ACCEPTED -> paymentResultService.recordPending(start.attemptId(), result.transactionKey());
+            case ACCEPTED -> {
+                // 거래 수락(PENDING)이고 결제 성공이 아니다. 최종 결과는 조회·callback 으로 확정한다.
+                int rows = paymentResultService.recordPending(start.attemptId(), result.transactionKey());
+                log.info("payment.create outcome=ACCEPTED orderId={} attemptId={} providerOrderId={} pendingRows={}",
+                    orderId, start.attemptId(), start.providerOrderId(), rows);
+            }
             case UNKNOWN -> {
-                paymentResultService.recordUnknown(start.attemptId());
+                // 어떤 주문이 미확인이 됐는지 답하는 줄. rows=0 이면 상태를 바꾸지 않았다는 뜻이다.
+                int rows = paymentResultService.recordUnknown(start.attemptId());
+                log.warn("payment.create outcome=UNKNOWN orderId={} attemptId={} providerOrderId={} unknownRows={} conflict={}",
+                    orderId, start.attemptId(), start.providerOrderId(), rows, result.conflictReason());
                 if (result.conflictReason() != null) {
                     paymentResultService.recordConflict(start.attemptId(), result.conflictReason());
                 }
             }
-            case REJECTED_NO_EFFECT -> paymentResultService.applyFinal(start.attemptId(),
-                PaymentFinalResult.failed(PaymentAttempt.FailureReason.REJECTED_BEFORE_CREATE, null));
+            case REJECTED_NO_EFFECT -> {
+                // 효과 0 건이 확정된 업무 거절이다. 시스템 장애가 아니므로 INFO 다.
+                log.info("payment.create outcome=REJECTED_NO_EFFECT orderId={} attemptId={} providerOrderId={}",
+                    orderId, start.attemptId(), start.providerOrderId());
+                paymentResultService.applyFinal(start.attemptId(),
+                    PaymentFinalResult.failed(PaymentAttempt.FailureReason.REJECTED_BEFORE_CREATE, null));
+            }
         }
     }
 
