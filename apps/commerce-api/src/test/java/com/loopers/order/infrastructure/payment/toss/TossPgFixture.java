@@ -4,16 +4,22 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.client.MappingBuilder;
+import com.github.tomakehurst.wiremock.client.ResponseDefinitionBuilder;
+import com.github.tomakehurst.wiremock.extension.ResponseDefinitionTransformerV2;
+import com.github.tomakehurst.wiremock.http.Fault;
+import com.github.tomakehurst.wiremock.stubbing.ServeEvent;
 import com.github.tomakehurst.wiremock.verification.LoggedRequest;
 import com.loopers.order.domain.PaymentGateway.ApprovalRequest;
 import com.loopers.order.domain.PaymentGateway.CancellationRequest;
 
 import java.net.URI;
+import java.io.IOException;
 import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
@@ -26,7 +32,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 
-/** 승인 HTTP 계약용 대역. 결제 원장이나 주문·재고 처리는 구현하지 않는다. */
+/** 합성 PG 승인 HTTP fixture. 이 fixture가 받은 성공 거래만 로컬 테스트 원장에 기록한다. */
 public final class TossPgFixture implements AutoCloseable {
 
     public static final String SECRET_KEY = "local-secret";
@@ -41,16 +47,21 @@ public final class TossPgFixture implements AutoCloseable {
     private static final String APPROVAL_PATH = "/v1/payments/confirm";
     private static final String PAYMENT_PATH = "/v1/payments/%s";
     private static final String CANCEL_PATH = "/v1/payments/%s/cancel";
+    private static final String APPROVAL_RECORDER = "successful-approval-recorder";
     private static final Set<String> ERROR_CODES = Set.of(
         "ALREADY_PROCESSED_PAYMENT", "ALREADY_PROCESSING_REQUEST",
         "PROVIDER_ERROR", "INVALID_REQUEST"
     );
 
     private final ObjectMapper mapper = new ObjectMapper();
-    private final WireMockServer server = new WireMockServer(wireMockConfig()
-        .bindAddress("127.0.0.1").dynamicPort());
+    private final Map<String, RecordedTransaction> transactions = new ConcurrentHashMap<>();
+    private final WireMockServer server;
+    private volatile boolean responseDropEnabled;
 
     public TossPgFixture() {
+        server = new WireMockServer(wireMockConfig()
+            .bindAddress("127.0.0.1").dynamicPort()
+            .extensions(new SuccessfulApprovalRecorder(transactions)));
         server.start();
     }
 
@@ -76,12 +87,49 @@ public final class TossPgFixture implements AutoCloseable {
 
     /** 같은 멱등키·본문으로 재요청해도 동일한 성공 응답을 반환한다. */
     public void approve(ApprovalRequest request, OffsetDateTime approvedAt) {
-        delayedApproval(request, approvedAt, Duration.ZERO);
+        configureSuccessfulApproval(request, approvedAt, Duration.ZERO, false);
     }
 
     /** 클라이언트의 응답 대기 제한보다 긴 지연을 지정해 타임아웃을 재현한다. */
     public void delayedApproval(ApprovalRequest request, OffsetDateTime approvedAt, Duration delay) {
-        respond(request, 200, approvalBody(request, approvedAt), delay);
+        configureSuccessfulApproval(request, approvedAt, delay, false);
+    }
+
+    /** PG 거래를 저장한 뒤 승인 생성 응답을 reset해 유실 경계를 재현한다. */
+    public void setResponseDropEnabled(
+        boolean enabled,
+        List<ApprovalRequest> requests,
+        OffsetDateTime approvedAt
+    ) {
+        responseDropEnabled = enabled;
+        for (ApprovalRequest request : requests) {
+            configureSuccessfulApproval(request, approvedAt, Duration.ZERO, enabled);
+        }
+    }
+
+    public boolean responseDropEnabled() {
+        return responseDropEnabled;
+    }
+
+    public RecordedTransaction transaction(String paymentKey) {
+        return transactions.get(paymentKey);
+    }
+
+    public List<RecordedTransaction> transactions() {
+        return List.copyOf(transactions.values());
+    }
+
+    public int approvalRequestCount(String paymentKey) {
+        return approvalRequests(paymentKey).size();
+    }
+
+    /** 저장한 거래를 이후 PG 권위 조회에서 반환하도록 공개한다. */
+    public void revealTransaction(String paymentKey) {
+        RecordedTransaction transaction = transactions.get(paymentKey);
+        if (transaction == null) {
+            throw new IllegalStateException("No recorded PG transaction for payment key: " + paymentKey);
+        }
+        payment(paymentKey, 200, transactionBody(transaction));
     }
 
     private String approvalBody(ApprovalRequest request, OffsetDateTime approvedAt) {
@@ -185,6 +233,98 @@ public final class TossPgFixture implements AutoCloseable {
                 .withBody(body).withFixedDelay(delayMillis)));
     }
 
+    private void configureSuccessfulApproval(
+        ApprovalRequest request,
+        OffsetDateTime approvedAt,
+        Duration delay,
+        boolean dropResponse
+    ) {
+        if (delay.isNegative()) {
+            throw new IllegalArgumentException("Response delay must not be negative");
+        }
+        ResponseDefinitionBuilder response = aResponse()
+            .withStatus(200)
+            .withHeader("Content-Type", "application/json")
+            .withBody(approvalBody(request, approvedAt))
+            .withFixedDelay(Math.toIntExact(delay.toMillis()))
+            .withTransformers(APPROVAL_RECORDER);
+        if (dropResponse) {
+            response.withFault(Fault.CONNECTION_RESET_BY_PEER);
+        }
+        server.stubFor(approvalRequest(request).willReturn(response));
+    }
+
+    private String requestBodyPaymentKey(LoggedRequest request) {
+        try {
+            return mapper.readTree(request.getBodyAsString()).path("paymentKey").asText();
+        } catch (JsonProcessingException exception) {
+            throw new IllegalStateException("Invalid payment key in recorded PG request", exception);
+        }
+    }
+
+    private String transactionBody(RecordedTransaction transaction) {
+        return json(Map.of(
+            "paymentKey", transaction.paymentKey(),
+            "orderId", transaction.providerOrderId(),
+            "totalAmount", transaction.amount(),
+            "status", "DONE",
+            "approvedAt", transaction.approvedAt().toString()
+        ));
+    }
+
+    public record RecordedTransaction(
+        String paymentKey,
+        String providerOrderId,
+        long amount,
+        String status,
+        String transactionKey,
+        OffsetDateTime approvedAt
+    ) {
+    }
+
+    private static final class SuccessfulApprovalRecorder implements ResponseDefinitionTransformerV2 {
+        private final ObjectMapper objectMapper = new ObjectMapper();
+        private final Map<String, RecordedTransaction> transactions;
+
+        private SuccessfulApprovalRecorder(Map<String, RecordedTransaction> transactions) {
+            this.transactions = transactions;
+        }
+
+        @Override
+        public String getName() {
+            return APPROVAL_RECORDER;
+        }
+
+        @Override
+        public com.github.tomakehurst.wiremock.http.ResponseDefinition transform(ServeEvent event) {
+            var response = event.getResponseDefinition();
+            if (response.getStatus() != 200) {
+                return response;
+            }
+            try {
+                var requestBody = objectMapper.readTree(event.getRequest().getBodyAsString());
+                var responseBody = objectMapper.readTree(response.getBody());
+                if (!"DONE".equals(responseBody.path("status").asText())) {
+                    return response;
+                }
+                String paymentKey = requestBody.path("paymentKey").asText();
+                String providerOrderId = requestBody.path("orderId").asText();
+                long amount = requestBody.path("amount").asLong();
+                OffsetDateTime approvedAt = OffsetDateTime.parse(responseBody.path("approvedAt").asText());
+                transactions.put(paymentKey, new RecordedTransaction(
+                    paymentKey, providerOrderId, amount, "SUCCESS", paymentKey, approvedAt));
+                return response;
+            } catch (IOException exception) {
+                throw new IllegalStateException("Could not record successful PG approval", exception);
+            }
+        }
+
+        @Override
+        public boolean applyGlobally() {
+            return false;
+        }
+    }
+
     private MappingBuilder approvalRequest(ApprovalRequest request) {
         return post(urlEqualTo(APPROVAL_PATH))
             .withBasicAuth(SECRET_KEY, "")
@@ -199,6 +339,12 @@ public final class TossPgFixture implements AutoCloseable {
 
     public List<LoggedRequest> approvalRequests() {
         return server.findAll(postRequestedFor(urlEqualTo(APPROVAL_PATH)));
+    }
+
+    public List<LoggedRequest> approvalRequests(String paymentKey) {
+        return approvalRequests().stream()
+            .filter(request -> requestBodyPaymentKey(request).equals(paymentKey))
+            .toList();
     }
 
     public List<LoggedRequest> unmatchedRequests() {
