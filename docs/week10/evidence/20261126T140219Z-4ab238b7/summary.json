@@ -1,0 +1,83 @@
+{
+  "runId" : "20261126T140219Z-4ab238b7",
+  "stage" : "SUMMARY",
+  "countDefinition" : {
+    "pgSuccess" : "test-pg 거래 중 status = SUCCESS (집합 주문의 providerOrderId 기준)",
+    "confirmed" : "orders.status = CONFIRMED",
+    "createCalls" : "test-pg가 받은 create 호출 수 합계 (집합 주문의 providerOrderId 기준)",
+    "unknown" : "payment_records.provider_status = UNKNOWN"
+  },
+  "sets" : {
+    "fault-set" : {
+      "userId" : 2,
+      "orderIds" : [ 11, 12, 13, 14, 15, 16, 17, 18, 19, 20 ],
+      "byStage" : {
+        "FAULT" : {
+          "confirmed" : 7,
+          "unknown" : 3,
+          "pgSuccess" : 10,
+          "createCalls" : 10
+        },
+        "RECOVERY" : {
+          "confirmed" : 10,
+          "unknown" : 0,
+          "pgSuccess" : 10,
+          "createCalls" : 10
+        },
+        "REPEAT" : {
+          "confirmed" : 10,
+          "unknown" : 0,
+          "pgSuccess" : 10,
+          "createCalls" : 10
+        },
+        "FOLLOWUP" : {
+          "confirmed" : 10,
+          "unknown" : 0,
+          "pgSuccess" : 10,
+          "createCalls" : 10
+        }
+      },
+      "createCallsIncreaseAfterFault" : {
+        "RECOVERY" : 0,
+        "REPEAT" : 0,
+        "FOLLOWUP" : 0
+      }
+    },
+    "normal" : {
+      "userId" : 1,
+      "orderIds" : [ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 ],
+      "byStage" : {
+        "BASELINE" : {
+          "confirmed" : 10,
+          "unknown" : 0,
+          "pgSuccess" : 10,
+          "createCalls" : 10
+        },
+        "FAULT" : {
+          "confirmed" : 10,
+          "unknown" : 0,
+          "pgSuccess" : 10,
+          "createCalls" : 10
+        },
+        "RECOVERY" : {
+          "confirmed" : 10,
+          "unknown" : 0,
+          "pgSuccess" : 10,
+          "createCalls" : 10
+        },
+        "REPEAT" : {
+          "confirmed" : 10,
+          "unknown" : 0,
+          "pgSuccess" : 10,
+          "createCalls" : 10
+        },
+        "FOLLOWUP" : {
+          "confirmed" : 10,
+          "unknown" : 0,
+          "pgSuccess" : 10,
+          "createCalls" : 10
+        }
+      }
+    }
+  }
+}
