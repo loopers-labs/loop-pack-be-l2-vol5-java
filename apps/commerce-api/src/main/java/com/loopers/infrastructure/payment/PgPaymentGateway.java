@@ -78,15 +78,24 @@ class PgPaymentGateway implements PaymentGateway {
 
     private static CreateObservation unknownWithoutResponse(PaymentCreation creation, ResourceAccessException e) {
         String cause = e.getCause() instanceof SocketTimeoutException ? "timeout" : "connection_lost";
-        log.warn("PG 생성 호출의 응답을 받지 못했다: providerOrderId={}, cause={}",
-            creation.providerOrderId().value(), cause);
+        String providerOrderId = creation.providerOrderId().value();
+        log.atWarn()
+            .addKeyValue("providerOrderId", providerOrderId)
+            .addKeyValue("cause", cause)
+            .log("PG 생성 호출의 응답을 받지 못했다: providerOrderId={}, cause={}", providerOrderId, cause);
         return new CreateObservation.CreateUnknown();
     }
 
     private static CreateObservation unknownResponse(PaymentCreation creation, ConvertibleClientHttpResponse response)
         throws IOException {
-        log.warn("PG 생성 호출의 응답을 수락으로도 거절로도 읽을 수 없다: providerOrderId={}, cause={}, status={}",
-            creation.providerOrderId().value(), "unexpected_response", response.getStatusCode().value());
+        String providerOrderId = creation.providerOrderId().value();
+        int status = response.getStatusCode().value();
+        log.atWarn()
+            .addKeyValue("providerOrderId", providerOrderId)
+            .addKeyValue("cause", "unexpected_response")
+            .addKeyValue("status", status)
+            .log("PG 생성 호출의 응답을 수락으로도 거절로도 읽을 수 없다: providerOrderId={}, cause={}, status={}",
+                providerOrderId, "unexpected_response", status);
         return new CreateObservation.CreateUnknown();
     }
 
