@@ -55,6 +55,17 @@ public class OrderV1Controller {
         return ResponseEntity.ok(ApiResponse.success(OrderV1Dto.OrderDetailResponse.from(order)));
     }
 
+    @PostMapping("/{orderId}/payment/reconcile")
+    public ResponseEntity<ApiResponse<?>> reconcilePayment(Requester requester, @PathVariable Long orderId) {
+        var order = orderUseCase.reconcilePayment(requester.userId(), orderId);
+        if (order.getPayment().status() == PaymentStatus.PENDING
+            || order.getPayment().status() == PaymentStatus.UNKNOWN) {
+            return ResponseEntity.accepted().body(ApiResponse.pending(
+                OrderV1Dto.PendingPaymentResponse.from(order)));
+        }
+        return ResponseEntity.ok(ApiResponse.success(OrderV1Dto.ReconcilePaymentResponse.from(order)));
+    }
+
     @GetMapping
     public ApiResponse<ListResponse<OrderV1Dto.OrderSummaryResponse>> getMyOrders(
         Requester requester,

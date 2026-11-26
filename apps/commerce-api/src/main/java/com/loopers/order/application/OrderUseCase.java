@@ -5,8 +5,11 @@ import com.loopers.order.domain.OrderConfirmService;
 import com.loopers.order.domain.OrderItem;
 import com.loopers.order.domain.OrderRepository;
 import com.loopers.order.domain.OrderStatus;
+import com.loopers.order.domain.Payment;
 import com.loopers.order.domain.PaymentGateway;
 import com.loopers.order.domain.PaymentGateway.CancellationRequest;
+import com.loopers.order.domain.PaymentMethod;
+import com.loopers.order.domain.PaymentStatus;
 import com.loopers.product.domain.Product;
 import com.loopers.product.domain.ProductRepository;
 import com.loopers.product.domain.Stock;
@@ -143,6 +146,38 @@ public class OrderUseCase {
 
     public Order confirm(Long buyerId, Long orderId, String paymentKey, String paymentAttemptKey) {
         return confirmWithPaymentGateway(buyerId, orderId, paymentKey, paymentAttemptKey);
+    }
+
+    public Order reconcilePayment(Long buyerId, Long orderId) {
+        Order order = orderRepository.findById(orderId)
+            .orElseThrow(() -> new CoreException(ErrorCode.ORDER_NOT_FOUND));
+        if (!order.isOwnedBy(buyerId)) {
+            throw new CoreException(ErrorCode.ORDER_NOT_FOUND);
+        }
+        Payment payment = order.getPayment();
+        if (payment == null || payment.getMethod() != PaymentMethod.PG) {
+            throw new CoreException(ErrorCode.INVALID_REQUEST);
+        }
+        if (payment.status() != PaymentStatus.PENDING && payment.status() != PaymentStatus.UNKNOWN) {
+            return order;
+        }
+
+        PaymentGateway.ApprovalResult result;
+        try {
+            result = paymentGateway.findByPaymentKey(payment.paymentKey());
+        } catch (RuntimeException exception) {
+            return order;
+        }
+        if (result == null || result instanceof PaymentGateway.Unknown) {
+            return order;
+        }
+        if (result instanceof PaymentGateway.Approved approved
+            && (!payment.paymentKey().equals(approved.paymentKey())
+                || !payment.getProviderOrderId().equals(approved.providerOrderId())
+                || payment.getAmount() != approved.amount())) {
+            return order;
+        }
+        return paymentTransactionService.recordResult(orderId, result);
     }
 
     private Order confirmWithPaymentGateway(Long buyerId, Long orderId, String paymentKey, String paymentAttemptKey) {
