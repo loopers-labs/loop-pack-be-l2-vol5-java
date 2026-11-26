@@ -529,7 +529,26 @@ class CheckoutIncidentE2ETest {
                     .allSatisfy(line -> assertThat(line.asText()).isNotBlank());
             }
             assertThat(ids).containsExactly("H1", "H2", "H3");
+            assertH2CrossCheck(judgment);
         }
+    }
+
+    // H2 기각은 로그 부재만으로 하지 않는다(w10s7). DB의 APPLY_FAILED 이상(kind로 셈, 해소 여부 무관)이 0건이고,
+    // 같은 주문의 시작 INFO·Unknown WARN이 캡처되어 로그 통로가 살아 있었음을 함께 남긴다.
+    private static void assertH2CrossCheck(JsonNode judgment) {
+        JsonNode h2 = judgment.path("hypotheses").get(1);
+        JsonNode crossCheck = h2.path("crossCheck");
+        assertThat(crossCheck.isObject()).as("H2 crossCheck order=%s", judgment.path("orderId")).isTrue();
+        assertThat(crossCheck.path("applyFailedAnomalies").isIntegralNumber()).as("APPLY_FAILED 건수 칸").isTrue();
+        assertThat(crossCheck.path("applyFailedAnomalies").asLong()).as("DB APPLY_FAILED order=%s", judgment.path("orderId"))
+            .isZero();
+        assertThat(crossCheck.path("applyFailedAnomaliesSource").asText()).contains("payment_anomalies").contains("APPLY_FAILED");
+        assertThat(crossCheck.path("paymentStartInfo").asLong()).as("같은 주문 시작 INFO").isEqualTo(1);
+        assertThat(crossCheck.path("createUnknownWarn").asLong()).as("같은 주문 Unknown WARN").isEqualTo(1);
+        assertThat(crossCheck.path("logChannelAlive").asBoolean()).as("로그 통로 살아 있음").isTrue();
+        assertThat(h2.path("verdict").asText()).isEqualTo("REJECTED");
+        assertThat(h2.path("missingEvidence")).as("H2 missingEvidence는 로그 부재만으로 기각했다고 남기지 않는다")
+            .noneSatisfy(line -> assertThat(line.asText()).contains("구분할 수 없다"));
     }
 
     // S5 RECOVERY: 유실 지정을 풀고 없음을 확인한 뒤, 사용자 2가 같은 3건에 본인 reconcile HTTP를 보낸다.
