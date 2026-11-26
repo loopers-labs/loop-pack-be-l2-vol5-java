@@ -2,7 +2,6 @@ package com.loopers.application.payment;
 
 import com.loopers.domain.payment.LookupResult;
 import com.loopers.domain.payment.Payment;
-import com.loopers.domain.payment.PaymentDiscrepancy;
 import com.loopers.domain.payment.PaymentGateway;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -45,11 +44,9 @@ public class PaymentSweeper {
             return;
         }
         try {
-            Payment observed = paymentTransactions.observe(
-                payment.getId(), observation, PaymentDiscrepancy.Source.LOOKUP, now);
-            paymentLog.changed(payment.getStatus(), observed, "sweeper");
+            paymentTransactions.observe(payment.getId(), observation, PaymentTransactions.Origin.SWEEPER, now);
         } catch (DataAccessException e) {
-            paymentLog.applyFailed(payment, "sweeper", e);
+            paymentLog.applyFailed(payment, PaymentTransactions.Origin.SWEEPER, e);
         }
     }
 

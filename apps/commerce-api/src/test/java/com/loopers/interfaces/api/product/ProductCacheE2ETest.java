@@ -2,7 +2,6 @@ package com.loopers.interfaces.api.product;
 
 import com.loopers.application.payment.PaymentTransactions;
 import com.loopers.domain.payment.LookupResult;
-import com.loopers.domain.payment.PaymentDiscrepancy;
 import com.loopers.domain.payment.Payment;
 import com.loopers.domain.payment.PaymentRepository;
 import com.loopers.domain.payment.PgTransaction;
@@ -173,7 +172,7 @@ class ProductCacheE2ETest {
         Payment payment = paymentRepository.findByOrderId(orderId).orElseThrow();
         paymentTransactions.observe(payment.getId(), new LookupResult.Found(List.of(new PgTransaction(
                 payment.getTransactionKey(), payment.getProviderOrderId(), payment.getAmount(), status))),
-            PaymentDiscrepancy.Source.LOOKUP, Instant.now());
+            PaymentTransactions.Origin.RECONCILE, Instant.now());
     }
 
     private JsonNode order(Long orderId) {

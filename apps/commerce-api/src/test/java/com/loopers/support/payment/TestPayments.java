@@ -6,7 +6,6 @@ import com.loopers.application.payment.PaymentTransactions;
 import com.loopers.domain.payment.CardNumber;
 import com.loopers.domain.payment.CardType;
 import com.loopers.domain.payment.LookupResult;
-import com.loopers.domain.payment.PaymentDiscrepancy;
 import com.loopers.domain.payment.Payment;
 import com.loopers.domain.payment.PaymentAttemptKey;
 import com.loopers.domain.payment.PaymentRepository;
@@ -53,6 +52,6 @@ public class TestPayments {
     public Payment succeed(Payment payment, Instant now) {
         return paymentTransactions.observe(payment.getId(), new LookupResult.Found(List.of(new PgTransaction(
                 payment.getTransactionKey(), payment.getProviderOrderId(), payment.getAmount(), PgTransaction.Status.SUCCESS))),
-            PaymentDiscrepancy.Source.LOOKUP, now);
+            PaymentTransactions.Origin.RECONCILE, now);
     }
 }

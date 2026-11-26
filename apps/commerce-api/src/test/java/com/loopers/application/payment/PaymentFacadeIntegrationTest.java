@@ -67,7 +67,6 @@ import java.util.function.IntFunction;
 import com.loopers.domain.common.Money;
 import com.loopers.domain.payment.CreateObservation;
 import com.loopers.domain.payment.LookupResult;
-import com.loopers.domain.payment.PaymentDiscrepancy;
 import com.loopers.domain.payment.PgTransaction;
 import com.loopers.domain.payment.TransactionKey;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -1264,7 +1263,7 @@ class PaymentFacadeIntegrationTest {
         private Payment lookup(PgTransaction.Status status, long amount) {
             LookupResult.Found found = new LookupResult.Found(List.of(new PgTransaction(
                 TX_KEY, ProviderOrderId.of(order.getId()), Money.of(amount), status)));
-            return paymentTransactions.observe(payment.getId(), found, PaymentDiscrepancy.Source.CALLBACK, LATER);
+            return paymentTransactions.observe(payment.getId(), found, PaymentTransactions.Origin.CALLBACK, LATER);
         }
 
         private Order storedOrder() {
@@ -1486,7 +1485,7 @@ class PaymentFacadeIntegrationTest {
 
                 paymentTransactions.observe(payment.getId(), new LookupResult.Found(List.of(new PgTransaction(
                     TX_KEY, ProviderOrderId.of(order.getId()), Money.of(6_000), PgTransaction.Status.SUCCESS))),
-                    PaymentDiscrepancy.Source.LOOKUP, LATER.plusSeconds(60));
+                    PaymentTransactions.Origin.RECONCILE, LATER.plusSeconds(60));
 
                 assertThat(storedOrder().getConfirmedAt()).isEqualTo(LATER);
             }

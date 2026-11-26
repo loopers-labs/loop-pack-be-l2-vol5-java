@@ -29,22 +29,24 @@ public class PaymentLog {
                 payment.getId(), payment.getOrderId(), result);
     }
 
-    void changed(PaymentStatus from, Payment payment, String source) {
-        PaymentStatus to = payment.getStatus();
-        if (to == from) {
-            return;
-        }
-        boolean conflict = to == PaymentStatus.CONFLICT;
-        about(conflict ? log.atWarn() : log.atInfo(), conflict ? "payment_conflict" : "payment_status_changed", payment)
+    void changed(PaymentTransitioned transition) {
+        boolean conflict = transition.to() == PaymentStatus.CONFLICT;
+        String source = transition.origin().label();
+        (conflict ? log.atWarn() : log.atInfo())
+            .addKeyValue("event", conflict ? "payment_conflict" : "payment_status_changed")
+            .addKeyValue("paymentId", transition.paymentId())
+            .addKeyValue("orderId", transition.orderId())
+            .addKeyValue("providerOrderId", transition.providerOrderId())
             .addKeyValue("source", source)
-            .addKeyValue("from", from.name())
-            .addKeyValue("to", to.name())
+            .addKeyValue("from", transition.from().name())
+            .addKeyValue("to", transition.to().name())
             .log((conflict ? "결제가 PG 와 어긋난 상태로 바뀌었다" : "결제 상태가 바뀌었다")
                     + ": paymentId={}, orderId={}, source={}, from={}, to={}",
-                payment.getId(), payment.getOrderId(), source, from, to);
+                transition.paymentId(), transition.orderId(), source, transition.from(), transition.to());
     }
 
-    void applyFailed(Payment payment, String source, Exception e) {
+    void applyFailed(Payment payment, PaymentTransactions.Origin origin, Exception e) {
+        String source = origin.label();
         String error = e.getClass().getSimpleName();
         about(log.atWarn(), "payment_apply_failed", payment)
             .addKeyValue("source", source)

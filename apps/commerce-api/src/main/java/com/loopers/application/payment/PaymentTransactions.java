@@ -19,15 +19,15 @@ import com.loopers.support.error.DomainError;
 import com.loopers.support.error.DomainException;
 import lombok.RequiredArgsConstructor;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.function.Function;
 
@@ -46,12 +46,38 @@ public class PaymentTransactions {
         }
     }
 
+    public enum Origin {
+        CONFIRM(PaymentDiscrepancy.Source.CREATE_RESPONSE),
+        CALLBACK(PaymentDiscrepancy.Source.CALLBACK),
+        RECONCILE(PaymentDiscrepancy.Source.LOOKUP),
+        SWEEPER(PaymentDiscrepancy.Source.LOOKUP);
+
+        private final PaymentDiscrepancy.Source discrepancySource;
+
+        Origin(PaymentDiscrepancy.Source discrepancySource) {
+            this.discrepancySource = discrepancySource;
+        }
+
+        PaymentDiscrepancy.Source discrepancySource() {
+            return discrepancySource;
+        }
+
+        boolean isLookup() {
+            return this != CONFIRM;
+        }
+
+        String label() {
+            return name().toLowerCase(Locale.ROOT);
+        }
+    }
+
     private final OrderService orderService;
     private final PaymentService paymentService;
     private final StockDeduction stockDeduction;
     private final StockRestoration stockRestoration;
     private final PaymentMetrics paymentMetrics;
     private final OrderEventOutbox orderEventOutbox;
+    private final ApplicationEventPublisher events;
 
     @Transactional
     public Begin begin(Long userId, Long orderId, PaymentAttemptKey attemptKey, CardType cardType,
@@ -73,7 +99,7 @@ public class PaymentTransactions {
             .forEach(item -> stockDeduction.deductStock(item.productId(), item.quantity().toQuantity()));
         Payment payment = paymentService.save(
             Payment.request(order.getId(), attemptKey, order.getTotalAmount(), cardType, now));
-        afterCommit(paymentMetrics::started);
+        events.publishEvent(new PaymentStarted(payment.getId()));
         orderService.save(order);
         return new Begin.Granted(payment);
     }
@@ -90,35 +116,26 @@ public class PaymentTransactions {
 
     @Transactional
     public Payment observe(Long paymentId, CreateObservation observation, Instant now) {
-        return apply(paymentId, payment -> payment.observe(observation),
-            PaymentDiscrepancy.Source.CREATE_RESPONSE, now);
+        return apply(paymentId, payment -> payment.observe(observation), Origin.CONFIRM, now);
     }
 
     @Transactional
-    public Payment observe(Long paymentId, LookupResult.Observation observation, PaymentDiscrepancy.Source source,
-                           Instant now) {
+    public Payment observe(Long paymentId, LookupResult.Observation observation, Origin origin, Instant now) {
         return apply(paymentId, payment -> {
             payment.markChecked(now);
             return payment.observe(observation);
-        }, source, now);
+        }, origin, now);
     }
 
-    private Payment apply(Long paymentId, Function<Payment, PaymentOutcome> observation,
-                          PaymentDiscrepancy.Source source, Instant now) {
+    private Payment apply(Long paymentId, Function<Payment, PaymentOutcome> observation, Origin origin, Instant now) {
         Order order = orderService.getForUpdate(paymentService.orderIdOf(paymentId));
         Payment payment = paymentService.getForUpdate(paymentId);
         PaymentStatus before = payment.getStatus();
 
         PaymentOutcome outcome = observation.apply(payment);
-        PaymentStatus after = payment.getStatus();
-        Duration sinceRequested = Duration.between(payment.getRequestedAt(), now);
-        boolean settledNow = before != after && payment.isSettled();
-        afterCommit(() -> {
-            paymentMetrics.observed(before, after);
-            if (settledNow) {
-                paymentMetrics.settled(after, sinceRequested);
-            }
-        });
+        events.publishEvent(new PaymentTransitioned(
+            paymentId, payment.getOrderId(), payment.getProviderOrderId().value(), before, payment.getStatus(),
+            payment.isSettled(), Duration.between(payment.getRequestedAt(), now), origin));
 
         switch (outcome.effect()) {
             case NONE -> {
@@ -138,21 +155,8 @@ public class PaymentTransactions {
         }
         if (outcome.discrepancy() != null) {
             paymentMetrics.discrepancy(outcome.discrepancy().reason());
-            paymentService.recordDiscrepancy(paymentId, outcome.discrepancy(), source, now);
+            paymentService.recordDiscrepancy(paymentId, outcome.discrepancy(), origin.discrepancySource(), now);
         }
         return paymentService.save(payment);
-    }
-
-    private static void afterCommit(Runnable action) {
-        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
-            action.run();
-            return;
-        }
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                action.run();
-            }
-        });
     }
 }
