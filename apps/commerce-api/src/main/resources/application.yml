@@ -62,6 +62,11 @@ payment:
       failure-rate-threshold: 50 # 최근 시도 중 실패가 50% 이상이면 OPEN
       open-wait: 10s # open 후 10초 동안은 대기
       half-open-calls: 2 # half_open 되었을 경우 2회 요청 보내봄
+  # 미종결 결제 gauge (10주차 D-202). Prometheus 기본 수집 간격에 맞춘 잠정값
+  metrics:
+    unresolved:
+      enabled: true
+      refresh-ms: 15000
 
 # 주문 확정 이벤트 (6주차 설계 2). topic 은 인프라가 만듦 (D-90)
 order-event:

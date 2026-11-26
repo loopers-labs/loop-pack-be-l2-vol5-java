@@ -115,7 +115,7 @@
 
 ### gauge 는 주기적으로 DB 를 읽어 캐시한 값이다 (D-202)
 
-**스케줄러가 `payment.metrics.unresolved-refresh`(기본 15초)마다 상태별 count 한 문장을 실행해 메모리 값을 바꾸고, gauge 는 그 값을 읽기만 한다.**
+**스케줄러가 `payment.metrics.unresolved.refresh-ms`(기본 15000)마다 상태별 count 한 문장을 실행해 메모리 값을 바꾸고, gauge 는 그 값을 읽기만 한다.**
 
 ```sql
 select status, count(*) from payment where status in ('REQUESTED', 'UNKNOWN', 'PENDING') group by status
@@ -125,7 +125,7 @@ select status, count(*) from payment where status in ('REQUESTED', 'UNKNOWN', 'P
 - 갱신 실패(DB 오류)는 warn 로그만 남기고 이전 값을 유지한다. 값이 얼마나 오래됐는지 알 수 있도록 마지막 성공 시각을 `commerce.payment.unresolved.refreshed` gauge(epoch 초)로 함께 노출한다.
 - 기본 15초는 Prometheus 기본 수집 간격과 같은 잠정값이다. 테스트는 짧은 주기(200ms)를 주고 유한한 대기(5초) 안에서 `/actuator/prometheus` 의 실제 값이 바뀌는지 확인한다.
 - `payment.status` 에는 인덱스가 없다. 지금 행 수에서는 문제없지만 결제 이력이 쌓이면 count 가 전체를 훑는다(10장).
-- 스케줄러는 Outbox relay 처럼 `enabled` 설정을 둔다(기본 켬). 실습 스크립트처럼 DB 없이 뜨는 경로가 있으면 끌 수 있다.
+- 스케줄러는 Outbox relay 처럼 `payment.metrics.unresolved.enabled` 설정을 둔다(기본 켬). 끄면 gauge 도 등록하지 않는다.
 
 | 검토한 안 | 포기한 이유 |
 |---|---|

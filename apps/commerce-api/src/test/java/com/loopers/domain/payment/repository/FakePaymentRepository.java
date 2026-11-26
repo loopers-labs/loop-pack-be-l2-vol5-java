@@ -4,12 +4,14 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.Collection;
+import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import com.loopers.domain.payment.entity.Payment;
+import com.loopers.domain.payment.enums.PaymentStatus;
 
 /** 주문 · 시도 키 유일 제약을 흉내 냄 */
 public class FakePaymentRepository implements PaymentRepository {
@@ -51,6 +53,14 @@ public class FakePaymentRepository implements PaymentRepository {
     public List<Payment> findAllByOrderIds(Collection<Long> orderIds) {
         findAllByOrderIdsCalls++;
         return payments.values().stream().filter(payment -> orderIds.contains(payment.getOrderId())).toList();
+    }
+
+    @Override
+    public Map<PaymentStatus, Long> countUnresolvedByStatus() {
+        Map<PaymentStatus, Long> counts = new EnumMap<>(PaymentStatus.class);
+        PaymentStatus.unresolved().forEach(status -> counts.put(status,
+            payments.values().stream().filter(payment -> payment.getStatus() == status).count()));
+        return counts;
     }
 
     public int findAllByOrderIdsCalls() {
