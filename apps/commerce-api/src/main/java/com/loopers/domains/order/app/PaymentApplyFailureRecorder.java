@@ -13,7 +13,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 // 결과 반영 트랜잭션이 rollback되면 그 트랜잭션에는 실패 사실을 남길 수 없다. 판단 근거가 로그 부재에 기대지 않도록
 // rollback 뒤 별도 짧은 트랜잭션으로 APPLY_FAILED 이상을 남긴다(w10s7). 호출부는 반영 트랜잭션이 끝난 뒤 부르므로
-// 주문 행 잠금을 쥔 채 기록하지 않는다. 기록 실패는 원래 실패를 가리지 않도록 ERROR만 남기고 삼킨다.
+// 주문 행 잠금을 쥔 채 기록하지 않는다. 잠금 밖이라 같은 주문의 기록이 겹칠 수 있어 저장소는 upsert 한 문장으로 쓴다.
+// 기록 실패는 원래 실패를 가리지 않도록 ERROR만 남기고 삼킨다.
 @Slf4j
 @Component
 public class PaymentApplyFailureRecorder {

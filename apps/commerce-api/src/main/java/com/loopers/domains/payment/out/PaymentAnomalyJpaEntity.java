@@ -8,8 +8,12 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import java.time.Instant;
+import org.hibernate.annotations.DynamicUpdate;
 
+// 기록은 upsert 한 문장(PaymentAnomalyJpaRepository.upsert)이라 이 엔티티의 메모리 값은 같은 트랜잭션 안에서 낡을 수 있다.
+// 해소가 바꾼 칸만 쓰게 해 낡은 occurrences·last_summary로 upsert 결과를 덮지 않는다.
 @Entity
+@DynamicUpdate
 @Table(name = "payment_anomalies", uniqueConstraints =
     @UniqueConstraint(name = "uk_payment_anomalies_order_kind", columnNames = {"order_id", "kind"}))
 public class PaymentAnomalyJpaEntity {
@@ -31,19 +35,6 @@ public class PaymentAnomalyJpaEntity {
     private Instant resolvedAt;
 
     protected PaymentAnomalyJpaEntity() {
-    }
-
-    PaymentAnomalyJpaEntity(long orderId, String kind, Instant now) {
-        this.orderId = orderId;
-        this.kind = kind;
-        this.firstSeenAt = now;
-    }
-
-    void observe(String summary, Instant now) {
-        occurrences++;
-        lastSeenAt = now;
-        lastSummary = summary;
-        resolvedAt = null;
     }
 
     void resolve(Instant now) {

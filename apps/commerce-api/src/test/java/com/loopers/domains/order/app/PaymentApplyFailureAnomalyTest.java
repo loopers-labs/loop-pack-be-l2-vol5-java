@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.loopers.domains.brand.app.BrandApplicationService;
 import com.loopers.domains.order.app.port.PaymentApplyFailureCounter;
+import com.loopers.domains.order.app.port.PaymentApplyFailureCounter.Source;
 import com.loopers.domains.payment.app.port.PaymentAnomalyRepository;
 import com.loopers.domains.payment.app.port.PaymentLookupScheduleRepository;
 import com.loopers.domains.payment.out.PaymentAnomalyPersistenceAdapter;
@@ -23,11 +24,13 @@ import com.loopers.utils.DatabaseCleanUp;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.persistence.EntityManager;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.BrokenBarrierException;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -56,6 +59,8 @@ import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -98,6 +103,9 @@ class PaymentApplyFailureAnomalyTest {
 
     @Autowired
     private PaymentApplyFailureRecorder paymentApplyFailureRecorder;
+
+    @Autowired
+    private TransactionObservingRecorder transactionObservingRecorder;
 
     @Autowired
     private PaymentLookupScheduleRepository paymentLookupScheduleRepository;
@@ -151,6 +159,7 @@ class PaymentApplyFailureAnomalyTest {
         orderId = orderApplicationService.create(1, List.of(
             new OrderApplicationService.ItemRequest(firstProductId, 1),
             new OrderApplicationService.ItemRequest(secondProductId, 1))).id();
+        transactionObservingRecorder.clear();
         recorderLogs = new SnapshotAppender();
         recorderLogs.start();
         recorderLogger().addAppender(recorderLogs);
@@ -191,6 +200,7 @@ class PaymentApplyFailureAnomalyTest {
         assertThat(failingPaymentRecordRepository.stateBeforeFailure()).as("실패 직전 flush된 상태").endsWith("order=CONFIRMED");
         assertThat(orderState()).containsEntry("status", "PAYMENT_PENDING").containsEntry("provider_status", "SEND_STARTED");
         assertApplyFailedAnomaly("IllegalStateException", "CREATE");
+        assertRecordedOutsideTransaction();
         assertThat(applyFailed("create") - before).isEqualTo(1);
     }
 
@@ -213,6 +223,7 @@ class PaymentApplyFailureAnomalyTest {
         assertThat(failingOrderRepository.stateBeforeFailure()).as("실패 직전 flush된 상태").isNotNull();
         assertThat(orderState()).isEqualTo(before);
         assertApplyFailedAnomaly("IllegalStateException", "CALLBACK");
+        assertRecordedOutsideTransaction();
         assertThat(applyFailed("callback") - counted).isEqualTo(1);
     }
 
@@ -236,6 +247,7 @@ class PaymentApplyFailureAnomalyTest {
             .hasMessage(OrderTransactionTest.FailingOrderRepository.INJECTED_FAILURE);
         assertThat(orderState()).isEqualTo(before);
         assertApplyFailedAnomaly("IllegalStateException", "MANUAL");
+        assertRecordedOutsideTransaction();
         assertThat(applyFailed("manual") - counted).isEqualTo(1);
     }
 
@@ -252,6 +264,7 @@ class PaymentApplyFailureAnomalyTest {
 
         assertThat(orderState()).isEqualTo(before);
         assertApplyFailedAnomaly("IllegalStateException", "MANUAL");
+        assertRecordedOutsideTransaction();
     }
 
     @Test
@@ -268,6 +281,7 @@ class PaymentApplyFailureAnomalyTest {
         assertThat(failingOrderRepository.stateBeforeFailure()).as("실패 직전 flush된 상태").isNotNull();
         assertThat(orderState()).isEqualTo(before);
         assertApplyFailedAnomaly("IllegalStateException", "AUTOMATIC");
+        assertRecordedOutsideTransaction();
         assertThat(applyFailed("automatic") - counted).isEqualTo(1);
     }
 
@@ -336,7 +350,7 @@ class PaymentApplyFailureAnomalyTest {
     @ValueSource(longs = {0, 1})
     @DisplayName("같은 주문에 반영 실패 두 건을 동시에 기록하면 두 건 모두 기록되고 occurrences는 기존 값에 2를 더한 값이며 counter도 2 는다")
     void concurrentApplyFailureRecordsAreAtomic(long priorOccurrences) throws Exception {
-        PaymentApplyFailureCounter.Source source = PaymentApplyFailureCounter.Source.MANUAL;
+        Source source = Source.MANUAL;
         IllegalStateException failure = new IllegalStateException("동시 반영 실패");
         for (long index = 0; index < priorOccurrences; index++) {
             paymentApplyFailureRecorder.record(orderId, source, failure);
@@ -400,6 +414,14 @@ class PaymentApplyFailureAnomalyTest {
         assertThat(rows.get(0).get("resolved_at")).isNull();
     }
 
+    // 기록기 자체의 REQUIRES_NEW 안이 아니라 기록기를 부르는 순간을 본다. 그때 실제 트랜잭션이 없어야 반영 트랜잭션의
+    // 주문 행 잠금을 쥔 채 기록하지 않았다고 말할 수 있다(w10s7-P3).
+    private void assertRecordedOutsideTransaction() {
+        assertThat(transactionObservingRecorder.transactionActiveAtCall()).as("기록기 호출 시점의 실제 트랜잭션 여부")
+            .isNotEmpty()
+            .containsOnly(false);
+    }
+
     private static String summary(String causeType, String source) {
         return "causeType=" + causeType + ", source=" + source;
     }
@@ -449,9 +471,41 @@ class PaymentApplyFailureAnomalyTest {
     static class AnomalyFailureConfig {
         @Bean
         @Primary
+        TransactionObservingRecorder transactionObservingRecorder(PaymentAnomalyRepository paymentAnomalyRepository,
+            PaymentApplyFailureCounter paymentApplyFailureCounter, PlatformTransactionManager transactionManager, Clock clock) {
+            return new TransactionObservingRecorder(paymentAnomalyRepository, paymentApplyFailureCounter, transactionManager,
+                clock);
+        }
+
+        @Bean
+        @Primary
         FailingAnomalyRepository failingAnomalyRepository(PaymentAnomalyPersistenceAdapter delegate,
             EntityManager entityManager) {
             return new FailingAnomalyRepository(delegate, entityManager);
+        }
+    }
+
+    // 기록기를 부르는 순간 호출 스레드에 실제 트랜잭션이 있었는지 남긴다. 기록 동작은 그대로 실제 기록기에 맡긴다.
+    static class TransactionObservingRecorder extends PaymentApplyFailureRecorder {
+        private final List<Boolean> transactionActiveAtCall = new CopyOnWriteArrayList<Boolean>();
+
+        TransactionObservingRecorder(PaymentAnomalyRepository paymentAnomalyRepository,
+            PaymentApplyFailureCounter paymentApplyFailureCounter, PlatformTransactionManager transactionManager, Clock clock) {
+            super(paymentAnomalyRepository, paymentApplyFailureCounter, transactionManager, clock);
+        }
+
+        @Override
+        public void record(long orderId, Source source, RuntimeException failure) {
+            transactionActiveAtCall.add(TransactionSynchronizationManager.isActualTransactionActive());
+            super.record(orderId, source, failure);
+        }
+
+        List<Boolean> transactionActiveAtCall() {
+            return List.copyOf(transactionActiveAtCall);
+        }
+
+        void clear() {
+            transactionActiveAtCall.clear();
         }
     }
 

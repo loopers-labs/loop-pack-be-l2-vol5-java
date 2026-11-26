@@ -127,6 +127,9 @@ class CheckoutIncidentE2ETest {
     private static final List<String> UNRESOLVED_STATUSES = List.of("send_started", "pending", "unknown", "needs_review");
     private static final String SERVICE_LOGGER = OrderApplicationService.class.getName();
     private static final String ADAPTER_LOGGER = TestPgPaymentGateway.class.getName();
+    private static final String H2_LOG_CHANNEL_SCOPE = "logChannelAlive는 JVM 안 로그 캡처 기준이다. Alloy→Loki 경로는 증명하지 않는다"
+        + "(운영은 가이드 교차 확인·CommerceLogIngestionSilent)";
+    private static final String H2_PROCESS_DEATH = "반영 중 프로세스가 죽으면 DB에도 로그에도 남지 않는다";
     // 이상 기록 자체가 실패하면 기록기가 ERROR를 남긴다. errorLines에 함께 세려고 잡는다(수준은 바꾸지 않는다).
     private static final String RECORDER_LOGGER = PaymentApplyFailureRecorder.class.getName();
     private static final String CREATE_RESULT = "PG 결제 생성 시도 결과";
@@ -503,7 +506,9 @@ class CheckoutIncidentE2ETest {
                     "DB APPLY_FAILED 이상이 있거나, create Accepted INFO 또는 조회 Verified INFO가 있고 반영 ERROR가 있다", h2,
                     List.of(
                         "DB 쪽 오류 기록(MySQL error log·rollback 통계)은 보지 않았다",
-                        "APPLY_FAILED 이상 기록 자체가 실패하면 DB에는 남지 않고 기록기 ERROR만 남는다. 그 경우는 errorLines(로그)로만 보인다")),
+                        "APPLY_FAILED 이상 기록 자체가 실패하면 DB에는 남지 않고 기록기 ERROR만 남는다. 그 경우는 errorLines(로그)로만 보인다",
+                        H2_LOG_CHANNEL_SCOPE,
+                        H2_PROCESS_DEATH)),
                     applyFailedAnomalies, paymentStartInfo, unknownWarns.size(), logChannelAlive),
                 hypothesis("H3", "PG 실패·미발송: 돈이 움직이지 않았다",
                     "PG 거래가 없거나 FAILED, 또는 create NotSent WARN", h3, List.of(
@@ -566,6 +571,10 @@ class CheckoutIncidentE2ETest {
         assertThat(h2.path("verdict").asText()).isEqualTo("REJECTED");
         assertThat(h2.path("missingEvidence")).as("H2 missingEvidence는 로그 부재만으로 기각했다고 남기지 않는다")
             .noneSatisfy(line -> assertThat(line.asText()).contains("구분할 수 없다"));
+        List<String> missing = new ArrayList<String>();
+        h2.path("missingEvidence").forEach(line -> missing.add(line.asText()));
+        assertThat(missing).as("H2 missingEvidence는 로그 통로 판단 범위와 프로세스 사망 공백을 남긴다 order=%s",
+            judgment.path("orderId")).contains(H2_LOG_CHANNEL_SCOPE, H2_PROCESS_DEATH);
     }
 
     // S5 RECOVERY: 유실 지정을 풀고 없음을 확인한 뒤, 사용자 2가 같은 3건에 본인 reconcile HTTP를 보낸다.
