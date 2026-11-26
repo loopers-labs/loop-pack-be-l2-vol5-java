@@ -42,6 +42,7 @@ import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
+import org.springframework.dao.DataAccessException;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -822,6 +823,31 @@ class PaymentFacadeIntegrationTest {
 
             assertThat(changedLines(output, payment)).singleElement().asString()
                 .contains("orderId=" + order.getId(), "source=sweeper", "from=UNKNOWN", "to=FAILED");
+        }
+
+        @DisplayName("reconcile 이 조회 결과를 반영하지 못하면 실패를 그대로 올리되, 어느 결제에서 어떤 오류였는지 한 줄 남는다")
+        @Test
+        void logsFailedApplyByReconcile(CapturedOutput output) throws Exception {
+            Order order = place(2);
+            PG.dropNextCreateResponse();
+            Payment payment = confirm(order.getId(), "attempt-1");
+            PG.changeStatus(
+                PG.transactionsOf(payment.getProviderOrderId().value()).get(0).transactionKey(), PgFixture.Status.SUCCESS);
+
+            try (Connection holder = dataSource.getConnection()) {
+                holder.setAutoCommit(false);
+                lockOrder(holder, order.getId());
+                assertThatThrownBy(() -> paymentFacade.reconcile(USER, order.getId(), NOW.plusSeconds(10)))
+                    .isInstanceOf(DataAccessException.class);
+                holder.rollback();
+            }
+
+            assertThat(output.getOut().lines()
+                .filter(line -> line.contains("paymentId=" + payment.getId()))
+                .filter(line -> line.contains("source=reconcile"))
+                .filter(line -> line.contains("error=")))
+                .singleElement().asString().contains("orderId=" + order.getId());
+            assertThat(changedLines(output, payment)).isEmpty();
         }
 
         private List<String> changedLines(CapturedOutput output, Payment payment) {

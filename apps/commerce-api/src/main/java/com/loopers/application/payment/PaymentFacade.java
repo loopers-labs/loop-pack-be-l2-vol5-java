@@ -102,8 +102,8 @@ public class PaymentFacade {
         return switch (result) {
             case LookupResult.Unavailable unavailable -> CallbackResult.LOOKUP_UNAVAILABLE;
             case LookupResult.Observation observation -> {
-                Payment observed = paymentTransactions.observe(
-                    payment.get().getId(), observation, PaymentDiscrepancy.Source.CALLBACK, now);
+                Payment observed = observeOrLog(
+                    payment.get(), observation, PaymentDiscrepancy.Source.CALLBACK, "callback", now);
                 paymentLog.changed(payment.get().getStatus(), observed, "callback");
                 yield CallbackResult.APPLIED;
             }
@@ -125,11 +125,21 @@ public class PaymentFacade {
             case LookupResult.Unavailable unavailable -> new ReconcileResult(payment, true);
             case LookupResult.Observation observation -> {
                 PaymentStatus before = payment.getStatus();
-                Payment observed = paymentTransactions.observe(
-                    payment.getId(), observation, PaymentDiscrepancy.Source.LOOKUP, now);
+                Payment observed = observeOrLog(
+                    payment, observation, PaymentDiscrepancy.Source.LOOKUP, "reconcile", now);
                 paymentLog.changed(before, observed, "reconcile");
                 yield new ReconcileResult(observed, false);
             }
         };
+    }
+
+    private Payment observeOrLog(Payment payment, LookupResult.Observation observation,
+                                 PaymentDiscrepancy.Source discrepancySource, String source, Instant now) {
+        try {
+            return paymentTransactions.observe(payment.getId(), observation, discrepancySource, now);
+        } catch (DataAccessException e) {
+            paymentLog.applyFailed(payment, source, e);
+            throw e;
+        }
     }
 }

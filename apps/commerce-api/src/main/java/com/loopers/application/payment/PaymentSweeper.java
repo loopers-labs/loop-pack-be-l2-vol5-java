@@ -5,7 +5,6 @@ import com.loopers.domain.payment.Payment;
 import com.loopers.domain.payment.PaymentDiscrepancy;
 import com.loopers.domain.payment.PaymentGateway;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.dao.DataAccessException;
@@ -17,7 +16,6 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 
-@Slf4j
 @Component
 @RequiredArgsConstructor
 public class PaymentSweeper {
@@ -51,7 +49,7 @@ public class PaymentSweeper {
                 payment.getId(), observation, PaymentDiscrepancy.Source.LOOKUP, now);
             paymentLog.changed(payment.getStatus(), observed, "sweeper");
         } catch (DataAccessException e) {
-            log.warn("sweeper 가 조회 결과를 반영하지 못했다. 다음 주기에 다시 본다: paymentId={}", payment.getId(), e);
+            paymentLog.applyFailed(payment, "sweeper", e);
         }
     }
 

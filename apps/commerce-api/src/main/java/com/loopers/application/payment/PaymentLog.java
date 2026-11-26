@@ -36,4 +36,9 @@ public class PaymentLog {
         log.info("결제 상태가 바뀌었다: paymentId={}, orderId={}, source={}, from={}, to={}",
             payment.getId(), payment.getOrderId(), source, from, payment.getStatus());
     }
+
+    void applyFailed(Payment payment, String source, Exception e) {
+        log.warn("조회 결과를 결제에 반영하지 못했다: paymentId={}, orderId={}, source={}, error={}",
+            payment.getId(), payment.getOrderId(), source, e.getClass().getSimpleName(), e);
+    }
 }
