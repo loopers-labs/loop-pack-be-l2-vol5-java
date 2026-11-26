@@ -1,4 +1,4 @@
-# 결제 사고 알림 규칙(10주차 4단계 4a, 4b에서 가이드 서버 생존 감시 그룹 추가). 모양은 payment_test.yml(promtool test rules)로 고정한다.
+# 결제 사고 알림 규칙(10주차 4단계 4a, 4b에서 가이드 서버 생존 감시 그룹 추가, 7단계에서 로그 수집 끊김 추가). 모양은 payment_test.yml(promtool test rules)로 고정한다.
 # 원칙: 사람이 지금 손대야 할 것만 울린다. 자동 재조회로 풀리는 일시 증가는 대시보드에서만 본다.
 #   critical = 자동 회복이 안 먹힘 AND 당장 조치할 만큼 쌓임(사람을 깨운다).
 #   warning  = 한 건이라도 사람 확인이 필요하지만 아침에 봐도 되는 것.
@@ -208,4 +208,29 @@ groups:
         annotations:
           summary: critical 가이드 서버가 5분 넘게 응답하지 않습니다. critical 알림은 근거 없이 원본만 갑니다.
           runbook_url: https://github.com/loopers-labs/loop-pack-be-l2-vol5-java/blob/L2J4Dot/docs/runbook/week10.md#guideserverdown
+          dashboard_url: http://localhost:3000/d/commerce-payment-incident
+
+      # 로그 수집 끊김(7단계). 사고 진단의 H2 기각("반영 ERROR 0줄")은 로그 부재에 기댄다. 수집이 끊겨도 0줄이라
+      # 수집이 살아 있는지를 따로 본다. 판단에 쓰는 사실은 DB에 있고(APPLY_FAILED anomaly) 로그는 보조다.
+      # 지표: logback_events_total(앱이 낸 로그 이벤트 수, Micrometer 기본), loki_distributor_lines_received_total(Loki가 받은 줄 수,
+      #   Loki /metrics, job="loki"). Loki에는 Alloy가 보낸 앱 로그만 들어온다.
+      # 조건: 앱이 떠 있고(up) 10분 창에 앱 로그 이벤트가 늘었는데 Loki가 받은 줄은 0이다(Loki 지표가 사라져도 0으로 본다).
+      #   앱 로그가 없는 조용한 시간·앱이 내려간 것은 수집 끊김이 아니라 울리지 않는다.
+      # [임시] 창 10m: 정상이면 앱 로그는 수 초 안에 Loki에 들어온다(Alloy sync 5s).
+      # [임시] for 10m: Alloy 재전송으로 자동 복구될 시간이다. loki.write는 실패한 묶음을 backoff(500ms에서 두 배씩, 최대 5m)로
+      #   최대 10회 다시 보내고(Alloy 기본값, 합계 약 8.5분), 읽은 위치를 볼륨에 두어 재기동 뒤 이어 읽는다. 그 안에 풀리면 사람이 할 일이 없다.
+      # warning: 결제·환불 자체는 영향이 없고 진단 근거만 약해진다. 깨우지 않는다(사람이 할 일이 있을 때만).
+      - alert: CommerceLogIngestionSilent
+        expr: |
+          max(up{job="spring-boot-app"}) == 1
+          and on()
+          sum(increase(logback_events_total{job="spring-boot-app"}[10m])) > 0
+          and on()
+          (sum(increase(loki_distributor_lines_received_total{job="loki"}[10m])) or on() vector(0)) == 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: 앱은 로그를 내는데 10분 넘게 Loki에 로그가 한 줄도 들어오지 않습니다. 로그 기반 진단(H2 반영 ERROR 0줄 등)을 믿을 수 없습니다.
+          runbook_url: https://github.com/loopers-labs/loop-pack-be-l2-vol5-java/blob/L2J4Dot/docs/runbook/week10.md#commercelogingestionsilent
           dashboard_url: http://localhost:3000/d/commerce-payment-incident

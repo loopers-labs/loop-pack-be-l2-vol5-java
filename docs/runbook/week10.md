@@ -58,7 +58,7 @@ local·dev 전용. 셸에 `COMMERCE_ADMIN_USERNAME`·`COMMERCE_ADMIN_PASSWORD`�
 - 해소: 결과 모름 20건 미만 또는 유입 비율 0.2% 이하. 비율은 30분 창이라 해소 뒤에도 한동안 높게 보인다. Slack resolved는 최대 5분 늦다. Prometheus·대시보드로 먼저 확인한다.
 - 금지: 공통 금지. 특히 confirm·결제를 다시 보내지 않는다.
 - **멈출 때:** 일괄 확정이 503(조회 회로 OPEN)이거나 결과에 `SKIPPED`(연속 실패 3건으로 중단)·`STOPPED`가 많다 / 조치 뒤 같은 주문의 create 줄(`result=Accepted`·`Unknown`)이 새로 생긴다(create 증가 — 즉시 멈추고 에스컬레이션 대상 [미정]) / 원인이 H1(결과 모름 WARN + 반영 ERROR 없음)이 아니다 — 반영 ERROR가 있으면 내부 반영 실패라 일괄 확정을 되풀이하지 않고 에스컬레이션.
-- **다시 들어갈 때:** 회로 CLOSED 확인(회로 지표는 없다. 열림 대기 30s[임시]가 지난 뒤 한 건 목록 일괄 확정이 503·`LOOKUP_NOT_CALLED` 없이 끝나는지로 본다) → PG 조회 1건 수동 성공(한 건 목록이 `RESOLVED`) → Diagnosis 3으로 목록 다시 고정 → 같은 명령 재실행. 일괄 확정은 PG 조회만 하고(create 없음) 이미 끝난 주문은 `ALREADY_CLOSED`로 건너뛰므로 같은 목록을 다시 보내도 결제가 다시 만들어지지 않는다.
+- **다시 들어갈 때:** 회로 CLOSED 확인(회로 지표는 없다. 열림 대기 30s[임시]가 지난 뒤 한 건 목록 일괄 확정이 503·`LOOKUP_NOT_CALLED` 없이 끝나는지로 본다) → PG 조회 1건 수동 성공(한 건 목록이 `RESOLVED` 또는 `ALREADY_CLOSED` — `ALREADY_CLOSED`는 자동 재조회가 먼저 처리한 것이다. 운영은 스케줄러가 켜진 게 정상이다) → Diagnosis 3으로 목록 다시 고정 → 같은 명령 재실행. 일괄 확정은 PG 조회만 하고(create 없음) 이미 끝난 주문은 `ALREADY_CLOSED`로 건너뛰므로 같은 목록을 다시 보내도 결제가 다시 만들어지지 않는다.
 
 ## PaymentAbandonedPiling
 
@@ -80,7 +80,7 @@ local·dev 전용. 셸에 `COMMERCE_ADMIN_USERNAME`·`COMMERCE_ADMIN_PASSWORD`�
 - 해소: 10분 만료 증가가 5건 아래.
 - 이 경로는 리허설 2회차(로컬)에서 따라 했다. 결과 모름 알림은 Slack에 오지 않고 이 알림으로 먼저 알았다(위 "관리자 도구"의 알림 지연 안내).
 - **멈출 때:** 일괄 확정이 503(회로 OPEN)이거나 `SKIPPED`(연속 실패 3건)·`STOPPED`가 나온다 / 조치 뒤 create 줄이 새로 생긴다(create 증가) / 원인이 H1(응답 유실)이 아니다(반영 ERROR가 있음) — 일괄 확정을 멈추고 에스컬레이션.
-- **다시 들어갈 때:** 회로 CLOSED 확인(회로 지표는 없다. 열림 대기 30s[임시]가 지난 뒤 한 건 목록 일괄 확정이 503·`LOOKUP_NOT_CALLED` 없이 끝나는지로 본다) → PG 조회 1건 수동 성공 → 아직 결제 대기인 건으로 목록 다시 고정(만료된 주문은 넣지 않는다) → 같은 명령 재실행. 일괄 확정은 PG 조회만 하고(create 없음) 이미 끝난 주문은 `ALREADY_CLOSED`로 건너뛰므로 같은 목록을 다시 보내도 결제가 다시 만들어지지 않는다.
+- **다시 들어갈 때:** 회로 CLOSED 확인(회로 지표는 없다. 열림 대기 30s[임시]가 지난 뒤 한 건 목록 일괄 확정이 503·`LOOKUP_NOT_CALLED` 없이 끝나는지로 본다) → PG 조회 1건 수동 성공(한 건 목록이 `RESOLVED` 또는 `ALREADY_CLOSED` — `ALREADY_CLOSED`는 자동 재조회가 먼저 처리한 것이다. 운영은 스케줄러가 켜진 게 정상이다) → 아직 결제 대기인 건으로 목록 다시 고정(만료된 주문은 넣지 않는다) → 같은 명령 재실행. 일괄 확정은 PG 조회만 하고(create 없음) 이미 끝난 주문은 `ALREADY_CLOSED`로 건너뛰므로 같은 목록을 다시 보내도 결제가 다시 만들어지지 않는다.
 
 ## PaymentNeedsReview
 
@@ -100,7 +100,7 @@ local·dev 전용. 셸에 `COMMERCE_ADMIN_USERNAME`·`COMMERCE_ADMIN_PASSWORD`�
 - 해소: 사람 확인 결제 0건.
 - 금지: 공통 금지. 상태를 DB에서 바꾸지 않는다.
 - **멈출 때:** 일괄 확정이 503(회로 OPEN)이거나 `SKIPPED`(연속 실패 3건)이다 / `STOPPED`(`TRANSACTION_MISMATCH`·`DUPLICATE_TRANSACTIONS` 등) — 자동으로 풀리지 않으니 같은 주문을 다시 보내지 않고 사람에게 넘긴다 / create 줄이 새로 생긴다(create 증가).
-- **다시 들어갈 때:** 회로 CLOSED 확인(회로 지표는 없다. 열림 대기 30s[임시]가 지난 뒤 한 건 목록 일괄 확정이 503·`LOOKUP_NOT_CALLED` 없이 끝나는지로 본다) → PG 조회 1건 수동 성공 → `status=NEEDS_REVIEW` 목록 다시 고정(`LOOKUP_LIMIT_EXHAUSTED` 건만) → 같은 명령 재실행. 일괄 확정은 PG 조회만 하고(create 없음) 이미 끝난 주문은 `ALREADY_CLOSED`로 건너뛰므로 같은 목록을 다시 보내도 결제가 다시 만들어지지 않는다.
+- **다시 들어갈 때:** 회로 CLOSED 확인(회로 지표는 없다. 열림 대기 30s[임시]가 지난 뒤 한 건 목록 일괄 확정이 503·`LOOKUP_NOT_CALLED` 없이 끝나는지로 본다) → PG 조회 1건 수동 성공(한 건 목록이 `RESOLVED` 또는 `ALREADY_CLOSED` — `ALREADY_CLOSED`는 자동 재조회가 먼저 처리한 것이다. 운영은 스케줄러가 켜진 게 정상이다) → `status=NEEDS_REVIEW` 목록 다시 고정(`LOOKUP_LIMIT_EXHAUSTED` 건만) → 같은 명령 재실행. 일괄 확정은 PG 조회만 하고(create 없음) 이미 끝난 주문은 `ALREADY_CLOSED`로 건너뛰므로 같은 목록을 다시 보내도 결제가 다시 만들어지지 않는다.
 
 ## PaymentDeclineSurge
 
@@ -242,7 +242,7 @@ PG 미발송 종결 · warning · 패널 "종결 결과별 증가(10분)"
 - 해소: 사람 담당 중 0건.
 - 금지: 공통 금지. 환불 요청은 지금 처리로만 보낸다. 같은 돈을 PG 콘솔 수동 환불과 지금 처리로 둘 다 환불하지 않는다(중복 환불 위험). 둘 중 하나만 한다.
 - **멈출 때:** 지금 처리 결과가 `PG_UNREACHABLE`(회로 OPEN·PG 불통)이다 / `APPLY_FAILED`가 반복된다(우리 반영 실패 — PaymentRefundApplyFailed로 옮기고 고칠 때까지 누르지 않는다) / `MISMATCH`·`CANCEL_REJECTED`(PG 콘솔 판단 필요) / 503(`rejected=BUSY`)이 이어진다 / PG 콘솔 수동 환불을 했다(지금 처리를 함께 하지 않는다).
-- **다시 들어갈 때:** PG 회복 확인(조회 회로 열림 대기 30s[임시] 경과) → 한 건 지금 처리가 `PG_UNREACHABLE`·`APPLY_FAILED` 없이 끝남(PG 조회 1건 수동 성공) → `?refundOwner=PERSON` 목록 다시 고정 → 같은 명령 재실행. 지금 처리는 돈이 `REFUND_REQUESTED`·`REFUND_UNKNOWN`이면 조회만 하고 끝난 건은 409로 거절하므로 다시 눌러도 환불이 두 번 나가지 않는다(예외: `CANCEL_REJECTED` 뒤는 PG가 효과 없음을 명시한 경우라 다시 요청한다).
+- **다시 들어갈 때:** PG 회복 확인(조회 회로 열림 대기 30s[임시] 경과) → 한 건 지금 처리가 `PG_UNREACHABLE`·`APPLY_FAILED` 없이 끝남(PG 조회 1건 수동 성공. 자동 조회가 먼저 끝냈으면 409 `rejected=CONCLUDED`도 성공으로 본다. 운영은 스케줄러가 켜진 게 정상이다) → `?refundOwner=PERSON` 목록 다시 고정 → 같은 명령 재실행. 지금 처리는 돈이 `REFUND_REQUESTED`·`REFUND_UNKNOWN`이면 조회만 하고 끝난 건은 409로 거절하므로 다시 눌러도 환불이 두 번 나가지 않는다(예외: `CANCEL_REJECTED` 뒤는 PG가 효과 없음을 명시한 경우라 다시 요청한다).
 
 ## PaymentRefundApplyFailed
 
@@ -263,7 +263,7 @@ PG 미발송 종결 · warning · 패널 "종결 결과별 증가(10분)"
 - 해소: 15분 창에 새 `apply_failed`가 없다(마지막 실패 뒤 약 15분).
 - 금지: 공통 금지. 특히 DB에서 돈의 상태를 직접 고치지 않는다.
 - **멈출 때:** 원인을 고치기 전이다(같은 `lastCheckCause`로 `APPLY_FAILED`가 반복) — 지금 처리를 누르지 않는다 / 패널의 `apply_failed`가 계속 는다.
-- **다시 들어갈 때:** 원인 수정 확인 → 한 건 지금 처리가 `APPLY_FAILED` 없이 끝남 → `lastCheckOutcome=APPLY_FAILED` 목록 다시 고정 → 같은 명령 재실행(자동 담당 건은 다음 회차에 맡긴다). 지금 처리는 돈이 `REFUND_REQUESTED`·`REFUND_UNKNOWN`이면 조회만 하고 끝난 건은 409로 거절하므로 다시 눌러도 환불이 두 번 나가지 않는다. 반영 실패는 TX가 되돌려져 돈의 상태가 그대로라 다시 해도 이중 반영이 없다.
+- **다시 들어갈 때:** 원인 수정 확인 → 한 건 지금 처리가 `APPLY_FAILED` 없이 끝남(자동 조회가 먼저 끝냈으면 409 `rejected=CONCLUDED`도 성공으로 본다. 운영은 스케줄러가 켜진 게 정상이다) → `lastCheckOutcome=APPLY_FAILED` 목록 다시 고정 → 같은 명령 재실행(자동 담당 건은 다음 회차에 맡긴다). 지금 처리는 돈이 `REFUND_REQUESTED`·`REFUND_UNKNOWN`이면 조회만 하고 끝난 건은 409로 거절하므로 다시 눌러도 환불이 두 번 나가지 않는다. 반영 실패는 TX가 되돌려져 돈의 상태가 그대로라 다시 해도 이중 반영이 없다.
 
 ## PaymentRefundRequestStuck
 
@@ -324,7 +324,7 @@ PG 미발송 종결 · warning · 패널 "종결 결과별 증가(10분)"
 - 해소: 새 이관이 멈추거나 사람 담당 중이 10건 아래. 남은 건은 PaymentRefundNeedsPerson으로 계속 보인다.
 - 금지: 공통 금지.
 - **멈출 때:** 원인이 PG 쪽(`pg_unreachable`·`pg_error`, 회로 OPEN)이면 사람 처리를 멈추고 PG 회복을 기다린다 / `apply_failed`가 반복되면 PaymentRefundApplyFailed로 옮긴다.
-- **다시 들어갈 때:** PG 회복 확인 → 한 건 지금 처리 성공 → `?refundOwner=PERSON` 목록 다시 고정(시스템이 닫은 건은 빠진다) → PaymentRefundNeedsPerson 순서로 재개. 지금 처리는 돈이 `REFUND_REQUESTED`·`REFUND_UNKNOWN`이면 조회만 하고 끝난 건은 409로 거절하므로 다시 눌러도 환불이 두 번 나가지 않는다.
+- **다시 들어갈 때:** PG 회복 확인 → 한 건 지금 처리 성공(자동 조회가 먼저 끝냈으면 409 `rejected=CONCLUDED`도 성공으로 본다. 운영은 스케줄러가 켜진 게 정상이다) → `?refundOwner=PERSON` 목록 다시 고정(시스템이 닫은 건은 빠진다) → PaymentRefundNeedsPerson 순서로 재개. 지금 처리는 돈이 `REFUND_REQUESTED`·`REFUND_UNKNOWN`이면 조회만 하고 끝난 건은 409로 거절하므로 다시 눌러도 환불이 두 번 나가지 않는다.
 
 ## GuideServerDown
 
@@ -345,16 +345,40 @@ PG 미발송 종결 · warning · 패널 "종결 결과별 증가(10분)"
 - **멈출 때:** restart 뒤에도 바로 다시 죽는다(반복) — 더 재시작하지 않고 에스컬레이션.
 - **다시 들어갈 때:** `docker compose -f docker/monitoring-compose.yml ps guide`가 정상이고 다음 critical에 `[가이드]` 메시지가 붙는지 본다. 재시작은 알림 원본 경로에 영향이 없어 되풀이해도 안전하다.
 
+## CommerceLogIngestionSilent
+
+로그 수집 끊김 · warning · 패널 "로그 수집(앱 로그 이벤트 대비 Loki 수신, 10분)"
+
+**Meaning.** 앱이 떠 있고 10분 동안 로그를 냈는데 Loki가 받은 줄이 0이다. 이 상태가 10분[임시] 더 이어졌다(Alloy 재전송으로 풀릴 시간을 넘김). 앱 로그가 없는 조용한 시간이나 앱이 내려간 것은 이 알림이 아니다.
+
+**Impact.** 결제·환불 처리는 영향이 없다. 로그로 하는 진단만 믿을 수 없다. 특히 "반영 ERROR 0줄"처럼 로그가 **없다**는 것을 근거로 쓰는 판단(사고 진단 H2 기각)은 이 알림이 울리는 동안 쓰지 않는다. 반영 실패 여부는 DB 근거(관리자 목록의 `latestAnomaly`·`lastCheckOutcome`의 `APPLY_FAILED`)로 본다.
+
+**Diagnosis.**
+1. 패널에서 앱 로그 이벤트는 있는데 Loki 수신 줄이 0인지, 언제부터인지 본다.
+2. 수집 컨테이너: `docker compose -f docker/monitoring-compose.yml ps loki alloy`. Loki가 내려갔으면 Loki 문제다.
+3. Alloy 로그의 오류 종류만 본다: `docker compose -f docker/monitoring-compose.yml logs --tail 50 alloy`(로그 원문을 공유하지 않는다).
+4. 앱이 쓰는 로그 파일과 Alloy가 읽는 폴더가 같은지 본다. 둘 다 `docker/.env`의 `COMMERCE_LOG_DIR`(저장소 루트 기준, 기본 `logs`)를 따른다. 경로가 어긋나면 앱 기동 INFO의 로그 경로와 `.env` 값을 비교한다. 파일(`commerce-api.json`)이 커지는데 Loki가 0이면 수집 쪽, 파일이 안 커지면 앱이 다른 경로에 쓰고 있다(리허설 B1과 같은 모양).
+
+**Mitigation.**
+- Loki·Alloy가 내려갔거나 멈췄으면 `docker compose -f docker/monitoring-compose.yml restart loki alloy`. Alloy는 읽은 위치를 볼륨(`alloy-data`)에 두어 재기동 뒤 이어 읽는다. 파일에 남은 줄은 다시 들어온다.
+- 경로가 다르면 앱을 `.env`의 `COMMERCE_LOG_DIR`에 맞춰 다시 띄운다(`scripts/ops/rehearsal.sh app`이 그 값으로 `LOGGING_FILE_NAME`을 넘긴다). 현장에서 앱 설정 파일을 고치지 않는다.
+- 그동안 진단은 지표·DB 근거(관리자 목록)로 한다.
+- 해소: 10분 창에 Loki 수신 줄이 다시 생긴다.
+- 금지: 공통 금지. Alloy 볼륨(`alloy-data`)을 지우지 않는다(지우면 파일을 처음부터 다시 읽어 같은 줄이 두 번 들어간다).
+- **멈출 때:** restart 뒤에도 Loki 수신이 0이다(반복) — 더 재시작하지 않고 에스컬레이션 대상 [미정] / 경로를 맞추려면 앱 설정 변경이 필요하다 — 현장에서 바꾸지 않고 에스컬레이션.
+- **다시 들어갈 때:** 패널에서 Loki 수신 줄이 다시 는다 → 주문 하나로 `scripts/ops/rehearsal.sh loki 101`이 줄을 돌려준다 → 로그 근거를 다시 쓴다. 재기동은 결제 경로에 영향이 없고 Alloy가 읽은 위치에서 이어 읽어 되풀이해도 같은 줄이 두 번 들어가지 않는다.
+
 ## critical 가이드 메시지 읽는 법
 
 - critical은 Slack 자리에 두 번 온다. ① Alertmanager 원본 ② 가이드 서버가 근거를 붙인 메시지(`[가이드]`로 시작).
 - 근거: 미확인 상태별 수, 결과 모름 유입 비율(30분), 만료 종결 증가(10분), 환불 대상 돈의 상태별 수, 사람 담당 중 건수, 사람 담당 이관 증가(30분), 환불 요청 정체 경과(분), 환불 추적 막힌 원인(결과별 30분 증가), 최근 30분 경계 로그 WARN·ERROR 종류별 줄 수와 대표 줄(최대 3줄, 카드·비밀값 가림).
+- 교차 확인 한 줄(집계만): `Unknown WARN n줄 중 같은 주문 시작 INFO m/n, APPLY_FAILED counter x`. m/n이 n/n이면 그 주문들의 로그 통로는 살아 있어 "반영 ERROR 0줄"을 부재로 읽어도 된다. m이 n보다 작거나 CommerceLogIngestionSilent가 울리면 로그 부재를 근거로 쓰지 않는다. `APPLY_FAILED counter`가 0이 아니면 내부 반영 실패다(관리자 목록 `latestAnomaly`로 확인). "지표 없음"은 0이 아니다.
 - `[가이드 실패: …]`로 시작하면 근거 수집이 실패했거나 제한 시간(10s[임시])을 넘었다. 원본 알림으로 대응한다.
 - "AI 요약"은 집계와 로그 종류만 보고 쓴 것이다. 대상은 관리자 목록으로 고정한다(대표 줄은 최대 3줄이다).
 
 ## 주문 번호로 경계 로그 찾기
 
-- 앱 로그는 저장소 루트 `logs/commerce-api.json`에 쌓이고 Alloy가 Loki(`127.0.0.1:3100`)로 보낸다. 로그가 들어오는지는 `logs/` 폴더가 아니라 이 **파일**로 확인한다(폴더는 모니터링 기동 때 미리 생긴다).
+- 앱 로그는 `docker/.env`의 `COMMERCE_LOG_DIR`(기본 저장소 루트 `logs/`)의 `commerce-api.json`에 쌓이고 Alloy가 Loki(`127.0.0.1:3100`)로 보낸다. 로그가 들어오는지는 `logs/` 폴더가 아니라 이 **파일**로 확인한다(폴더는 모니터링 기동 때 미리 생긴다).
 - label은 `app`·`level`뿐이다. `orderId`·`providerOrderId`·`attemptKey`·`transactionKey`는 structured metadata다.
 - 대시보드 "주문 번호로 경계 로그" 패널: 변수 `주문 번호(orderId)`에 번호를 넣는다.
 - Grafana Explore(Loki): 한 주문 `{app="commerce-api"} | orderId="101"`, PG 주문 번호 `{app="commerce-api"} | providerOrderId="LP-ORD-0000000101"`, 결과 모름 `{app="commerce-api", level="WARN"} |= "result=Unknown"`.

@@ -37,9 +37,15 @@ QUERIES = {
     "refund_requested_oldest_age_seconds": "max(commerce_payment_refund_requested_oldest_age_seconds)",
     # 환불 추적 막힌 원인(5c). outcome은 유한한 소문자 9값이라 LLM에 그대로 보내도 된다. 주문별이 아니라 분포만 묻는다.
     "refund_check_by_outcome_30m": "sum by (outcome) (increase(commerce_payment_refund_check_total[30m]))",
+    # 결제 반영 실패(7단계, DB에 APPLY_FAILED anomaly를 남길 때 함께 센다. source=create|callback|manual|automatic). 교차 확인 칸에만 쓴다.
+    "apply_failed_by_source_30m": "sum by (source) (increase(commerce_payment_apply_failed_total[30m]))",
 }
 # 경계 로그는 logger OrderApplicationService가 남긴다(설계 문서 10주차 2-2). label은 app·level만 있다.
 LOKI_QUERY = '{app="commerce-api", level=~"WARN|ERROR"} |= "OrderApplicationService"'
+# 교차 확인(7단계): 결과 모름 WARN이 난 주문의 결제 시작 INFO도 Loki에 있으면 그 주문들의 로그 통로는 살아 있다.
+# 그래야 "반영 ERROR 0줄"을 수집 끊김이 아닌 부재로 읽을 수 있다. 주문 번호는 맞춰 보기만 하고 건수만 내보낸다.
+START_INFO_QUERY = '{app="commerce-api", level="INFO"} |= "OrderApplicationService" |= "PG 결제를 시작했습니다"'
+ORDER_ID_IN_MESSAGE = re.compile(r"\borderId=([^,\s]+)")
 LOKI_WINDOW_SECONDS = 30 * 60
 LOKI_LIMIT = 1000
 # LLM 호출은 전체 제한 시간보다 이만큼 먼저 끝낸다. 같은 시각에 끝나면 바깥 대기가 먼저 끝나 결정적 메시지 대신 원본이 간다.
@@ -212,12 +218,15 @@ def query_prometheus(config, deadline):
         # 분으로 줄여 보낸다. 2일(172800초)처럼 6자리 이상 숫자는 숫자 ID로 보여 LLM 전송 확인에 걸린다.
         "refund_requested_oldest_age_minutes": round(scalar(results["refund_requested_oldest_age_seconds"]) / 60),
         "refund_check_by_outcome_30m": by_label(results["refund_check_by_outcome_30m"], "outcome"),
+        # 지표가 아직 없으면(수집 전·앱 미배포) 0이 아니라 None이다. 부재를 0으로 읽지 않는다.
+        "apply_failed_30m": (round(sum(float(row["value"][1]) for row in results["apply_failed_by_source_30m"]), 1)
+                             if results["apply_failed_by_source_30m"] else None),
     }
 
 
-def query_loki(config, deadline, now_seconds):
+def loki_streams(config, deadline, now_seconds, query):
     params = {
-        "query": LOKI_QUERY,
+        "query": query,
         "start": str(int((now_seconds - LOKI_WINDOW_SECONDS) * 1e9)),
         "end": str(int(now_seconds * 1e9)),
         "limit": str(LOKI_LIMIT),
@@ -230,31 +239,67 @@ def query_loki(config, deadline, now_seconds):
         raise EvidenceError(f"Loki 조회 실패({type(e).__name__})") from e
     if body.get("status") != "success":
         raise EvidenceError(f"Loki 조회 실패(status={body.get('status')})")
-    kinds = {}
-    samples = []
     for stream in body["data"]["result"]:
         level = stream.get("stream", {}).get("level", "?")
         for _, line in stream.get("values", []):
-            try:
-                message = json.loads(line).get("message", "")
-            except ValueError:
-                message = line
-            key = (level, to_pattern(message))
-            kinds[key] = kinds.get(key, 0) + 1
-            samples.append(f"{level} {mask_sensitive(message)}")
+            yield level, line
+
+
+def parse_line(line):
+    """(message, orderId). orderId는 MDC 최상위 필드를 먼저 보고 없으면 메시지의 orderId=값을 본다."""
+    try:
+        fields = json.loads(line)
+    except ValueError:
+        fields = {"message": line}
+    message = fields.get("message", "")
+    order_id = fields.get("orderId")
+    if not order_id:
+        found = ORDER_ID_IN_MESSAGE.search(message)
+        order_id = found.group(1) if found else None
+    return message, order_id
+
+
+def query_loki(config, deadline, now_seconds):
+    kinds = {}
+    samples = []
+    unknown_order_ids = []
+    for level, line in loki_streams(config, deadline, now_seconds, LOKI_QUERY):
+        message, order_id = parse_line(line)
+        key = (level, to_pattern(message))
+        kinds[key] = kinds.get(key, 0) + 1
+        samples.append(f"{level} {mask_sensitive(message)}")
+        if level == "WARN" and "result=Unknown" in message:
+            unknown_order_ids.append(order_id)
     ordered = sorted(kinds.items(), key=lambda item: (-item[1], item[0]))
     return {
         "kinds": [{"level": level, "pattern": pattern, "count": count} for (level, pattern), count in ordered],
         "samples": samples[: config.max_log_lines],
         "total": sum(kinds.values()),
+        "unknown_order_ids": unknown_order_ids,
     }
+
+
+def query_started_order_ids(config, deadline, now_seconds):
+    started = set()
+    for _, line in loki_streams(config, deadline, now_seconds, START_INFO_QUERY):
+        message, order_id = parse_line(line)
+        if "PG 결제를 시작했습니다" in message and order_id:
+            started.add(order_id)
+    return started
 
 
 def collect_evidence(config, alert, deadline):
-    return {
-        "prometheus": query_prometheus(config, deadline),
-        "loki": query_loki(config, deadline, time.time()),
+    now_seconds = time.time()
+    prometheus = query_prometheus(config, deadline)
+    loki = query_loki(config, deadline, now_seconds)
+    started = query_started_order_ids(config, deadline, now_seconds)
+    unknown_order_ids = loki.pop("unknown_order_ids")
+    cross_check = {
+        "unknown_warn_lines": len(unknown_order_ids),
+        "with_start_info": sum(1 for order_id in unknown_order_ids if order_id in started),
+        "apply_failed_30m": prometheus.pop("apply_failed_30m"),
     }
+    return {"prometheus": prometheus, "loki": loki, "cross_check": cross_check}
 
 
 def alert_overview(alert):
@@ -286,6 +331,7 @@ def build_llm_input(overview, evidence, config):
         },
         "metrics": evidence["prometheus"],
         "boundary_log_kinds": evidence["loki"]["kinds"][:15],
+        "cross_check": evidence["cross_check"],
         "where_to_look": {
             "dashboard_panels": ["미확인 결제 상태별", "시작 대비 결과 모름 유입 비율(30분)", "만료 종결 증가(10분)",
                                  "환불 확인 대상 돈의 상태별·사람 담당 중", "환불 요청 정체 경과", "환불 추적 막힌 원인",
@@ -344,6 +390,10 @@ def render_guided(overview, evidence, ai_text, ai_note):
         f"근거(Loki, 최근 30분 경계 로그 WARN·ERROR {evidence['loki']['total']}줄):",
     ]
     lines += [f"- {k['count']}줄 {k['level']} {k['pattern']}" for k in evidence["loki"]["kinds"][:5]] or ["- 없음"]
+    c = evidence["cross_check"]
+    apply_failed = "지표 없음" if c["apply_failed_30m"] is None else f"{c['apply_failed_30m']:g}"
+    lines.append(f"교차 확인(최근 30분): Unknown WARN {c['unknown_warn_lines']}줄 중 같은 주문 시작 INFO "
+                 f"{c['with_start_info']}/{c['unknown_warn_lines']}, APPLY_FAILED counter {apply_failed}")
     if evidence["loki"]["samples"]:
         lines.append("대표 줄:")
         lines += [f"  {s}" for s in evidence["loki"]["samples"]]

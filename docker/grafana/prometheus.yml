@@ -22,3 +22,9 @@ scrape_configs:
     metrics_path: '/metrics'
     static_configs:
       - targets: ['guide:8080']
+
+  # 로그 수집 끊김(CommerceLogIngestionSilent, 7단계). Loki가 받은 줄 수를 본다. compose 내부망으로만 수집하고 포트는 새로 열지 않는다.
+  - job_name: 'loki'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['loki:3100']

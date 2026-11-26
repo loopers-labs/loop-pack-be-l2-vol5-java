@@ -316,12 +316,14 @@
 - 형식: Boot structured logging `logstash`. MDC 키(orderId 등)는 최상위 필드로 나간다.
 - 경로: 기본 `logs/<spring.application.name>.json`(api는 `logs/commerce-api.json`). `logging.file.name`이 있으면 그것을 쓴다. `logs/`는 git 무시다.
 - 롤링 **[임시]**: 파일 10MB, 보관 3개, 합계 100MB. `logging.logback.rollingpolicy.*`가 있으면 그것을 쓴다(`appenders/json-file-appender.xml`).
+- **[PL 결정 w10s7-P1]** 로그 디렉터리 한 출처: `docker/.env`의 `COMMERCE_LOG_DIR`(저장소 루트 기준 상대 경로, 기본 `logs`, 셸 값이 먼저). Alloy 마운트(`../${COMMERCE_LOG_DIR}`)와 앱을 띄우는 스크립트(`rehearsal.sh app`이 `LOGGING_FILE_NAME=<저장소>/$COMMERCE_LOG_DIR/commerce-api.json`)가 같은 값을 읽는다. 앱 설정 파일은 바꾸지 않는다(기본값 `logs/commerce-api.json`). 경로가 어긋나면 앱 기동 INFO의 로그 경로와 `.env` 값을 비교한다.
 - **[구현 판단, PL 결정]** `bootRun` 작업 폴더를 저장소 루트로 둔다(`apps/commerce-api/build.gradle.kts`, `workingDir = rootProject.projectDir`). 기본 경로가 상대 경로라 원래는 `apps/commerce-api/logs/`에 쌓여 Alloy가 못 읽었다(리허설 B1). 앱 설정의 다른 경로는 classpath라 영향이 없다.
 
 ### 10-3. Loki·Alloy
 
 - **[PL 결정 P1]** 수집은 local JSON 파일 + Alloy다. logback Loki appender(앱 의존성 추가)는 쓰지 않는다.
-- Alloy(`grafana/alloy:v1.10.1`, `docker/alloy/config.alloy`): 저장소 `logs/`를 읽기 전용으로 붙여 `*.json`을 읽는다.
+- Alloy(`grafana/alloy:v1.10.1`, `docker/alloy/config.alloy`): `COMMERCE_LOG_DIR`(10-2, 기본 저장소 `logs/`)를 읽기 전용으로 붙여 `*.json`을 읽는다.
+  - 읽은 위치(`/var/lib/alloy/data`)는 named volume `alloy-data`다(7단계). 재기동해도 같은 줄을 다시 보내지 않는다. compose 프로젝트 이름이 앞에 붙어 평소 `docker_alloy-data`, 리허설 `w10r-mon_alloy-data`로 나뉜다. `down -v`는 이 볼륨도 지우므로 다음 기동은 파일을 처음부터 읽는다(리허설 B9는 절차로 막는다).
   - label은 **`app`(파일 이름)·`level`만** 둔다. 값이 유한해야 색인이 늘지 않는다. `filename` label은 지운다.
   - **[PL 결정 P2]** structured metadata 4키: `orderId`·`providerOrderId`·`attemptKey`·`transactionKey`. label이 아니다. 찾기: `{app="commerce-api"} | orderId="11"`.
   - 로그 줄 본문은 바꾸지 않는다.
@@ -331,6 +333,11 @@
   - 사용 통계 보고를 끈다.
 - Grafana에 Loki 데이터소스(uid `loki`)를 provisioning했다. 대시보드에 "주문 번호로 경계 로그" 패널을 더했다.
 - 검사: `check-alerting.sh`에 Alloy `validate` + label이 app·level뿐인지, Loki `-verify-config`를 더했다.
+- **로그 수집 끊김 알림 `CommerceLogIngestionSilent`**(warning, 7단계). H2 기각("반영 ERROR 0줄")은 로그 부재에 기대므로 수집이 살아 있는지를 따로 본다.
+  - 식: 앱 `up` AND 10분 창 `logback_events_total` 증가 > 0 AND 10분 창 `loki_distributor_lines_received_total` 증가 = 0(지표가 없어도 0), for **[임시] 10m**(Alloy 재전송으로 자동 복구될 시간). 앱 로그 없는 조용한 시간·앱 down은 울리지 않는다. critical 금지(사람이 할 일이 있을 때만).
+  - Prometheus가 `loki:3100/metrics`를 compose 내부망으로 수집한다(job `loki`, 포트 새로 열지 않음). 지표 노출은 Loki 3.5.3 격리 컨테이너에 한 줄 push해 확인했다.
+  - Loki에 Alloy가 보낸 앱 로그만 들어온다는 전제다(앱별 구분 없음). 대시보드 패널 "로그 수집(앱 로그 이벤트 대비 Loki 수신, 10분)", runbook `#commercelogingestionsilent`.
+- 가이드 근거에 교차 확인 한 줄(7단계, 집계만): `Unknown WARN n줄 중 같은 주문 시작 INFO m/n, APPLY_FAILED counter x`(`commerce_payment_apply_failed_total` 30분 증가 합, 지표가 없으면 0이 아니라 "지표 없음"). 주문 번호는 맞춰 보기만 하고 건수만 보낸다.
 
 ### 10-4. critical 가이드 서버
 
@@ -903,11 +910,11 @@ REFUNDED일 때만 값이 있다. **우리가 본 경로**로 정한다.
 | 대량 장애 때 사람 담당 조회가 밀림 | `findDue`가 AUTO를 먼저 채우고 회차 상한 20은 AUTO·PERSON 합계다(11-15). AUTO 대상이 계속 20건 이상이면 PERSON 건 조회가 밀려 PG 사실로 담당을 자동 종료하는 것이 늦어진다 **[참모 19:41: 처리량 상한 20 유지가 우선]** | 사람은 지금 처리(11-19)로 한 건씩 당길 수 있다 |
 | 지금 처리 반영 실패의 로그 | 반영이 실패하면 응답은 500이다(첫 잠금 획득 실패는 503·`rejected=BUSY`이고 원인 기록이 없다. 다음 행). 누름 INFO(`outcome=APPLY_FAILED`)는 남지만 causeType ERROR 줄은 남지 않는다(일반 advice) | 목록의 `lastCheckOutcome=APPLY_FAILED`·`lastCheckCause`로 확인(runbook) |
 | 지금 처리 두 번째 잠금 실패 시 기록과 누름 로그가 엇갈림 | 지금 처리는 잠금을 두 번 잡는다. 첫 잠금 실패(503)는 회차가 돌지 않아 원인 기록이 없고 누름 로그는 `rejected=BUSY`다. 반영 TX의 두 번째 잠금에서 실패하면 원인 기록(`last_check_outcome`)은 `APPLY_FAILED`인데 누름 로그는 `rejected=BUSY`다. 한 사건이 두 이름으로 남는다 **[w10s5c-P5 추가, 드문 경로라 동작은 둔다]** | runbook: 503이면 잠시 뒤 다시 누른다. 목록의 `APPLY_FAILED`가 같은 시각 BUSY 누름과 겹치면 잠금 경합으로 읽는다 |
-| 주문의 포인트·쿠폰 실제 사용 | 주문이 포인트·쿠폰을 실제로 쓰는 경로(차감·쿠폰 사용 상태)는 주문 API에 없어(week8 23절) 증명 범위 밖이다 | E2E는 0이 아닌 잔액(5,000·10,000)·발급 쿠폰을 가진 채 사고를 겪고, 복구·반복·후속이 다시 차감·반환하지 않음(fault 시점 잔액·쿠폰 목록·가용 재고·잡힌 수량과 같음)까지 본다 **[참모 확인 중 w10s6-1]** |
+| 주문의 포인트·쿠폰 실제 사용 | 주문이 포인트·쿠폰을 실제로 쓰는 경로(차감·쿠폰 사용 상태)는 주문 API에 없어(week8 23절) 증명 범위 밖이다 | E2E는 0이 아닌 잔액(5,000·10,000)·발급 쿠폰을 가진 채 사고를 겪고, 복구·반복·후속이 다시 차감·반환하지 않음(fault 시점 잔액·쿠폰 목록·가용 재고·잡힌 수량과 같음)까지 본다 **[참모 22:31 ① 확정]** |
 | 테이블 없는 DB의 v3 이전 SQL | `migrate-payment-refund-cases-v3.sql`을 `payment_refund_cases`가 없는 DB에서 돌려 보지 않았다 | v2 뒤에 실행 |
 | 다중 인스턴스 | 잠금·한 번만 규칙은 테스트 DB의 동시성 테스트로만 봤다. 여러 인스턴스 배포는 하지 않았다 | 행 잠금으로 직렬화 |
 | runbook 에스컬레이션 대상 역할 이름 | **[미정]** 팀 정의 사항이다. runbook은 "에스컬레이션 대상 [미정]"으로만 적었다 | 팀이 정하면 runbook만 고친다 |
-| Alertmanager 그룹 재통지 지연·누락 | 같은 그룹(`alertname`·`severity`)은 `group_interval` 5m마다 통지한다. 리허설 2회차에서 resolved 통지 뒤 다시 울린 PaymentUnresolvedPiling이 다음 통지 전에 풀려 Slack 자리에 오지 않았다(B6). 운영 값(for 10m > 만료 2m)에서도 생길 수 있는지는 확인하지 않았다 | runbook: 알림이 늦거나 안 오면 Prometheus·Grafana firing 이력을 본다. 운영 `group_interval` 값 확인 필요. 개선은 범위 밖 |
+| Alertmanager 그룹 재통지 지연·누락 | 같은 그룹(`alertname`·`severity`)이 다시 울리면 통지가 최대 `group_interval`(5m) 늦고, 그 사이 풀리면 통지가 빠질 수 있다. 리허설 2회차에서 resolved 통지 뒤 다시 울린 PaymentUnresolvedPiling이 다음 통지 전에 풀려 Slack 자리에 오지 않았다(B6). 만료 알림(PaymentAbandonedPiling)이 겹으로 받친다 **[참모 22:32 A — Alertmanager 값 그대로]** | runbook: 알림이 늦거나 안 오면 Prometheus·Grafana firing 이력을 본다 |
 | 실제 Slack·LLM·Grafana MCP | 연결·호출하지 않았다(9-8·10-8). Viewer 토큰 생성은 승인 대상 | 가짜 수신기, 결정적 요약 |
 | 만료 경로 리허설 | ~~`PaymentAbandonedPiling`은 리허설하지 않았다(10-8)~~ → 6단계 2회차 장면 B·C에서 로컬로 1회 따라 했다(evidence `20261126T121317Z-965d8579`). 운영 규모·반복 실행은 없다 | promtool 테스트 + 로컬 리허설 1회 |
 
@@ -924,7 +931,7 @@ REFUNDED일 때만 값이 있다. **우리가 본 경로**로 정한다.
 | 4a | pacer 대기가 interrupt되면 요청 전체가 예외로 끝나 부분 결과를 잃는다 |
 | 4a | 미확인 목록의 결제 대기 수만 건 규모 쿼리 계획은 확인하지 않았다(9-8) |
 | 4b | streamer의 `spring.application.name`이 `commerce-api`다. local로 함께 띄우면 같은 로그 파일·같은 8081을 쓴다(10-8) |
-| 4b | Alloy 읽기 위치(`/var/lib/alloy/data`)가 볼륨이 아니다. 재기동하면 같은 줄이 다시 들어갈 수 있다(추정). 근거 관찰: 리허설 2회차 B9 — 실행 사이에 남은 `logs/commerce-api.json`을 새로 띄운 스택이 다시 읽어 Loki 질의에 이전 실행 줄이 섞였다(`docs/week10/rehearsal.md`). 같은 컨테이너 재기동에서의 중복은 직접 보지 않았다 |
+| 4b | ~~Alloy 읽기 위치(`/var/lib/alloy/data`)가 볼륨이 아니다~~ → 7단계에서 named volume `alloy-data`로 고침(`docker compose config`로 확인, 실제 재기동 중복 없음은 기동해 보지 않았다). 옛 기록: 재기동하면 같은 줄이 다시 들어갈 수 있다(추정). 근거 관찰: 리허설 2회차 B9 — 실행 사이에 남은 `logs/commerce-api.json`을 새로 띄운 스택이 다시 읽어 Loki 질의에 이전 실행 줄이 섞였다(`docs/week10/rehearsal.md`). 같은 컨테이너 재기동에서의 중복은 직접 보지 않았다 |
 | 4b | `grafana/grafana` 이미지 버전 미고정. 가이드 실패 시 Slack 자리에 원본 두 번, resolved 통지 최대 5분 늦음(10-4·10-8) |
 | 5단계 | 관리자 환불 목록은 `opened_at` 순 정렬인데 그 칸 인덱스가 없다. 대상이 많이 쌓이면 정렬 비용이 커진다 |
 | 5단계 | 기능 이전에 만료된 주문은 늦은 성공이 와야 대상이 생긴다(소급 생성 없음). 취소 호출 예외 때 WARN이 2줄 남는다 |
@@ -954,8 +961,9 @@ REFUNDED일 때만 값이 있다. **우리가 본 경로**로 정한다.
 | 30s | `app.yml:89` | 조회 회로 열림 대기(open-duration). 지나면 다음 조회가 탐색 호출, 일괄 확정 시작 전 503 판단 기준 | yml `payment.lookup.circuit.open-duration` | 9-6(정의는 week8 "PG별 조회 서킷 브레이커 [임시]") | 일치 |
 | 10MB·3개·100MB | `supports/logging/src/main/resources/appenders/json-file-appender.xml:6·7·8` | local JSON 로그 롤링 | `logging.logback.rollingpolicy.*` | 10-2 | 일치 |
 | 72h | `docker/loki/loki.yml:32` | Loki 보존 | Loki 설정 | 10-3 | 일치 |
-| 10s | `docker/guide/guide.py:90`(환경 변수 `:104`) | 가이드 근거 수집 제한 시간 | `GUIDE_TIMEOUT_SECONDS` | 10-4 | 일치 |
+| 10s | `docker/guide/guide.py:96`(환경 변수 `:110`) | 가이드 근거 수집 제한 시간 | `GUIDE_TIMEOUT_SECONDS` | 10-4 | 일치 |
 | 5m | `rules:205` | `GuideServerDown` 지속 | 규칙 | 10-4 | 일치 |
+| 10m 창·10m | `rules:227·229·230` | `CommerceLogIngestionSilent` 창·지속(지속 = Alloy 재전송으로 자동 복구될 시간) | 규칙 + `payment_test.yml` S1~S6·S5b | 10-3 | 일치 |
 | 2일 | `RC:28` | 자동 추적 기한 `handoff_at` | 도메인 상수(P8: 설정 아님) | 11-2·11-5 | 일치 |
 | 4일 | `RC:29` | 고객 약속 `promise_at` | 도메인 상수 | 11-2·11-5 | 일치 |
 | 1m | `RC:37`(사용 `RTS:283·360`, `order/app/OrderApplicationService.java:312`) | 첫 조회·환불 요청 뒤·결과 모름 뒤 jitter 상한, 배증 시작값 | 도메인 상수 | 11-5·11-14 | 일치 |

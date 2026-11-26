@@ -701,6 +701,62 @@
           "refId": "A"
         }
       ]
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "로그 수집(앱 로그 이벤트 대비 Loki 수신, 10분)",
+      "description": "앱이 낸 로그 이벤트(logback_events_total)와 Loki가 받은 줄(loki_distributor_lines_received_total)의 10분 증가. 앱 로그는 느는데 Loki 수신이 0인 채 10분 지속되면 CommerceLogIngestionSilent(warning). 그동안 로그 부재(예: 반영 ERROR 0줄)를 근거로 쓰지 않는다.\nrunbook: https://github.com/loopers-labs/loop-pack-be-l2-vol5-java/blob/L2J4Dot/docs/runbook/week10.md#commercelogingestionsilent",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 58,
+        "w": 24,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(increase(logback_events_total{job=\"spring-boot-app\"}[10m]))",
+          "legendFormat": "앱 로그 이벤트",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A"
+        },
+        {
+          "expr": "sum(increase(loki_distributor_lines_received_total{job=\"loki\"}[10m]))",
+          "legendFormat": "Loki 수신 줄",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "B"
+        }
+      ]
     }
   ],
   "links": [

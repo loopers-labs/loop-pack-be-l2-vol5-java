@@ -1,5 +1,5 @@
 # payment.yml 규칙 테스트(promtool test rules). 실행: scripts/ops/check-alerting.sh
-# 각 그룹은 계획의 장면 R1~R14 하나다(R9는 10주차 4b 가이드 서버 생존 감시, R10~R13은 5단계 환불 확인 대상, R14는 5c 환불 추적 반영 실패). L1~L5는 4b 추가 결제 확정 API p99 지연이다. 수치는 payment.yml의 [임시] 값(X=0.2%, N=20, M=10m, K=5)에 맞췄다.
+# 각 그룹은 계획의 장면 R1~R14 하나다(R9는 10주차 4b 가이드 서버 생존 감시, R10~R13은 5단계 환불 확인 대상, R14는 5c 환불 추적 반영 실패). S1~S6·S5b는 7단계 로그 수집 끊김(CommerceLogIngestionSilent). L1~L5는 4b 추가 결제 확정 API p99 지연이다. 수치는 payment.yml의 [임시] 값(X=0.2%, N=20, M=10m, K=5)에 맞췄다.
 # 시계열은 1분 간격이다. 'a+bxn'은 a에서 시작해 1분마다 b씩 n번 더한다.
 rule_files:
   - payment.yml
@@ -864,4 +864,144 @@ tests:
         exp_alerts: []
       - eval_time: 40m
         alertname: PaymentRefundApplyFailed
+        exp_alerts: []
+
+  # S 로그 수집 끊김(CommerceLogIngestionSilent, warning, 7단계). [임시] 창 10m, for 10m.
+  # 앱 로그 이벤트(logback_events_total)는 느는데 Loki가 받은 줄(loki_distributor_lines_received_total)이 10분 창에 0이다.
+  # 앱 로그가 없는 조용한 시간과 앱이 내려간 것은 수집 끊김이 아니다.
+
+  # S1 정상: 앱 로그와 Loki 수신이 함께 는다.
+  - name: S1 앱 로그와 Loki 수신이 함께 늘면 LogIngestionSilent 안 울림
+    interval: 1m
+    input_series:
+      - series: 'up{job="spring-boot-app", instance="host.docker.internal:8081"}'
+        values: '1x60'
+      - series: 'logback_events_total{job="spring-boot-app", instance="host.docker.internal:8081", application="commerce-api", level="info"}'
+        values: '0+20x60'
+      - series: 'loki_distributor_lines_received_total{job="loki", instance="loki:3100", tenant="fake"}'
+        values: '0+20x60'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: CommerceLogIngestionSilent
+        exp_alerts: []
+      - eval_time: 60m
+        alertname: CommerceLogIngestionSilent
+        exp_alerts: []
+
+  # S2 끊김: 10분부터 Loki 수신이 멈춘다. 10분 창이 모두 멈춘 뒤(20분)부터 조건이 참이고 10분 지속한 30분부터 울린다.
+  - name: S2 앱 로그는 느는데 Loki 수신이 멈춘 채 창 10분과 for 10분이 지나면 LogIngestionSilent warning 울림
+    interval: 1m
+    input_series:
+      - series: 'up{job="spring-boot-app", instance="host.docker.internal:8081"}'
+        values: '1x60'
+      - series: 'logback_events_total{job="spring-boot-app", instance="host.docker.internal:8081", application="commerce-api", level="info"}'
+        values: '0+20x60'
+      - series: 'loki_distributor_lines_received_total{job="loki", instance="loki:3100", tenant="fake"}'
+        values: '0+20x10 200x50'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: CommerceLogIngestionSilent
+        exp_alerts: []
+      - eval_time: 32m
+        alertname: CommerceLogIngestionSilent
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: 앱은 로그를 내는데 10분 넘게 Loki에 로그가 한 줄도 들어오지 않습니다. 로그 기반 진단(H2 반영 ERROR 0줄 등)을 믿을 수 없습니다.
+              runbook_url: https://github.com/loopers-labs/loop-pack-be-l2-vol5-java/blob/L2J4Dot/docs/runbook/week10.md#commercelogingestionsilent
+              dashboard_url: http://localhost:3000/d/commerce-payment-incident
+
+  # S3 조용한 시간: 앱이 떠 있지만 로그를 내지 않는다. Loki도 0줄이다. 수집 끊김이 아니다.
+  - name: S3 앱 로그가 없는 조용한 시간에는 Loki 0줄이어도 LogIngestionSilent 안 울림
+    interval: 1m
+    input_series:
+      - series: 'up{job="spring-boot-app", instance="host.docker.internal:8081"}'
+        values: '1x60'
+      - series: 'logback_events_total{job="spring-boot-app", instance="host.docker.internal:8081", application="commerce-api", level="info"}'
+        values: '50x60'
+      - series: 'loki_distributor_lines_received_total{job="loki", instance="loki:3100", tenant="fake"}'
+        values: '50x60'
+    alert_rule_test:
+      - eval_time: 40m
+        alertname: CommerceLogIngestionSilent
+        exp_alerts: []
+
+  # S4 Loki가 내려가 지표가 사라진다(수집 안 됨). 앱 로그는 계속 늘므로 수집 끊김으로 울린다.
+  - name: S4 Loki 수신 지표가 사라져도 앱 로그가 늘면 LogIngestionSilent warning 울림
+    interval: 1m
+    input_series:
+      - series: 'up{job="spring-boot-app", instance="host.docker.internal:8081"}'
+        values: '1x60'
+      - series: 'logback_events_total{job="spring-boot-app", instance="host.docker.internal:8081", application="commerce-api", level="info"}'
+        values: '0+20x60'
+      - series: 'loki_distributor_lines_received_total{job="loki", instance="loki:3100", tenant="fake"}'
+        values: '0+20x10 _x50'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: CommerceLogIngestionSilent
+        exp_alerts: []
+      - eval_time: 35m
+        alertname: CommerceLogIngestionSilent
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: 앱은 로그를 내는데 10분 넘게 Loki에 로그가 한 줄도 들어오지 않습니다. 로그 기반 진단(H2 반영 ERROR 0줄 등)을 믿을 수 없습니다.
+              runbook_url: https://github.com/loopers-labs/loop-pack-be-l2-vol5-java/blob/L2J4Dot/docs/runbook/week10.md#commercelogingestionsilent
+              dashboard_url: http://localhost:3000/d/commerce-payment-incident
+
+  # S5 앱이 내려갔다(up 0). 로그가 안 들어오는 것은 앱 때문이라 이 알림 대상이 아니다.
+  - name: S5 앱이 내려가면 Loki 0줄이어도 LogIngestionSilent 안 울림
+    interval: 1m
+    input_series:
+      - series: 'up{job="spring-boot-app", instance="host.docker.internal:8081"}'
+        values: '1x10 0x50'
+      - series: 'logback_events_total{job="spring-boot-app", instance="host.docker.internal:8081", application="commerce-api", level="info"}'
+        values: '0+20x10 _x50'
+      - series: 'loki_distributor_lines_received_total{job="loki", instance="loki:3100", tenant="fake"}'
+        values: '0+20x10 200x50'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: CommerceLogIngestionSilent
+        exp_alerts: []
+      - eval_time: 40m
+        alertname: CommerceLogIngestionSilent
+        exp_alerts: []
+
+  # S5b 수집이 끊긴 채 앱이 내려가면(12분) 남은 10분 창의 앱 로그 증가가 있어도 곧바로 풀린다. 앱 up 조건이 없으면 22분 무렵까지 울린다.
+  - name: S5b 수집이 끊긴 채 앱이 내려가면 남은 앱 로그 증가가 있어도 LogIngestionSilent가 풀림
+    interval: 1m
+    input_series:
+      - series: 'up{job="spring-boot-app", instance="host.docker.internal:8081"}'
+        values: '1x11 0x30'
+      - series: 'logback_events_total{job="spring-boot-app", instance="host.docker.internal:8081", application="commerce-api", level="info"}'
+        values: '0+20x11 _x30'
+      - series: 'loki_distributor_lines_received_total{job="loki", instance="loki:3100", tenant="fake"}'
+        values: '0x41'
+    alert_rule_test:
+      - eval_time: 18m
+        alertname: CommerceLogIngestionSilent
+        exp_alerts: []
+
+  # S6 짧은 끊김: Loki 수신이 15분 멈췄다가 Alloy 재전송으로 밀린 줄이 한꺼번에 들어온다.
+  # 10분 창이 0인 구간은 20~25분(6분)뿐이라 for 10m을 채우지 못한다. for를 빼면 이 경우가 울린다.
+  - name: S6 Loki 수신이 15분 멈췄다가 재전송으로 회복되면 LogIngestionSilent 안 울림
+    interval: 1m
+    input_series:
+      - series: 'up{job="spring-boot-app", instance="host.docker.internal:8081"}'
+        values: '1x60'
+      - series: 'logback_events_total{job="spring-boot-app", instance="host.docker.internal:8081", application="commerce-api", level="info"}'
+        values: '0+20x60'
+      - series: 'loki_distributor_lines_received_total{job="loki", instance="loki:3100", tenant="fake"}'
+        values: '0+20x10 200x15 500+20x35'
+    alert_rule_test:
+      - eval_time: 23m
+        alertname: CommerceLogIngestionSilent
+        exp_alerts: []
+      - eval_time: 26m
+        alertname: CommerceLogIngestionSilent
+        exp_alerts: []
+      - eval_time: 40m
+        alertname: CommerceLogIngestionSilent
         exp_alerts: []

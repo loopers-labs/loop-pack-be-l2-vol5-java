@@ -118,6 +118,9 @@ def prometheus_ok(path, body):
         result = [{"metric": {}, "value": [0, "4"]}]
     elif "commerce_payment_refund_requested_oldest_age_seconds" in query:
         result = [{"metric": {}, "value": [0, "900"]}]
+    elif "commerce_payment_apply_failed_total" in query:
+        result = [{"metric": {"source": "confirm"}, "value": [0, "0"]},
+                  {"metric": {"source": "auto"}, "value": [0, "0"]}]
     elif "unknown_entered" in query:
         result = [{"metric": {}, "value": [0, "0.006006006006006006"]}]
     else:
@@ -129,6 +132,23 @@ def loki_with(lines):
     def respond(path, body):
         return 200, {"status": "success", "data": {"resultType": "streams", "result": [
             {"stream": {"app": "commerce-api", "level": "WARN"}, "values": [[str(i), line] for i, line in enumerate(lines)]},
+        ]}}
+    return respond
+
+
+def start_info_line(order_id):
+    line = json.loads(log_line(f"PG 결제를 시작했습니다. orderId={order_id}, providerId=test-pg", order_id))
+    line["level"] = "INFO"
+    return json.dumps(line, ensure_ascii=False)
+
+
+def loki_with_start_info(warn_lines, info_lines):
+    """WARN·ERROR 질의에는 warn_lines, 결제 시작 INFO 질의에는 info_lines를 돌려준다."""
+    def respond(path, body):
+        query = parse_qs(urlparse(path).query)["query"][0]
+        level, lines = ("INFO", info_lines) if 'level="INFO"' in query else ("WARN", warn_lines)
+        return 200, {"status": "success", "data": {"resultType": "streams", "result": [
+            {"stream": {"app": "commerce-api", "level": level}, "values": [[str(i), line] for i, line in enumerate(lines)]},
         ]}}
     return respond
 
@@ -423,6 +443,35 @@ class GuideTest(GuideTestBase):
         sent = self.llm.requests[0]["body"].decode("utf-8")
         self.assertNotIn("172800", sent)
         self.assertIn("환불 요청 정체 경과(가장 오래된 건): 2880분", self.slack_messages()[0]["text"])
+
+    def test_g14_결과_모름_WARN과_같은_주문의_시작_INFO_대응_수와_APPLY_FAILED_counter를_집계로만_붙인다(self):
+        self.start(loki=loki_with_start_info(WARN_LINES, [start_info_line("101"), start_info_line("102")]),
+                   api_key="test-key")
+
+        status = self.post_alert(json.dumps(ALERT).encode())
+
+        self.assertEqual(200, status)
+        text = self.slack_messages()[0]["text"]
+        self.assertIn("교차 확인(최근 30분): Unknown WARN 3줄 중 같은 주문 시작 INFO 2/3, APPLY_FAILED counter 0", text)
+        self.assertEqual(1, len(self.llm.requests), "교차 확인은 건수뿐이라 LLM을 부른다")
+        sent = self.llm.requests[0]["body"].decode("utf-8")
+        content = json.loads(sent)["messages"][0]["content"]
+        self.assertIn('"cross_check": {"unknown_warn_lines": 3, "with_start_info": 2, "apply_failed_30m": 0.0}', content)
+        self.assertIsNone(re.search(r"\b(101|102|1234567)\b", sent), "주문 번호는 보내지 않는다")
+
+    def test_g15_APPLY_FAILED_counter가_아직_없으면_0이_아니라_지표_없음으로_적는다(self):
+        def prometheus_without_apply_failed(path, body):
+            if "commerce_payment_apply_failed_total" in parse_qs(urlparse(path).query)["query"][0]:
+                return 200, {"status": "success", "data": {"resultType": "vector", "result": []}}
+            return prometheus_ok(path, body)
+
+        self.start(prometheus=prometheus_without_apply_failed,
+                   loki=loki_with_start_info(WARN_LINES, [start_info_line("101")]))
+
+        self.post_alert(json.dumps(ALERT).encode())
+
+        text = self.slack_messages()[0]["text"]
+        self.assertIn("Unknown WARN 3줄 중 같은 주문 시작 INFO 1/3, APPLY_FAILED counter 지표 없음", text)
 
     def test_metrics_가동과_처리_실패_수를_낸다(self):
         self.start(prometheus=lambda path, body: (500, {"status": "error"}))

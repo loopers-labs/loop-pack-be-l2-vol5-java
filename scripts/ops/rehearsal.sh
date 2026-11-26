@@ -22,11 +22,15 @@
 #   --payment.lookup.scheduler.enabled=false        자동 재조회·만료 스케줄러를 끈다. test-pg 조회는 정상이라 켜 두면
 #                                                   몇 초 안에 자동 회복돼 "자동 재조회가 못 따라잡는" 사고가 재현되지 않는다
 #   --commerce.payment.unresolved-metric.refresh-interval=5s   gauge 갱신 15s → 5s
-# JSON 로그는 기본 경로(저장소 logs/commerce-api.json)에 쌓인다. bootRun은 저장소 루트에서 실행된다(build.gradle.kts).
+# 로그 디렉터리는 docker/.env의 COMMERCE_LOG_DIR(저장소 루트 기준 상대 경로, 셸 값이 먼저) 하나로 정한다(w10s7-P1).
+# 모니터링 compose의 Alloy 마운트와 app 단계의 LOGGING_FILE_NAME(= logging.file.name)이 같은 값을 쓴다.
+# 앱 기동 INFO가 실제 로그 경로를 찍는다. 어긋나면 그 경로와 docker/.env 값을 비교한다.
 set -euo pipefail
 unset DOCKER_CONFIG
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+COMMERCE_LOG_DIR="${COMMERCE_LOG_DIR:-$(sed -n 's/^COMMERCE_LOG_DIR=//p' "$ROOT/docker/.env")}"
+export COMMERCE_LOG_DIR="${COMMERCE_LOG_DIR:-logs}"
 APP_URL="${COMMERCE_API_URL:-http://localhost:8080}"
 PROM_URL="http://127.0.0.1:9090"
 AM_URL="http://127.0.0.1:9093"
@@ -54,7 +58,7 @@ case "${1:-}" in
         "${MON[@]}" up -d
         ;;
     app)
-        exec "$ROOT/gradlew" -p "$ROOT" :apps:commerce-api:bootRun --args="--payment.lookup.scheduler.enabled=false \
+        LOGGING_FILE_NAME="$ROOT/$COMMERCE_LOG_DIR/commerce-api.json" exec "$ROOT/gradlew" -p "$ROOT" :apps:commerce-api:bootRun --args="--payment.lookup.scheduler.enabled=false \
 --commerce.payment.unresolved-metric.refresh-interval=5s"
         ;;
     test-pg)

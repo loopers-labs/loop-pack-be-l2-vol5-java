@@ -159,8 +159,20 @@
 
 | ID | 발견 | 원인 | 이번 처리 | 고칠 곳(판단 필요) |
 | --- | --- | --- | --- | --- |
-| B6 | 같은 알림이 resolved 통지 뒤 다시 울리면 Slack 통지가 늦거나, 그 사이 풀리면 빠진다. 장면 B에서 사람은 다른 알림(PaymentAbandonedPiling)으로 사고를 알았다(3m46s) | Alertmanager는 `alertname`·`severity`로 묶고 같은 그룹은 `group_interval` 5m마다 통지한다(`group_wait` 30s, critical `repeat_interval` 1h). 장면 A의 Unresolved resolved 통지(12:21:11) 뒤 다음 통지 시점은 12:26:11이었다. 장면 B의 Unresolved는 12:23:57 firing, 12:24:41 해제(2분 만료가 결과 모름을 치움)라 그 전에 끝났다. 원인은 설정 값과 시각으로 맞춘 설명이다 | Prometheus에서 firing 이력을 직접 봤다 | runbook에 "알림이 늦거나 안 오면 Prometheus/Grafana에서 firing 이력을 본다" 추가(반영). 운영 값(for 10m > 만료 2m)에서도 같은 일이 생기는지, `group_interval` 조정 여부는 판단 필요 |
-| B7 | 스케줄러가 켜져 있으면 "다시 들어갈 때"의 수동 성공 1건이 `ALREADY_CLOSED`로 끝나 `RESOLVED`를 볼 수 없다 | 회로 반열림 직후 자동 재조회가 1s 안에 대상을 모두 확정했다 | 회로 닫힘은 Loki 줄로 간접 확인 | runbook "관리자 도구"에 "`ALREADY_CLOSED`면 자동이 먼저 처리한 것(정상), 다음 단계로" 추가(반영) |
+| B6 | 같은 알림이 resolved 통지 뒤 다시 울리면 Slack 통지가 늦거나, 그 사이 풀리면 빠진다. 장면 B에서 사람은 다른 알림(PaymentAbandonedPiling)으로 사고를 알았다(3m46s) | Alertmanager는 `alertname`·`severity`로 묶고 같은 그룹은 `group_interval` 5m마다 통지한다(`group_wait` 30s, critical `repeat_interval` 1h). 장면 A의 Unresolved resolved 통지(12:21:11) 뒤 다음 통지 시점은 12:26:11이었다. 장면 B의 Unresolved는 12:23:57 firing, 12:24:41 해제(2분 만료가 결과 모름을 치움)라 그 전에 끝났다. 원인은 설정 값과 시각으로 맞춘 설명이다 | Prometheus에서 firing 이력을 직접 봤다 | runbook에 "알림이 늦거나 안 오면 Prometheus/Grafana에서 firing 이력을 본다" 추가(반영). **결정(참모 22:32 A):** Alertmanager 값 그대로. 만료 알림(PaymentAbandonedPiling)이 겹으로 받친다 |
+| B7 | 스케줄러가 켜져 있으면 "다시 들어갈 때"의 수동 성공 1건이 `ALREADY_CLOSED`로 끝나 `RESOLVED`를 볼 수 없다 | 회로 반열림 직후 자동 재조회가 1s 안에 대상을 모두 확정했다 | 회로 닫힘은 Loki 줄로 간접 확인 | runbook "관리자 도구"에 "`ALREADY_CLOSED`면 자동이 먼저 처리한 것(정상), 다음 단계로" 추가(반영). **결정(참모 22:31):** 알림별 "다시 들어갈 때"의 수동 성공 조건을 `RESOLVED` 또는 `ALREADY_CLOSED`로 고침(환불 지금 처리는 409 `rejected=CONCLUDED`도 성공). 운영은 스케줄러가 켜진 게 정상이다 |
 | B8 | runbook Diagnosis 3의 `minAgeSeconds=300` 목록이 리허설에서 0건이다 | 리허설 규칙은 창 5m·for 1m이라 알림 때 주문이 5분 미만이다. 운영 규칙(for 10m)과 값이 다르다 | `rehearsal.sh unresolved`(minAge 없음)로 고정 | 리허설 절차에서만 minAge 없는 목록을 쓴다. runbook은 운영 값 그대로 |
 | B9 | Loki 질의·가이드 메시지 집계에 이전 실행 줄이 섞인다 | 저장소 `logs/commerce-api.json`이 실행 사이에 남아 새 Loki가 다시 읽는다. 주문 번호가 앱 재기동마다 1부터라 `orderId="4"` 같은 질의에 1회차·사전 실행 줄이 함께 나온다. Abandoned 가이드의 `result=Unknown` 13줄도 여러 실행의 합이다 | 시각으로 걸러 읽었다 | 리허설 시작 전 로그 파일을 비우거나 옮길지(리허설 절차) |
 | B10 | 앱만 재기동하면 test-pg에 같은 PG 주문 번호 거래가 남아 조회 결과가 두 건이 된다 | test-pg는 거래를 메모리에 두고, 앱 DB는 `ddl-auto create`로 비워져 `LP-ORD-0000000001`…이 겹친다 | 첫 시도(12:21:30~)를 중단하고 앱·test-pg를 함께 재기동 | 리허설 절차: 앱을 재기동하면 test-pg도 재기동한다 |
+
+### 다음 리허설 절차 (B8·B9·B10 반영, 참모 22:31 "리허설 절차 문서에만")
+
+runbook은 운영 값 그대로 두고 아래는 리허설에서만 따른다.
+
+| 순서 | 할 일 | 이유 |
+| --- | --- | --- |
+| 시작 전 | 저장소 로그 파일(`$COMMERCE_LOG_DIR/commerce-api.json`, 기본 저장소 `logs/`)을 비우거나 다른 이름으로 옮긴다. 옮긴 파일은 리허설 기록에 경로만 적는다 | B9: 이전 실행 줄이 새 Loki에 다시 들어가 `orderId` 질의·가이드 집계에 섞인다. Alloy 읽기 위치 볼륨(7단계)은 같은 compose 프로젝트 재기동의 중복만 막는다. `rehearsal.sh down`(down -v)은 그 볼륨도 지우므로 다음 실행은 파일을 처음부터 다시 읽는다 |
+| 앱 재기동 때 | test-pg도 함께 재기동한다(`test-pg.sh start`를 다시) | B10: 앱 DB는 `ddl-auto create`로 비워져 PG 주문 번호가 `LP-ORD-0000000001`부터 겹치고, test-pg는 거래를 메모리에 둬 조회 결과가 두 건이 된다 |
+| 앱 기동 | `rehearsal.sh app`은 `docker/.env`의 `COMMERCE_LOG_DIR`로 `LOGGING_FILE_NAME`을 넘긴다(w10s7-P1). 기동 INFO의 로그 경로가 Alloy가 읽는 폴더와 같은지 본다 | 로그 경로 한 출처(B1 재발 방지) |
+| 대상 고정 | runbook Diagnosis의 `minAgeSeconds=300` 목록 대신 `rehearsal.sh unresolved`(minAge 없음)로 고정한다 | B8: 리허설 규칙은 창 5m·for 1m이라 알림 때 주문이 5분 미만이다 |
+| 다시 들어갈 때 | 한 건 목록이 `ALREADY_CLOSED`여도 수동 성공으로 본다 | B7: 스케줄러가 켜진 장면에서는 자동이 먼저 확정한다 |

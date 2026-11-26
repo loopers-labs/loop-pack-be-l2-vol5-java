@@ -60,12 +60,17 @@ services:
       - loki-data:/loki
     command: ["-config.file=/etc/loki/loki.yml"]
 
-  # 앱 JSON 로그 수집(10주차 4b). 앱은 호스트 JVM에서 저장소 logs/ 아래에 쓴다. 읽기 전용으로 붙인다.
+  # 앱 JSON 로그 수집(10주차 4b). 앱은 호스트 JVM에서 로그 디렉터리에 쓴다. 읽기 전용으로 붙인다.
+  # 로그 디렉터리는 docker/.env의 COMMERCE_LOG_DIR 하나로 정한다(10주차 7단계, w10s7-P1). 저장소 루트 기준 상대 경로라 ../를 붙인다.
+  # 앱을 띄우는 스크립트도 같은 값으로 LOGGING_FILE_NAME을 넘긴다(scripts/ops/rehearsal.sh).
+  # 읽은 위치(어느 파일 몇 바이트까지)는 named volume alloy-data에 둔다. 재기동해도 같은 줄을 다시 보내지 않는다.
+  # compose 프로젝트 이름이 볼륨 이름 앞에 붙으므로 평소(docker_alloy-data)와 리허설(w10r-mon_alloy-data)은 다른 볼륨이다.
   alloy:
     image: grafana/alloy:v1.10.1
     volumes:
       - ./alloy/config.alloy:/etc/alloy/config.alloy:ro
-      - ../logs:/var/log/commerce:ro
+      - ../${COMMERCE_LOG_DIR:-logs}:/var/log/commerce:ro
+      - alloy-data:/var/lib/alloy/data
     command:
       - run
       - --server.http.listen-addr=0.0.0.0:12345
@@ -90,3 +95,4 @@ networks:
 
 volumes:
   loki-data:
+  alloy-data:
