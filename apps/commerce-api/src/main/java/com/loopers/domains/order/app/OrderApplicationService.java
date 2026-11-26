@@ -28,6 +28,7 @@ import com.loopers.domains.payment.app.port.PaymentRecordRepository;
 import com.loopers.domains.payment.app.port.PaymentRefundCaseRepository;
 import com.loopers.domains.payment.app.port.PaymentTransactionsLookup;
 import com.loopers.domains.payment.domain.PaymentRecord;
+import com.loopers.domains.payment.domain.RefundCase;
 import com.loopers.domains.product.app.ProductNotFoundException;
 import com.loopers.domains.product.app.port.ProductRepository;
 import com.loopers.domains.product.domain.Product;
@@ -302,8 +303,11 @@ public class OrderApplicationService {
         }
         returnReservedStock(order);
         orderRepository.save(order);
+        // 만료 당시 결과를 몰랐던 결제라 돈이 나갔을 수 있다. 환불 확인 대상을 같은 트랜잭션에서 열어 만료와 함께 commit·rollback한다.
+        RefundCase refundCase = RefundCase.openOnExpiry(payment, now);
         payment.expire();
         paymentRecordRepository.save(payment);
+        paymentRefundCaseRepository.save(refundCase);
         paymentAnomalyRepository.resolveTransient(orderId, now);
         paymentLookupScheduleRepository.delete(orderId);
         afterCommit(() -> paymentOutcomeRecorder.record(Outcome.EXPIRED));
@@ -485,10 +489,30 @@ public class OrderApplicationService {
                 recordAnomaly(order.getId(), Kind.CONFLICTING_RESULT, "status=" + report.status());
                 log.warn("종결된 주문에 반대 결제 결과가 들어와 반영하지 않았습니다. orderId={}, status={}, providerStatus={}",
                     order.getId(), order.getStatus(), report.status());
+                if (report.outcome() == Order.PaymentOutcome.SUCCEEDED) {
+                    trackLateSuccess(order, payment, report.transactionKey());
+                }
             }
             case ANOMALY -> throw new IllegalStateException("DRAFT 결과는 앞에서 처리해야 합니다.");
         }
         return OrderResult.from(order, Optional.of(payment));
+    }
+
+    // 종결된 주문에 돈이 나갔다는 결과다. 만료 주문은 환불 확인 대상으로 합류시키고, 결제 실패 주문은 결과 뒤집힘이라 사람에게 넘긴다.
+    // 환불 요청은 여기서 보내지 않는다(환불 스케줄러 한 곳).
+    private void trackLateSuccess(Order order, PaymentRecord payment, String transactionKey) {
+        Instant now = clock.instant();
+        Optional<RefundCase> found = paymentRefundCaseRepository.findByOrderId(order.getId());
+        RefundCase refundCase;
+        if (found.isPresent()) {
+            refundCase = found.get();
+            refundCase.joinLateSuccess(transactionKey, now);
+        } else if (order.getStatus() == Order.Status.PAYMENT_EXPIRED) {
+            refundCase = RefundCase.openOnLateSuccess(payment, transactionKey, now);
+        } else {
+            refundCase = RefundCase.handToHumanOnReversal(payment, transactionKey, now);
+        }
+        paymentRefundCaseRepository.save(refundCase);
     }
 
     // 결과 모름 유입은 UNKNOWN이 아닌 상태에서 UNKNOWN으로 처음 바뀐 반영만 센다. 이미 UNKNOWN인 기록의 재보고는 유입이 아니다.

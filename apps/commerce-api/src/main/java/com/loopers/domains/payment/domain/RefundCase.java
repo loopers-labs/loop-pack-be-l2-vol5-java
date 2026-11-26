@@ -50,22 +50,25 @@ public final class RefundCase {
         this.reason = reason;
     }
 
-    // 골격: w10s5 Green에서 만료 직전 상태·키 복사와 기한 계산을 채운다.
+    // 만료가 provider_status를 EXPIRED로 덮기 전에 불러야 만료 직전 상태가 남는다. 첫 조회는 만료 직후로 둔다.
     public static RefundCase openOnExpiry(PaymentRecord payment, Instant openedAt) {
         return new RefundCase(payment.getOrderId(), payment.getProviderId(), payment.getProviderOrderId(), payment.getAmount(),
-            null, null, null, null, null, null, null, 0, null, null, null);
+            Status.TRACKING, payment.getProviderStatus(), payment.getTransactionKey(), openedAt, openedAt.plus(HANDOFF_AFTER),
+            openedAt.plus(PROMISE_AFTER), openedAt, 0, null, null, null);
     }
 
-    // 골격: 이 기능 이전에 만료되어 대상 기록이 없는 주문의 늦은 성공.
+    // 이 기능 이전에 만료되어 대상 기록이 없는 주문이다. 만료 직전 상태는 이미 덮였으므로 비우고, 기한은 알게 된 시각부터 센다.
     public static RefundCase openOnLateSuccess(PaymentRecord payment, String transactionKey, Instant now) {
         return new RefundCase(payment.getOrderId(), payment.getProviderId(), payment.getProviderOrderId(), payment.getAmount(),
-            null, null, null, null, null, null, null, 0, null, null, null);
+            Status.TRACKING, null, transactionKey, now, now.plus(HANDOFF_AFTER), now.plus(PROMISE_AFTER), now, 0, null, null,
+            null);
     }
 
-    // 골격: PG가 FAILED라 했던 주문의 늦은 성공. 자동 환불하지 않고 사람에게 바로 넘긴다(Q2).
+    // PG가 FAILED라 했다가 SUCCESS가 된 결과 뒤집힘은 자동 판단의 근거가 깨진 것이라 자동 환불하지 않고 바로 사람에게 넘긴다(Q2).
     public static RefundCase handToHumanOnReversal(PaymentRecord payment, String transactionKey, Instant now) {
         return new RefundCase(payment.getOrderId(), payment.getProviderId(), payment.getProviderOrderId(), payment.getAmount(),
-            null, null, null, null, null, null, null, 0, null, null, null);
+            Status.HANDED_TO_HUMAN, payment.getProviderStatus(), transactionKey, now, now, now.plus(PROMISE_AFTER), null, 0, null,
+            now, RESULT_REVERSED);
     }
 
     public static RefundCase restore(long orderId, String providerId, String providerOrderId, Money amount, Status status,
@@ -76,8 +79,31 @@ public final class RefundCase {
             handoffAt, promiseAt, nextCheckAt, checkAttempts, refundRequestedAt, concludedAt, reason);
     }
 
-    // 골격: 만료 주문의 늦은 성공 키를 저장하고 다음 조회를 지금으로 당긴다.
+    // 환불은 스케줄러 한 곳에서만 보낸다. 여기서는 키를 남기고 조회를 당길 뿐 환불 요청 상태를 건드리지 않는다.
+    // 돈 안 나감으로 닫은 뒤의 성공은 결과 뒤집힘이라 사람에게 넘긴다. 환불 완료·사람 이관은 끝난 결론이라 그대로 둔다.
     public void joinLateSuccess(String reportedTransactionKey, Instant now) {
+        switch (status) {
+            case TRACKING -> {
+                storeKey(reportedTransactionKey);
+                nextCheckAt = now;
+            }
+            case REFUND_REQUESTED, REFUND_UNKNOWN -> storeKey(reportedTransactionKey);
+            case CLOSED_NO_CHARGE -> {
+                storeKey(reportedTransactionKey);
+                status = Status.HANDED_TO_HUMAN;
+                reason = RESULT_REVERSED;
+                concludedAt = now;
+                nextCheckAt = null;
+            }
+            case REFUNDED, HANDED_TO_HUMAN -> {
+            }
+        }
+    }
+
+    private void storeKey(String reportedTransactionKey) {
+        if (transactionKey == null && reportedTransactionKey != null) {
+            transactionKey = reportedTransactionKey;
+        }
     }
 
     public long getOrderId() {

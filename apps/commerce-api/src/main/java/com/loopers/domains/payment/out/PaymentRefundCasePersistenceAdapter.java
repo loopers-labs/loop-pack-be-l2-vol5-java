@@ -6,7 +6,6 @@ import java.util.Optional;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
-// 골격: w10s5 Green에서 저장·조회를 채운다.
 @Repository
 @Transactional
 public class PaymentRefundCasePersistenceAdapter implements PaymentRefundCaseRepository {
@@ -18,12 +17,19 @@ public class PaymentRefundCasePersistenceAdapter implements PaymentRefundCaseRep
 
     @Override
     public RefundCase save(RefundCase refundCase) {
-        return refundCase;
+        // 호출자가 주문 행을 잠근 트랜잭션에 참여한다. 같은 주문의 대상 갱신도 그 잠금으로 직렬화된다.
+        PaymentRefundCaseJpaEntity entity = paymentRefundCaseJpaRepository.findById(refundCase.getOrderId())
+            .map(found -> {
+                found.update(refundCase);
+                return found;
+            })
+            .orElseGet(() -> new PaymentRefundCaseJpaEntity(refundCase));
+        return paymentRefundCaseJpaRepository.save(entity).toRefundCase();
     }
 
     @Override
     @Transactional(readOnly = true)
     public Optional<RefundCase> findByOrderId(long orderId) {
-        return Optional.empty();
+        return paymentRefundCaseJpaRepository.findById(orderId).map(PaymentRefundCaseJpaEntity::toRefundCase);
     }
 }
