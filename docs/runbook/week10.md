@@ -90,7 +90,7 @@ local·dev 전용. 셸에 `COMMERCE_ADMIN_USERNAME`·`COMMERCE_ADMIN_PASSWORD`�
 
 **Mitigation.**
 - `LOOKUP_LIMIT_EXHAUSTED`(조회 소진): PG가 회복됐으면 일괄 확정으로 조회한다. 사람 확인 건도 같은 경로로 처리된다.
-- `TRANSACTION_MISMATCH`·`DUPLICATE_TRANSACTIONS` 등: 일괄 확정은 `STOPPED`로 멈춘다(정상). PG 콘솔에서 이 주문의 실제 거래를 확인하고 결제 담당 리드에게 넘긴다.
+- `TRANSACTION_MISMATCH`·`DUPLICATE_TRANSACTIONS` 등: 일괄 확정은 `STOPPED`로 멈춘다(정상). PG 콘솔에서 이 주문의 실제 거래를 확인하고 에스컬레이션 대상 [미정]에게 넘긴다.
 - 해소: 사람 확인 결제 0건.
 - 금지: 공통 금지. 상태를 DB에서 바꾸지 않는다.
 
@@ -125,7 +125,7 @@ PG 미발송 종결 · warning · 패널 "종결 결과별 증가(10분)"
 2. PG 상태 페이지·네트워크·PG 주소 설정을 확인한다.
 
 **Mitigation.**
-- PG·네트워크 담당에 알린다. 회복되면 새 결제는 정상으로 돌아온다.
+- 에스컬레이션 대상 [미정]에게 알린다(PG·네트워크 문제). 회복되면 새 결제는 정상으로 돌아온다.
 - 해소: 10분 미발송 5건 미만.
 - 금지: 실패한 주문의 결제를 다시 보내지 않는다.
 
@@ -143,7 +143,7 @@ PG 미발송 종결 · warning · 패널 "종결 결과별 증가(10분)"
 
 **Mitigation.**
 - PG 지연이면 PG 상태를 확인하고 PaymentUnresolvedPiling이 울리는지 지켜본다.
-- 앱·DB 전체 느림이면 서비스 담당에 넘긴다.
+- 앱·DB 전체 느림이면 에스컬레이션 대상 [미정]에게 넘긴다.
 - 해소: p99 1s 이하 또는 5분 100건 미만.
 - 금지: timeout·임계값을 현장에서 바꾸지 않는다.
 
@@ -205,19 +205,21 @@ PG 미발송 종결 · warning · 패널 "종결 결과별 증가(10분)"
 | `MISMATCH` | PG 거래가 주문·금액과 안 맞거나 여러 건 | PG 콘솔로 실제 거래를 확인하고 사람 기록. 지금 처리로는 풀리지 않는다 |
 | `PENDING`·`EMPTY` | PG가 아직 결론을 안 줌·거래 없음 | 기다리거나(다음 조회 30m 상한) 지금 처리 |
 | `CANCEL_UNKNOWN` | 환불 요청 응답을 잃음 | 조회만 한다. 지금 처리(조회만 한다)는 괜찮다. 환불을 다시 보내지 않는다 |
-| `CANCEL_REJECTED` | PG가 우리 환불 요청을 거절 | PG 콘솔에서 거절 이유·취소 여부를 확인한다 |
+| `CANCEL_REJECTED` | PG가 우리 환불 요청을 효과 없이 거절(돈은 CHARGED로 돌아옴) | PG 콘솔에서 거절 이유·취소 여부를 확인한다. 원인을 고친 뒤 지금 처리를 다시 누르면 환불을 다시 요청한다(PG가 첫 요청이 효과 없었다고 답한 경우만) [참모 확인 중 w10s5c-1] |
 | `OK` | 마지막 확인은 정상 처리됨 | 돈이 끝났으면 담당이 이미 닫혔다. CHARGED로 남았으면 사람 담당이라 자동 환불을 안 한 것이다. 지금 처리로 환불을 요청한다 |
 
 **Mitigation.**
 1. **지금 처리**(그 자리에서 이 건 하나를 조회·반영하고 결과를 돌려준다):
    `scripts/ops/admin-curl.sh POST /api-admin/v1/payments/refund-cases/101/process-now`
-   - 돈 CHARGED면 환불 요청을 **한 번** 보낸다. REFUND_REQUESTED·REFUND_UNKNOWN이면 조회만 한다(다시 보내지 않는다). 두 번 눌러도 환불 요청은 한 번이다.
+   - 돈 CHARGED면 환불 요청을 **한 번** 보낸다. REFUND_REQUESTED·REFUND_UNKNOWN이면 조회만 한다(다시 보내지 않는다). 요청이 나간 뒤 다시 눌러도 조회만 한다.
+   - 예외: PG가 환불 요청을 효과 없이 거절(`CANCEL_REJECTED`, 돈 CHARGED)한 뒤 다시 누르면 환불을 다시 요청한다. PG가 첫 요청이 효과 없었다고 명시한 경우만이다 [참모 확인 중 w10s5c-1].
    - 조회 회로가 열려 있으면 PG를 부르지 않고 `PG_UNREACHABLE`로 답한다. 상태는 그대로다. 몇 분 뒤 다시 누른다.
 2. 결과 읽기: 응답의 돈의 상태·담당·`lastCheckOutcome`·`lastCheckCause`.
    - 돈이 `REFUNDED`·`NO_CHARGE`면 끝. 담당이 자동으로 닫힌다(닫은 사람 = 누른 관리자).
    - 돈이 `REFUND_REQUESTED`면 환불 요청이 나갔다. 다음 조회가 결과를 기록한다.
    - 그 밖이면 사람 담당 그대로다. `lastCheckOutcome`으로 Diagnosis 3의 표를 다시 본다.
    - 409 = 담당 AUTO, 담당 이미 닫힘, 돈 이미 끝남. 대상은 그대로다. 없는 주문 404.
+   - 500(잠금 획득 실패면 503)이면 목록(`?refundOwner=PERSON`)에서 그 건의 `lastCheckOutcome=APPLY_FAILED`·`lastCheckCause`를 확인한다(PaymentRefundApplyFailed).
 3. `MISMATCH`·`CANCEL_REJECTED`처럼 PG 콘솔 판단이 필요하면: PG 콘솔에서 실제 승인·취소를 확인한다. 콘솔에서 수동 환불했으면 다음 조회(30m 상한)를 기다린다. 시스템이 환불됨으로 닫는다.
 4. PG 조회가 안 되는데 콘솔·정산으로 결론을 확인했을 때만 사람 기록을 남긴다(환불 확인 대상 읽는 법의 표).
 - 사람 담당은 자동으로 돌아가지 않는다. 되돌리기 기능은 없다. 지금 처리나 사람 기록으로 끝낸다.
@@ -238,7 +240,7 @@ PG 미발송 종결 · warning · 패널 "종결 결과별 증가(10분)"
 3. 한 주문의 경계 로그: `scripts/ops/rehearsal.sh loki 101`. Grafana Explore: `{app="commerce-api", level="ERROR"} | orderId="101"`. `causeType`으로 DB 연결·잠금·제약 위반·코드 오류를 가른다.
 
 **Mitigation.**
-- DB 장애면 DB 담당에, 코드 오류면 서비스 담당에 넘긴다. 고치기 전에는 지금 처리를 눌러도 같은 실패다.
+- DB 장애·코드 오류 모두 에스컬레이션 대상 [미정]에게 넘긴다. 고치기 전에는 지금 처리를 눌러도 같은 실패다.
 - 고친 뒤: 자동 담당 건은 다음 회차가 다시 조회한다. 사람 담당 건은 지금 처리(PaymentRefundNeedsPerson Mitigation 1).
 - 해소: 15분 창에 새 `apply_failed`가 없다(마지막 실패 뒤 약 15분).
 - 금지: 공통 금지. 특히 DB에서 돈의 상태를 직접 고치지 않는다.
@@ -311,7 +313,7 @@ PG 미발송 종결 · warning · 패널 "종결 결과별 증가(10분)"
 2. `docker compose -f docker/monitoring-compose.yml logs guide`(오류 종류만 본다).
 
 **Mitigation.**
-- `docker compose -f docker/monitoring-compose.yml restart guide`. 반복되면 모니터링 담당에 넘긴다.
+- `docker compose -f docker/monitoring-compose.yml restart guide`. 반복되면 에스컬레이션 대상 [미정]에게 넘긴다.
 - 그동안 critical은 원본 알림과 이 runbook으로 대응한다.
 - 금지: 환경 변수(`ANTHROPIC_API_KEY` 등)를 출력·공유하지 않는다.
 

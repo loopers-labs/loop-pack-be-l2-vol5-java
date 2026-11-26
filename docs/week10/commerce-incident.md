@@ -641,9 +641,11 @@ REFUNDED일 때만 값이 있다. **우리가 본 경로**로 정한다.
 | `REFUND_REQUESTED` / * | 취소 응답 RejectedNoEffect | 스케줄러 | `CHARGED`(효과 없음). AUTO면 PERSON(`REFUND_REJECTED`), 이미 PERSON이면 처음 사유 유지(P6). 30m 상한 조회 |
 | 비종결 / AUTO | now ≥ `handoff_at` | 스케줄러 | 돈 그대로 / PERSON(`HANDOFF_DEADLINE`) (정책 1). 그 회차는 PG를 부르지 않는다. 다음 조회 30m 상한 |
 | 사람 담당 중, 돈 비종결 4값 | 관리자 "환불함" 기록 | 사람 | `REFUNDED`, actor `PERSON`, 담당 종료(관리자 이름) (11-17) |
-| 사람 담당 중, `CHECKING` | 관리자 "청구 없음" 기록 | 사람 | `NO_CHARGE`, actor 없음, 담당 종료(관리자 이름) (11-17) |
+| 사람 담당 중, ~~`CHECKING`~~ → `CHECKING`·`CHARGED` (R1) | 관리자 "청구 없음" 기록 | 사람 | `NO_CHARGE`, actor 없음, 담당 종료(관리자 이름) (11-17) |
+| 사람 담당 중, 돈 비종결 4값 | 관리자 "지금 처리" | 사람 | 같은 회차를 이 건 하나에 지금 돌린다. `CHARGED`면 환불 요청 1회(11-19) |
 | 끝난 돈 | — | — | 끝. 스케줄러는 조회·취소하지 않는다. `next_check_at` null |
 
+- **R3 [참모 19:41]**: 조회 결과를 반영할 때 잠금 아래에서 `now ≥ handoff_at`이면(자동 담당) 먼저 담당을 PERSON(`HANDOFF_DEADLINE`)으로 바꾼 뒤 결과를 적용한다. 조회 중 기한을 넘긴 SUCCESS도 취소 없이 `CHARGED` / PERSON이 된다.
 - 응답을 기다리는 사이 돈이 `REFUND_REQUESTED`가 아니게 된 경우 늦은 취소 결과는 반영하지 않고 WARN(orderId, 돈의 상태, 결과 종류)만 남긴다(11-3과 같다).
 - 거래 0건은 여전히 "돈 안 나감"의 근거가 아니다 **[사용자 결정 Q1 ①]**.
 
@@ -666,7 +668,8 @@ REFUNDED일 때만 값이 있다. **우리가 본 경로**로 정한다.
 - 대상 선택은 담당이 아니라 **돈의 상태(비종결)**로 고른다. 담당이 사람이어도 돈이 끝나지 않았으면 시스템이 계속 PG를 조회한다. 간격만 길다(30m 상한 [임시]).
 - PG 사실로 돈이 끝나면(CANCELED → `REFUNDED`, `CHECKING`의 단일 FAILED → `NO_CHARGE`) 사람 담당을 같은 TX에서 자동으로 닫는다(`owner_closed_by = SYSTEM`). 사람이 PG 화면에서 환불한 건도 다음 조회에서 이렇게 닫힌다.
 - **자동 환불(취소 호출)은 담당 AUTO일 때만 보낸다.** 사람 담당이면 조회만 한다(사람이 맡은 건에 시스템이 끼어들지 않는다 — 목적별 경계).
-  - **사람 담당 건 취소 여부는 사용자 확인 중, 현재 보내지 않음.** 답이 다르면 `RefundCase.canRequestRefund()` 가드 한 곳과 그 테스트만 바뀐다.
+  - ~~**사람 담당 건 취소 여부는 사용자 확인 중, 현재 보내지 않음.**~~ → 자동 회차는 계속 보내지 않는다. 사람이 "지금 처리"를 누른 회차만 `CHARGED`에서 보낸다(11-19, 사용자 결정 w10s5c). 판단은 `RefundCase.canRequestRefund(trigger)` 한 곳이다.
+- 기한 경계 **[R3, 참모 19:41]**: 조회 중 기한을 넘기면 반영 전에 담당이 먼저 사람으로 바뀐다(11-12). 그래서 기한 경계에서 사람 담당 건에 자동 취소가 나가지 않는다.
 - 사람이 기록해야 하는 경우는 PG로 확인되지 않는 결론뿐이다(11-17).
 
 ### 11-14. 다음 조회 시각 jitter [사용자 지시 2026-11-26 17:36, PL 결정 P5]
@@ -764,9 +767,10 @@ REFUNDED일 때만 값이 있다. **우리가 본 경로**로 정한다.
 | 결과 | 허용 | 저장 |
 | --- | --- | --- |
 | `REFUNDED` | 사람 담당 중 + 돈 비종결 4값 | `REFUNDED`, actor `PERSON`, `concluded_at`·`owner_closed_at` = 지금, `owner_closed_by` = 관리자 인증 이름 |
-| `NO_CHARGE` | 사람 담당 중 + 돈 `CHECKING`만 | `NO_CHARGE`, actor 없음, 같은 종료 칸 |
+| `NO_CHARGE` | 사람 담당 중 + 돈 ~~`CHECKING`만~~ → `CHECKING` 또는 `CHARGED` **[R1, 참모 19:41]** | `NO_CHARGE`, actor 없음, 같은 종료 칸 |
 
-- 그 밖은 409다: 담당 AUTO, 담당이 이미 닫힘, 돈이 이미 끝남, `CHARGED`·`REFUND_REQUESTED`·`REFUND_UNKNOWN`에 `NO_CHARGE`(PG가 청구를 확인했거나 환불을 이미 요청한 건에 "청구 없음"은 돈 칸과 모순, P7). 409면 대상은 그대로다.
+- 그 밖은 409다: 담당 AUTO, 담당이 이미 닫힘, 돈이 이미 끝남, ~~`CHARGED`·~~`REFUND_REQUESTED`·`REFUND_UNKNOWN`에 `NO_CHARGE`(~~PG가 청구를 확인했거나~~ 환불을 이미 요청한 건에 "청구 없음"은 돈 칸과 모순, P7). 409면 대상은 그대로다.
+- R1 근거: 사람 담당이 된 `CHARGED`는 대부분 불일치·복수·뒤집힘이라 PG가 말한 청구가 우리 주문 것이 아닐 수 있고 최종 판단은 사람이 한다(`owner_reason`은 남아 맥락 보존). 환불 요청 뒤 돈은 우리가 취소를 보냈을 수 있어 "청구 없음"이 아니다.
 - 대상 없음 404, 본문 형식 오류 400, 비관리자·미식별 403, CSRF 없음 403.
 - **PG 호출·재결제·DB 강제 변경은 없다.** 사실 기록만 한다. 결론 counter(`actor=person`)는 commit 뒤 1, rollback이면 0.
 - 위치: 컨트롤러 `order/in/AdminRefundCaseController`(공용 예외 advice 범위), 서비스 `payment/app/RefundPersonResolutionService`, 규칙 판단은 도메인 `RefundCase.resolveByPerson`.
@@ -778,3 +782,47 @@ REFUNDED일 때만 값이 있다. **우리가 본 경로**로 정한다.
 - 운영 데이터 이전(5단계 미배포, 로컬 이전 SQL만)
 - 고객 주문 응답에 환불 상태 노출(Q4 유지), 고객 알림
 - 부분 환불, 정산 파일 대사, 실제 PG 연동(취소 API는 [가정])
+
+### 11-19. 5c 막힌 원인·지금 처리 [사용자 결정 w10s5c, 참모 19:48]
+
+- 사용자: "사람이 PG사에 전화하는 게 아니라 버튼을 눌러 보지 않을까?" / "PG는 멀쩡한데 우리 문제면 왜 그런지 DLT처럼 확인·분석할 수 있어야" / 되돌린 뒤 기한: "바로 처리가 가능해야겠지."
+- 그래서 버튼은 누르면 그 자리에서 이 건 하나를 처리하고 결과를 바로 돌려준다. 끝나지 않으면 사람 담당 그대로, 막힌 원인만 갱신된다.
+
+**마지막 확인 칸** (`payment_refund_cases`, 자동 회차·지금 처리 모두 갱신)
+
+| 칸 | 뜻 |
+| --- | --- |
+| `last_check_at` | 마지막 확인 시각 |
+| `last_check_outcome` | 마지막 확인 결과(아래 9값) |
+| `last_check_cause` | 원인. 예외 클래스 단순 이름이나 우리 코드가 만든 고정 문자열(HTTP 상태 코드 등)만. 없으면 null |
+
+| outcome | 언제 |
+| --- | --- |
+| `PG_UNREACHABLE` | 조회가 PG에 닿지 않음(타임아웃·연결·조회 예외), 조회 회로가 막혀 PG를 부르지 않음 |
+| `PG_ERROR` | PG가 오류로 답함 |
+| `APPLY_FAILED` | 조회 결과는 받았는데 우리 반영이 예외로 실패(DB·버그) |
+| `MISMATCH` | 거래 불일치·복수 거래, 청구 확인 이후 돈에 일치 단일 FAILED(사실이 엇갈림) |
+| `PENDING` | PG 거래가 아직 PENDING |
+| `EMPTY` | 거래 0건 |
+| `CANCEL_UNKNOWN` | 환불 요청(취소) 결과 모름·미발송·호출 예외 |
+| `CANCEL_REJECTED` | PG가 취소를 효과 없이 거절 |
+| `OK` | 마지막 확인이 정상 처리됨(결론 또는 진행) **[PL 결정 P1]** |
+
+- cause 규칙 **[PL 결정 P4]**: PG가 준 텍스트(거절 코드·응답 본문)와 예외 메시지는 넣지 않는다. 회로로 PG를 부르지 않았으면 null. 최대 100자(`MAX_CHECK_CAUSE_LENGTH`, 칸 `VARCHAR(100)`), 넘으면 자른다.
+- counter `commerce.payment.refund_check{outcome}`: outcome 소문자 9값, 회차당 한 번 최종 분류로 commit 뒤 센다.
+- **`APPLY_FAILED`는 별도 TX로 남긴다 [PL 결정 P3·P4]**: 반영 TX가 rollback된 **뒤**(잠금이 풀린 뒤) `RefundCheckFailureRecorder`(REQUIRES_NEW)가 마지막 확인 칸만 쓴다. 반영 TX 안에서 쓰면 rollback으로 함께 사라진다. 돈의 칸은 그대로다. 원인 기록이 실패해도 원래 예외를 덮지 않는다(ERROR 로그에 `causeType`만 남기고 원래 예외를 다시 던진다).
+- 알림 `PaymentRefundApplyFailed`(warning): `sum(increase(commerce_payment_refund_check_total{outcome="apply_failed"}[15m])) > 0`, `for: 5m` [임시]. PG가 아니라 우리 쪽 문제다. 대시보드 패널 "환불 추적 막힌 원인", runbook 앵커 `#paymentrefundapplyfailed`.
+- 관리자 목록(11-17) 항목에 `lastCheckAt`·`lastCheckOutcome`·`lastCheckCause`를 더한다.
+
+**지금 처리** — `POST /api-admin/v1/payments/refund-cases/{orderId}/process-now` (관리자 HTTP Basic + CSRF, 래퍼 `scripts/ops/admin-curl.sh`)
+
+- 받는 대상: 사람 담당 중(담당 종료 전) + 돈 비종결 4값. 다음 조회 시각과 무관하게 스케줄러와 같은 회차(잠금 아래 검사 → 잠금 밖 조회 → 잠금 아래 반영 → 요청 commit 뒤 취소 → 결과 반영)를 이 건 하나에 동기로 돌린다.
+- `CHARGED`(또는 이번 조회로 `CHARGED`가 된 `CHECKING`)에 일치 단일 SUCCESS면 사람 트리거이므로 환불 요청을 보낸다(`REFUND_REQUESTED` commit 뒤 취소 1회). 스케줄러 회차는 여전히 사람 담당 건에 보내지 않는다 **[PL 결정 P2: `canRequestRefund(trigger)` 한 곳]**.
+- `REFUND_REQUESTED`·`REFUND_UNKNOWN`은 조회만 한다. 다시 보내지 않는다(11-4).
+- 조회 회로가 막혔으면 PG를 부르지 않고 `PG_UNREACHABLE`을 남기고 돌려준다. 돈·담당은 그대로다.
+- 응답: 돈의 상태, 환불 주체, 담당, 담당 종료 시각·종료자, 마지막 확인 3칸. 돈이 끝나면 담당을 같은 TX에서 닫고 종료자는 누른 관리자 이름이다. 우리 취소로 끝나면 환불 주체 `SYSTEM`.
+- 409: 담당 AUTO, 담당 이미 닫힘, 돈 이미 끝남(대상 그대로). 404: 대상 없음. 403: 비관리자·CSRF 없음. 반영 실패는 오류 응답(보통 500, 잠금 획득 실패는 503)이고 그 건의 `lastCheckOutcome`이 `APPLY_FAILED`다.
+- **만들지 않는 것**: 사람 담당 → AUTO 되돌리기, 새 타이머·기한(사용자: "이틀 뒤면 처리한 사람도 까먹겠다").
+- 거절 뒤 재누름 **[참모 확인 중 w10s5c-1]**: PG가 취소를 효과 없이 거절하면(`CANCEL_REJECTED`) 돈은 `CHARGED`로 돌아가고 사람 담당 그대로다. 지금 처리를 다시 누르면 취소를 다시 보낸다(누를 때마다 1회, `refund_requested_at` 덮어씀). PG가 첫 요청이 효과 없었다고 명시한 경우라 이중 환불 위험이 없다는 판단이다. 참모 판단이 "막음"이면 이 동작과 그 테스트를 바꾼다.
+
+**로컬 이전 SQL** (`sql/migrate-payment-refund-cases-v3.sql`): v2 뒤에 실행한다. 세 칸을 NULL 허용으로 더한다(information_schema + PREPARE, v2와 같은 방식). 다시 실행하면 아무것도 바꾸지 않는다.
