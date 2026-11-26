@@ -17,12 +17,22 @@ PG 는 결제를 처리했는데 그 응답을 우리가 받지 못해, 주문�
 |---|---|
 | 고객 화면이 "결제 확인 중"에서 넘어가지 않는다 | 주문 조회 응답의 `status` 가 `PENDING` |
 | 프로세스는 정상이다 | `GET /actuator/health` 가 `UP` |
-| 미확인 결제가 쌓인다 | `payment_unresolved{status="unknown"}` 이 0 보다 크고 줄지 않는다 |
-| 가장 오래된 미확인 결제가 계속 늙는다 | `payment_unresolved_oldest_seconds{status="unknown"}` 이 계속 오른다 |
+| 응답을 받지 못한 결제가 생긴다 | `payment_create_total{result="unknown"}` 이 오른다. 응답을 잃은 그 순간 오른다 |
+| 미확인 결제가 남아 있다 | `payment_unresolved{status="unknown"}` 이 0 보다 크고 줄지 않는다 |
+| 끝난 결제가 늦게 끝났다 | `payment_settle_seconds` 의 30 초 구간 밖에 건수가 생긴다 |
 
 health 가 `UP` 인 것은 이 사고와 모순이 아니다. health 는 프로세스와 의존 서비스가 응답하는지를 말하고, 결제가 끝났는지는 말하지 않는다.
 
-정상일 때 `unknown` 은 잠깐 생겼다가 사라진다. sweeper 가 요청 후 10 초가 지난 미완료 결제를 10 초 주기로 조회해 닫기 때문이다. **사고는 이 값이 여러 주기 동안 줄지 않을 때**다. 몇 초를 넘으면 사고로 볼지의 기준값은 아직 정하지 않았다.
+정상일 때 `unknown` 은 잠깐 생겼다가 사라진다. sweeper 가 요청 후 10 초가 지난 미완료 결제를 10 초 주기로 조회해 닫기 때문이다. 로컬에서 재현했을 때 3 건이 20 초 만에 닫혔다. **사고는 이 값이 여러 주기 동안 줄지 않을 때**다. 몇 초를 넘으면 사고로 볼지의 기준값은 아직 정하지 않았다.
+
+### 이 지표를 읽을 때 알아야 할 것
+
+`payment_unresolved` 는 DB 를 세지 않는다. 결제 상태가 바뀌어 커밋될 때마다 앱이 숫자를 올리고 내린다. 그래서 늦지 않지만 두 가지 한계가 있다.
+
+- **재시작하면 0 에서 다시 시작한다.** 재시작 전에 남아 있던 미확인 결제는 이 값에 없다. 그 결제들이 나중에 닫히면 값이 음수가 된다. 음수는 "재시작 전에 남은 것이 있었다"는 뜻이다. 재시작 직후에는 2 장의 조회로 실제 남은 건을 확인한다.
+- **인스턴스마다 자기가 본 변화만 센다.** 여러 인스턴스의 값은 더해서 본다. 한 인스턴스가 받은 결제를 다른 인스턴스가 닫으면 한쪽은 양수, 다른 쪽은 음수가 되고 합이 맞는다.
+
+"얼마나 오래 묶여 있는가"를 알려 주는 지표는 없다. 가장 오래된 결제는 DB 를 봐야 알 수 있다. 2 장의 조회 결과에서 `requested_at` 이 가장 이른 행이 그것이다.
 
 ## 2. 영향 범위를 고정한다
 
@@ -73,6 +83,13 @@ GET {pg.base-url}/api/v1/payments?orderId={provider_order_id}
 
 JSON 출력(dev · qa · prd)에서는 필드로 찾는다. 로컬의 plain 출력에서는 같은 값이 문장 안에 `이름=값` 으로 있다.
 
+Loki 라면 조회할 때 JSON 을 풀어 필드로 거른다. 로컬에서 이 질의로 응답을 잃은 3 건이 나오는 것을 확인했다.
+
+```
+{app="commerce-api"} | json | event="payment_create_no_response"
+{app="commerce-api"} | json | providerOrderId="LP-ORD-0000000013"
+```
+
 | 찾는 것 | 필드 조건 |
 |---|---|
 | 한 주문의 모든 결제 로그 | `providerOrderId = "LP-ORD-…"` |
@@ -84,7 +101,7 @@ JSON 출력(dev · qa · prd)에서는 필드로 찾는다. 로컬의 plain 출�
 
 adapter 의 줄은 `providerOrderId` 만, application 의 줄은 `paymentId` · `orderId` · `providerOrderId` 를 갖는다. 두 줄을 잇는 값은 `providerOrderId` 다.
 
-요청의 trace id 로는 잇지 못한다. 최초 결제 요청과 나중의 reconcile 은 서로 다른 요청이라 trace id 가 다르다.
+요청의 trace id 로는 잇지 못한다. 최초 결제 요청과 나중의 reconcile 은 서로 다른 요청이라 trace id 가 다르다. 로컬에서 trace 를 수집해 확인했다. 최초 요청의 trace 에는 실패한 PG 호출이, reconcile 의 trace 에는 성공한 PG 조회가 따로 들어 있었다.
 
 ### 판정
 
@@ -144,7 +161,8 @@ order by observed_at;
 | PG 생성 호출 | 복구 전후로 늘지 않음 | `payment_create_total` 의 합이 그대로 |
 | PG 거래 | 주문당 한 건, 복구 전과 같은 거래 키 | 3 장의 PG 조회 |
 | 재고 | 복구로 더 줄지 않음 | 확정은 이미 묶어 둔 수량을 그대로 쓴다 |
-| 미확인 지표 | `payment_unresolved{status="unknown"}` 이 0 | gauge 는 주기적으로 갱신되므로 한 주기 뒤에 본다 |
+| 미확인 지표 | `payment_unresolved{status="unknown"}` 이 0 | 상태가 바뀌어 커밋되는 즉시 반영된다. 재시작이 있었다면 2 장의 조회로 대신 본다 |
+| 걸린 시간 | 복구한 결제가 `payment_settle_seconds` 에 긴 구간으로 남는다 | 사고가 끝난 뒤에도 얼마나 늦었는지가 남는다 |
 | 복구 기록 | 주문마다 `payment_status_changed`, `source=reconcile`, `from=UNKNOWN` 이 한 줄 | 4 장의 로그 검색 |
 | 후속 이벤트 | 주문마다 `order_event_outbox` 한 행, relay 뒤 `PUBLISHED` | `select order_id, event_id, status from order_event_outbox where order_id in (…)` |
 
@@ -164,5 +182,6 @@ outbox 가 `PUBLISHED` 인 것은 메시지가 Kafka 에 나갔다는 뜻이다.
 |---|---|
 | 응답 timeout 2 건과 연결 끊김 1 건이 `UNKNOWN` 으로 남고, 같은 주문의 reconcile 로 생성 호출 증가 없이 확정된다 | 운영 환경, 실제 PG, 부하가 있는 상황 |
 | 그동안 health 는 `UP`, 미확인 지표는 0 → 3 → 0 | 지표에 거는 알림과 그 기준값 |
+| 로컬에서 앱을 띄워 같은 사고를 재현하고 Prometheus · Loki · Tempo 에서 지표, 로그, trace 를 본다 | 재시작을 사이에 둔 사고에서 지표가 어떻게 보이는지 |
 | 가설 2 와 3 을 로그로 가른다 | 가설 3(내부 반영 실패)이 실제로 난 상태에서의 복구 절차 전체 |
 | 복구한 주문의 메시지가 실제 Kafka 에 주문당 한 번 나간다 | 그 메시지가 구매 활동과 주간 랭킹까지 이어지는 것을 같은 실행으로 |

@@ -1,7 +1,7 @@
 {
-  "runId" : "20261126-203946-c92deb3b",
+  "runId" : "20261126-220720-066860a7",
   "phase" : "baseline",
-  "observedAt" : "2026-11-26T11:39:47.369985Z",
+  "observedAt" : "2026-11-26T13:07:22.037271Z",
   "baselineOrderIds" : [ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 ],
   "faultOrderIds" : [ ],
   "orders" : [ {
@@ -12,7 +12,7 @@
     "amount" : 3000,
     "paymentStatus" : "SUCCESS",
     "orderStatus" : "CONFIRMED",
-    "transactionKeys" : [ "TEST-TX-0043" ],
+    "transactionKeys" : [ "TEST-TX-0001" ],
     "transactionStatuses" : [ "SUCCESS" ],
     "transactionAmounts" : [ 3000 ]
   }, {
@@ -23,7 +23,7 @@
     "amount" : 3000,
     "paymentStatus" : "SUCCESS",
     "orderStatus" : "CONFIRMED",
-    "transactionKeys" : [ "TEST-TX-0044" ],
+    "transactionKeys" : [ "TEST-TX-0002" ],
     "transactionStatuses" : [ "SUCCESS" ],
     "transactionAmounts" : [ 3000 ]
   }, {
@@ -34,7 +34,7 @@
     "amount" : 3000,
     "paymentStatus" : "SUCCESS",
     "orderStatus" : "CONFIRMED",
-    "transactionKeys" : [ "TEST-TX-0045" ],
+    "transactionKeys" : [ "TEST-TX-0003" ],
     "transactionStatuses" : [ "SUCCESS" ],
     "transactionAmounts" : [ 3000 ]
   }, {
@@ -45,7 +45,7 @@
     "amount" : 3000,
     "paymentStatus" : "SUCCESS",
     "orderStatus" : "CONFIRMED",
-    "transactionKeys" : [ "TEST-TX-0046" ],
+    "transactionKeys" : [ "TEST-TX-0004" ],
     "transactionStatuses" : [ "SUCCESS" ],
     "transactionAmounts" : [ 3000 ]
   }, {
@@ -56,7 +56,7 @@
     "amount" : 3000,
     "paymentStatus" : "SUCCESS",
     "orderStatus" : "CONFIRMED",
-    "transactionKeys" : [ "TEST-TX-0047" ],
+    "transactionKeys" : [ "TEST-TX-0005" ],
     "transactionStatuses" : [ "SUCCESS" ],
     "transactionAmounts" : [ 3000 ]
   }, {
@@ -67,7 +67,7 @@
     "amount" : 3000,
     "paymentStatus" : "SUCCESS",
     "orderStatus" : "CONFIRMED",
-    "transactionKeys" : [ "TEST-TX-0048" ],
+    "transactionKeys" : [ "TEST-TX-0006" ],
     "transactionStatuses" : [ "SUCCESS" ],
     "transactionAmounts" : [ 3000 ]
   }, {
@@ -78,7 +78,7 @@
     "amount" : 3000,
     "paymentStatus" : "SUCCESS",
     "orderStatus" : "CONFIRMED",
-    "transactionKeys" : [ "TEST-TX-0049" ],
+    "transactionKeys" : [ "TEST-TX-0007" ],
     "transactionStatuses" : [ "SUCCESS" ],
     "transactionAmounts" : [ 3000 ]
   }, {
@@ -89,7 +89,7 @@
     "amount" : 3000,
     "paymentStatus" : "SUCCESS",
     "orderStatus" : "CONFIRMED",
-    "transactionKeys" : [ "TEST-TX-0050" ],
+    "transactionKeys" : [ "TEST-TX-0008" ],
     "transactionStatuses" : [ "SUCCESS" ],
     "transactionAmounts" : [ 3000 ]
   }, {
@@ -100,7 +100,7 @@
     "amount" : 3000,
     "paymentStatus" : "SUCCESS",
     "orderStatus" : "CONFIRMED",
-    "transactionKeys" : [ "TEST-TX-0051" ],
+    "transactionKeys" : [ "TEST-TX-0009" ],
     "transactionStatuses" : [ "SUCCESS" ],
     "transactionAmounts" : [ 3000 ]
   }, {
@@ -111,7 +111,7 @@
     "amount" : 3000,
     "paymentStatus" : "SUCCESS",
     "orderStatus" : "CONFIRMED",
-    "transactionKeys" : [ "TEST-TX-0052" ],
+    "transactionKeys" : [ "TEST-TX-0010" ],
     "transactionStatuses" : [ "SUCCESS" ],
     "transactionAmounts" : [ 3000 ]
   } ],
@@ -120,5 +120,5 @@
   "stock" : 15,
   "health" : "{\"status\":\"UP\",\"groups\":[\"liveness\",\"readiness\"]}",
   "unresolvedMetricLines" : [ "payment_unresolved{application=\"commerce-api\",status=\"conflict\"} 0.0", "payment_unresolved{application=\"commerce-api\",status=\"pending\"} 0.0", "payment_unresolved{application=\"commerce-api\",status=\"requested\"} 0.0", "payment_unresolved{application=\"commerce-api\",status=\"unknown\"} 0.0" ],
-  "boundaryLogLines" : [ "2026-11-26T20:39:47.079+09:00  INFO 20334 --- [commerce-api] [1-auto-7-exec-1] [6b081a834a8b6ce0fe587fe26b443bb2-6db7137a0de94af6] c.l.application.payment.PaymentLog       : 결제 상태가 바뀌었다: paymentId=1, orderId=1, source=reconcile, from=PENDING, to=SUCCESS", "2026-11-26T20:39:47.092+09:00  INFO 20334 --- [commerce-api] [1-auto-7-exec-2] [6b081a83f44d1f530284dafaea6592a4-bb6b5b1a443076cd] c.l.application.payment.PaymentLog       : 결제 상태가 바뀌었다: paymentId=2, orderId=2, source=reconcile, from=PENDING, to=SUCCESS", "2026-11-26T20:39:47.103+09:00  INFO 20334 --- [commerce-api] [1-auto-7-exec-3] [6b081a83210e6c83e59d485b1bdccfff-c59b386a248b1bfe] c.l.application.payment.PaymentLog       : 결제 상태가 바뀌었다: paymentId=3, orderId=3, source=reconcile, from=PENDING, to=SUCCESS", "2026-11-26T20:39:47.114+09:00  INFO 20334 --- [commerce-api] [1-auto-7-exec-4] [6b081a83fecddc73da9f34400a549ae5-f80ebd245e86d06c] c.l.application.payment.PaymentLog       : 결제 상태가 바뀌었다: paymentId=4, orderId=4, source=reconcile, from=PENDING, to=SUCCESS", "2026-11-26T20:39:47.124+09:00  INFO 20334 --- [commerce-api] [1-auto-7-exec-5] [6b081a8305b2ecc52d587f2ab75afea4-263a9a8f87322a63] c.l.application.payment.PaymentLog       : 결제 상태가 바뀌었다: paymentId=5, orderId=5, source=reconcile, from=PENDING, to=SUCCESS", "2026-11-26T20:39:47.136+09:00  INFO 20334 --- [commerce-api] [1-auto-7-exec-6] [6b081a835e7bb72d8e9d7876e74d9650-9f6410e134d17328] c.l.application.payment.PaymentLog       : 결제 상태가 바뀌었다: paymentId=6, orderId=6, source=reconcile, from=PENDING, to=SUCCESS", "2026-11-26T20:39:47.147+09:00  INFO 20334 --- [commerce-api] [1-auto-7-exec-7] [6b081a831e5daa4423030d62b3aee1cc-d7ce524f6b96dca9] c.l.application.payment.PaymentLog       : 결제 상태가 바뀌었다: paymentId=7, orderId=7, source=reconcile, from=PENDING, to=SUCCESS", "2026-11-26T20:39:47.158+09:00  INFO 20334 --- [commerce-api] [1-auto-7-exec-8] [6b081a8323cd6f8d1bba18e276b5558a-f7dec68c5db020c7] c.l.application.payment.PaymentLog       : 결제 상태가 바뀌었다: paymentId=8, orderId=8, source=reconcile, from=PENDING, to=SUCCESS", "2026-11-26T20:39:47.169+09:00  INFO 20334 --- [commerce-api] [1-auto-7-exec-9] [6b081a8319774cca522d1c7d3dafa29b-68727ac4c573b978] c.l.application.payment.PaymentLog       : 결제 상태가 바뀌었다: paymentId=9, orderId=9, source=reconcile, from=PENDING, to=SUCCESS", "2026-11-26T20:39:47.181+09:00  INFO 20334 --- [commerce-api] [-auto-7-exec-10] [6b081a83d3f09b03d215c0c135d01809-98fbbdb22a602183] c.l.application.payment.PaymentLog       : 결제 상태가 바뀌었다: paymentId=10, orderId=10, source=reconcile, from=PENDING, to=SUCCESS" ]
+  "boundaryLogLines" : [ "2026-11-26T22:07:21.605+09:00  INFO 54135 --- [commerce-api] [1-auto-1-exec-1] [6b082f09bbae9bdf1cd4479baa088676-4343abd72ccbf90b] c.l.application.payment.PaymentLog       : 결제 상태가 바뀌었다: paymentId=1, orderId=1, source=reconcile, from=PENDING, to=SUCCESS", "2026-11-26T22:07:21.628+09:00  INFO 54135 --- [commerce-api] [1-auto-1-exec-2] [6b082f09e52d4f20ced317f61b03a5ab-32bba678d79fa19e] c.l.application.payment.PaymentLog       : 결제 상태가 바뀌었다: paymentId=2, orderId=2, source=reconcile, from=PENDING, to=SUCCESS", "2026-11-26T22:07:21.648+09:00  INFO 54135 --- [commerce-api] [1-auto-1-exec-3] [6b082f09970c257bbc3283b9e62d4a78-929f9bc76883fb78] c.l.application.payment.PaymentLog       : 결제 상태가 바뀌었다: paymentId=3, orderId=3, source=reconcile, from=PENDING, to=SUCCESS", "2026-11-26T22:07:21.666+09:00  INFO 54135 --- [commerce-api] [1-auto-1-exec-4] [6b082f09fb408ad8b8a6181ec1dd35b3-e73d88b9751bfa73] c.l.application.payment.PaymentLog       : 결제 상태가 바뀌었다: paymentId=4, orderId=4, source=reconcile, from=PENDING, to=SUCCESS", "2026-11-26T22:07:21.686+09:00  INFO 54135 --- [commerce-api] [1-auto-1-exec-5] [6b082f09e8672cf9d2dea021a10e7570-3fc1218b88864b75] c.l.application.payment.PaymentLog       : 결제 상태가 바뀌었다: paymentId=5, orderId=5, source=reconcile, from=PENDING, to=SUCCESS", "2026-11-26T22:07:21.704+09:00  INFO 54135 --- [commerce-api] [1-auto-1-exec-6] [6b082f09ee87d7e1d4fee8b25df48450-abc1f955f83d18cb] c.l.application.payment.PaymentLog       : 결제 상태가 바뀌었다: paymentId=6, orderId=6, source=reconcile, from=PENDING, to=SUCCESS", "2026-11-26T22:07:21.724+09:00  INFO 54135 --- [commerce-api] [1-auto-1-exec-7] [6b082f09e52cc0a99c6500b91ad200b3-41ab6cf373488d15] c.l.application.payment.PaymentLog       : 결제 상태가 바뀌었다: paymentId=7, orderId=7, source=reconcile, from=PENDING, to=SUCCESS", "2026-11-26T22:07:21.743+09:00  INFO 54135 --- [commerce-api] [1-auto-1-exec-8] [6b082f0983860a8581b58cbaf7697262-2013bffdde9074ac] c.l.application.payment.PaymentLog       : 결제 상태가 바뀌었다: paymentId=8, orderId=8, source=reconcile, from=PENDING, to=SUCCESS", "2026-11-26T22:07:21.760+09:00  INFO 54135 --- [commerce-api] [1-auto-1-exec-9] [6b082f0965ec2308436b3f240fa89341-0c660ade4261f412] c.l.application.payment.PaymentLog       : 결제 상태가 바뀌었다: paymentId=9, orderId=9, source=reconcile, from=PENDING, to=SUCCESS", "2026-11-26T22:07:21.776+09:00  INFO 54135 --- [commerce-api] [-auto-1-exec-10] [6b082f095cf19383a4ec6d1e423e1b8a-e8bb4bd682aaa58a] c.l.application.payment.PaymentLog       : 결제 상태가 바뀌었다: paymentId=10, orderId=10, source=reconcile, from=PENDING, to=SUCCESS" ]
 }

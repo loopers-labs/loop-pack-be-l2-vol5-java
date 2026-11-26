@@ -1,7 +1,7 @@
 {
-  "runId" : "20261126-203946-c92deb3b",
-  "phase" : "recovery",
-  "observedAt" : "2026-11-26T11:39:52.439833Z",
+  "runId" : "20261126-220720-066860a7",
+  "phase" : "fault",
+  "observedAt" : "2026-11-26T13:07:26.888098Z",
   "baselineOrderIds" : [ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 ],
   "faultOrderIds" : [ 11, 12, 13, 14, 15, 16, 17, 18, 19, 20 ],
   "orders" : [ {
@@ -12,7 +12,7 @@
     "amount" : 3000,
     "paymentStatus" : "SUCCESS",
     "orderStatus" : "CONFIRMED",
-    "transactionKeys" : [ "TEST-TX-0043" ],
+    "transactionKeys" : [ "TEST-TX-0001" ],
     "transactionStatuses" : [ "SUCCESS" ],
     "transactionAmounts" : [ 3000 ]
   }, {
@@ -23,7 +23,7 @@
     "amount" : 3000,
     "paymentStatus" : "SUCCESS",
     "orderStatus" : "CONFIRMED",
-    "transactionKeys" : [ "TEST-TX-0044" ],
+    "transactionKeys" : [ "TEST-TX-0002" ],
     "transactionStatuses" : [ "SUCCESS" ],
     "transactionAmounts" : [ 3000 ]
   }, {
@@ -34,7 +34,7 @@
     "amount" : 3000,
     "paymentStatus" : "SUCCESS",
     "orderStatus" : "CONFIRMED",
-    "transactionKeys" : [ "TEST-TX-0045" ],
+    "transactionKeys" : [ "TEST-TX-0003" ],
     "transactionStatuses" : [ "SUCCESS" ],
     "transactionAmounts" : [ 3000 ]
   }, {
@@ -45,7 +45,7 @@
     "amount" : 3000,
     "paymentStatus" : "SUCCESS",
     "orderStatus" : "CONFIRMED",
-    "transactionKeys" : [ "TEST-TX-0046" ],
+    "transactionKeys" : [ "TEST-TX-0004" ],
     "transactionStatuses" : [ "SUCCESS" ],
     "transactionAmounts" : [ 3000 ]
   }, {
@@ -56,7 +56,7 @@
     "amount" : 3000,
     "paymentStatus" : "SUCCESS",
     "orderStatus" : "CONFIRMED",
-    "transactionKeys" : [ "TEST-TX-0047" ],
+    "transactionKeys" : [ "TEST-TX-0005" ],
     "transactionStatuses" : [ "SUCCESS" ],
     "transactionAmounts" : [ 3000 ]
   }, {
@@ -67,7 +67,7 @@
     "amount" : 3000,
     "paymentStatus" : "SUCCESS",
     "orderStatus" : "CONFIRMED",
-    "transactionKeys" : [ "TEST-TX-0048" ],
+    "transactionKeys" : [ "TEST-TX-0006" ],
     "transactionStatuses" : [ "SUCCESS" ],
     "transactionAmounts" : [ 3000 ]
   }, {
@@ -78,7 +78,7 @@
     "amount" : 3000,
     "paymentStatus" : "SUCCESS",
     "orderStatus" : "CONFIRMED",
-    "transactionKeys" : [ "TEST-TX-0049" ],
+    "transactionKeys" : [ "TEST-TX-0007" ],
     "transactionStatuses" : [ "SUCCESS" ],
     "transactionAmounts" : [ 3000 ]
   }, {
@@ -89,7 +89,7 @@
     "amount" : 3000,
     "paymentStatus" : "SUCCESS",
     "orderStatus" : "CONFIRMED",
-    "transactionKeys" : [ "TEST-TX-0050" ],
+    "transactionKeys" : [ "TEST-TX-0008" ],
     "transactionStatuses" : [ "SUCCESS" ],
     "transactionAmounts" : [ 3000 ]
   }, {
@@ -100,7 +100,7 @@
     "amount" : 3000,
     "paymentStatus" : "SUCCESS",
     "orderStatus" : "CONFIRMED",
-    "transactionKeys" : [ "TEST-TX-0051" ],
+    "transactionKeys" : [ "TEST-TX-0009" ],
     "transactionStatuses" : [ "SUCCESS" ],
     "transactionAmounts" : [ 3000 ]
   }, {
@@ -111,7 +111,7 @@
     "amount" : 3000,
     "paymentStatus" : "SUCCESS",
     "orderStatus" : "CONFIRMED",
-    "transactionKeys" : [ "TEST-TX-0052" ],
+    "transactionKeys" : [ "TEST-TX-0010" ],
     "transactionStatuses" : [ "SUCCESS" ],
     "transactionAmounts" : [ 3000 ]
   }, {
@@ -122,7 +122,7 @@
     "amount" : 3000,
     "paymentStatus" : "SUCCESS",
     "orderStatus" : "CONFIRMED",
-    "transactionKeys" : [ "TEST-TX-0053" ],
+    "transactionKeys" : [ "TEST-TX-0011" ],
     "transactionStatuses" : [ "SUCCESS" ],
     "transactionAmounts" : [ 3000 ]
   }, {
@@ -133,7 +133,7 @@
     "amount" : 3000,
     "paymentStatus" : "SUCCESS",
     "orderStatus" : "CONFIRMED",
-    "transactionKeys" : [ "TEST-TX-0054" ],
+    "transactionKeys" : [ "TEST-TX-0012" ],
     "transactionStatuses" : [ "SUCCESS" ],
     "transactionAmounts" : [ 3000 ]
   }, {
@@ -142,9 +142,9 @@
     "paymentAttemptKey" : "attempt-13",
     "providerOrderId" : "LP-ORD-0000000013",
     "amount" : 3000,
-    "paymentStatus" : "SUCCESS",
-    "orderStatus" : "CONFIRMED",
-    "transactionKeys" : [ "TEST-TX-0055" ],
+    "paymentStatus" : "UNKNOWN",
+    "orderStatus" : "PENDING",
+    "transactionKeys" : [ "TEST-TX-0013" ],
     "transactionStatuses" : [ "SUCCESS" ],
     "transactionAmounts" : [ 3000 ]
   }, {
@@ -155,7 +155,7 @@
     "amount" : 3000,
     "paymentStatus" : "SUCCESS",
     "orderStatus" : "CONFIRMED",
-    "transactionKeys" : [ "TEST-TX-0056" ],
+    "transactionKeys" : [ "TEST-TX-0014" ],
     "transactionStatuses" : [ "SUCCESS" ],
     "transactionAmounts" : [ 3000 ]
   }, {
@@ -166,7 +166,7 @@
     "amount" : 3000,
     "paymentStatus" : "SUCCESS",
     "orderStatus" : "CONFIRMED",
-    "transactionKeys" : [ "TEST-TX-0057" ],
+    "transactionKeys" : [ "TEST-TX-0015" ],
     "transactionStatuses" : [ "SUCCESS" ],
     "transactionAmounts" : [ 3000 ]
   }, {
@@ -175,9 +175,9 @@
     "paymentAttemptKey" : "attempt-16",
     "providerOrderId" : "LP-ORD-0000000016",
     "amount" : 3000,
-    "paymentStatus" : "SUCCESS",
-    "orderStatus" : "CONFIRMED",
-    "transactionKeys" : [ "TEST-TX-0058" ],
+    "paymentStatus" : "UNKNOWN",
+    "orderStatus" : "PENDING",
+    "transactionKeys" : [ "TEST-TX-0016" ],
     "transactionStatuses" : [ "SUCCESS" ],
     "transactionAmounts" : [ 3000 ]
   }, {
@@ -188,7 +188,7 @@
     "amount" : 3000,
     "paymentStatus" : "SUCCESS",
     "orderStatus" : "CONFIRMED",
-    "transactionKeys" : [ "TEST-TX-0059" ],
+    "transactionKeys" : [ "TEST-TX-0017" ],
     "transactionStatuses" : [ "SUCCESS" ],
     "transactionAmounts" : [ 3000 ]
   }, {
@@ -199,7 +199,7 @@
     "amount" : 3000,
     "paymentStatus" : "SUCCESS",
     "orderStatus" : "CONFIRMED",
-    "transactionKeys" : [ "TEST-TX-0060" ],
+    "transactionKeys" : [ "TEST-TX-0018" ],
     "transactionStatuses" : [ "SUCCESS" ],
     "transactionAmounts" : [ 3000 ]
   }, {
@@ -208,9 +208,9 @@
     "paymentAttemptKey" : "attempt-19",
     "providerOrderId" : "LP-ORD-0000000019",
     "amount" : 3000,
-    "paymentStatus" : "SUCCESS",
-    "orderStatus" : "CONFIRMED",
-    "transactionKeys" : [ "TEST-TX-0061" ],
+    "paymentStatus" : "UNKNOWN",
+    "orderStatus" : "PENDING",
+    "transactionKeys" : [ "TEST-TX-0019" ],
     "transactionStatuses" : [ "SUCCESS" ],
     "transactionAmounts" : [ 3000 ]
   }, {
@@ -221,7 +221,7 @@
     "amount" : 3000,
     "paymentStatus" : "SUCCESS",
     "orderStatus" : "CONFIRMED",
-    "transactionKeys" : [ "TEST-TX-0062" ],
+    "transactionKeys" : [ "TEST-TX-0020" ],
     "transactionStatuses" : [ "SUCCESS" ],
     "transactionAmounts" : [ 3000 ]
   } ],
@@ -229,7 +229,6 @@
   "pgTransactionCount" : 20,
   "stock" : 5,
   "health" : "{\"status\":\"UP\",\"groups\":[\"liveness\",\"readiness\"]}",
-  "unresolvedMetricLines" : [ "payment_unresolved{application=\"commerce-api\",status=\"conflict\"} 0.0", "payment_unresolved{application=\"commerce-api\",status=\"pending\"} 0.0", "payment_unresolved{application=\"commerce-api\",status=\"requested\"} 0.0", "payment_unresolved{application=\"commerce-api\",status=\"unknown\"} 0.0" ],
-  "boundaryLogLines" : [ "2026-11-26T20:39:52.070+09:00  INFO 20334 --- [commerce-api] [1-auto-7-exec-8] [6b081a884ae5beb1136b52e88e60e72d-b806a1b2b52af57a] c.l.application.payment.PaymentLog       : 결제 상태가 바뀌었다: paymentId=13, orderId=13, source=reconcile, from=UNKNOWN, to=SUCCESS", "2026-11-26T20:39:52.080+09:00  INFO 20334 --- [commerce-api] [1-auto-7-exec-9] [6b081a88a6891ed7e461868072fb2f63-4ca170fdddefcf60] c.l.application.payment.PaymentLog       : 결제 상태가 바뀌었다: paymentId=16, orderId=16, source=reconcile, from=UNKNOWN, to=SUCCESS", "2026-11-26T20:39:52.092+09:00  INFO 20334 --- [commerce-api] [-auto-7-exec-10] [6b081a88ada08b0af252005de7024b23-296449cc73808aca] c.l.application.payment.PaymentLog       : 결제 상태가 바뀌었다: paymentId=19, orderId=19, source=reconcile, from=UNKNOWN, to=SUCCESS" ],
-  "faultRecordSha256" : "d05c2a646e482ec3dc1b40c1be82e6882fdbc46717621e5489b80ef2209a8d4c"
+  "unresolvedMetricLines" : [ "payment_unresolved{application=\"commerce-api\",status=\"conflict\"} 0.0", "payment_unresolved{application=\"commerce-api\",status=\"pending\"} 0.0", "payment_unresolved{application=\"commerce-api\",status=\"requested\"} 0.0", "payment_unresolved{application=\"commerce-api\",status=\"unknown\"} 3.0" ],
+  "boundaryLogLines" : [ "2026-11-26T22:07:24.177+09:00  WARN 54135 --- [commerce-api] [1-auto-1-exec-3] [6b082f0a61b8760fde69fe8cad6f4091-9e05ee2105dddb88] c.l.i.payment.PgPaymentGateway           : PG 생성 호출의 응답을 받지 못했다: providerOrderId=LP-ORD-0000000013, cause=timeout", "2026-11-26T22:07:24.177+09:00  WARN 54135 --- [commerce-api] [1-auto-1-exec-3] [6b082f0a61b8760fde69fe8cad6f4091-9e05ee2105dddb88] c.l.application.payment.PaymentLog       : PG 생성 호출의 결과를 모른다. 다시 보내지 않고 조회로 확인한다: paymentId=13, orderId=13, result=unknown", "2026-11-26T22:07:24.297+09:00  WARN 54135 --- [commerce-api] [1-auto-1-exec-6] [6b082f0cbb3c7144afedb078eb793dfa-705978726a85e3b4] c.l.i.payment.PgPaymentGateway           : PG 생성 호출의 응답을 받지 못했다: providerOrderId=LP-ORD-0000000016, cause=connection_lost", "2026-11-26T22:07:24.297+09:00  WARN 54135 --- [commerce-api] [1-auto-1-exec-6] [6b082f0cbb3c7144afedb078eb793dfa-705978726a85e3b4] c.l.application.payment.PaymentLog       : PG 생성 호출의 결과를 모른다. 다시 보내지 않고 조회로 확인한다: paymentId=16, orderId=16, result=unknown", "2026-11-26T22:07:26.369+09:00  WARN 54135 --- [commerce-api] [1-auto-1-exec-9] [6b082f0ce475cab353029d73836daa8e-c83d440c998648c3] c.l.i.payment.PgPaymentGateway           : PG 생성 호출의 응답을 받지 못했다: providerOrderId=LP-ORD-0000000019, cause=timeout", "2026-11-26T22:07:26.370+09:00  WARN 54135 --- [commerce-api] [1-auto-1-exec-9] [6b082f0ce475cab353029d73836daa8e-c83d440c998648c3] c.l.application.payment.PaymentLog       : PG 생성 호출의 결과를 모른다. 다시 보내지 않고 조회로 확인한다: paymentId=19, orderId=19, result=unknown", "2026-11-26T22:07:26.467+09:00  INFO 54135 --- [commerce-api] [1-auto-1-exec-1] [6b082f0e48058683a16fce3c99b32244-5f02066405332d39] c.l.application.payment.PaymentLog       : 결제 상태가 바뀌었다: paymentId=11, orderId=11, source=reconcile, from=PENDING, to=SUCCESS", "2026-11-26T22:07:26.487+09:00  INFO 54135 --- [commerce-api] [1-auto-1-exec-2] [6b082f0e8c35ec968793b9e6bf5cbbb6-1f3cac57b6e3d9f0] c.l.application.payment.PaymentLog       : 결제 상태가 바뀌었다: paymentId=12, orderId=12, source=reconcile, from=PENDING, to=SUCCESS", "2026-11-26T22:07:26.507+09:00  INFO 54135 --- [commerce-api] [1-auto-1-exec-3] [6b082f0efd8d01e71d831268b4550b1d-92ed375d90a9fce7] c.l.application.payment.PaymentLog       : 결제 상태가 바뀌었다: paymentId=14, orderId=14, source=reconcile, from=PENDING, to=SUCCESS", "2026-11-26T22:07:26.531+09:00  INFO 54135 --- [commerce-api] [1-auto-1-exec-4] [6b082f0e79bde665c29fabe8b49379e7-fef16ef6f4f9cddf] c.l.application.payment.PaymentLog       : 결제 상태가 바뀌었다: paymentId=15, orderId=15, source=reconcile, from=PENDING, to=SUCCESS", "2026-11-26T22:07:26.561+09:00  INFO 54135 --- [commerce-api] [1-auto-1-exec-5] [6b082f0eb3ccebc3ce880a4e19367a2c-5550078e691eeaf8] c.l.application.payment.PaymentLog       : 결제 상태가 바뀌었다: paymentId=17, orderId=17, source=reconcile, from=PENDING, to=SUCCESS", "2026-11-26T22:07:26.586+09:00  INFO 54135 --- [commerce-api] [1-auto-1-exec-6] [6b082f0eae50a018bb0a4ece4d776089-7780ca09150f8686] c.l.application.payment.PaymentLog       : 결제 상태가 바뀌었다: paymentId=18, orderId=18, source=reconcile, from=PENDING, to=SUCCESS", "2026-11-26T22:07:26.640+09:00  INFO 54135 --- [commerce-api] [1-auto-1-exec-7] [6b082f0eda561593910b5b1cf03040f5-c2b6693eccc683d9] c.l.application.payment.PaymentLog       : 결제 상태가 바뀌었다: paymentId=20, orderId=20, source=reconcile, from=PENDING, to=SUCCESS" ]
 }
