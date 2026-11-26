@@ -220,6 +220,7 @@ PG 미발송 종결 · warning · 패널 "종결 결과별 증가(10분)"
    - 그 밖이면 사람 담당 그대로다. `lastCheckOutcome`으로 Diagnosis 3의 표를 다시 본다.
    - 409 = 담당 AUTO, 담당 이미 닫힘, 돈 이미 끝남. 대상은 그대로다. 없는 주문 404.
    - 500(잠금 획득 실패면 503)이면 목록(`?refundOwner=PERSON`)에서 그 건의 `lastCheckOutcome=APPLY_FAILED`·`lastCheckCause`를 확인한다(PaymentRefundApplyFailed).
+   - 누를 때마다 INFO 한 줄이 남는다: `지금 처리를 눌렀습니다. orderId=…, admin=<누른 관리자>, outcome=<lastCheckOutcome>`. 반영 실패면 `outcome=APPLY_FAILED`, 409·404 거절이면 `rejected=CONCLUDED|NOT_PERSON|NOT_FOUND`다. 누가 언제 눌렀는지는 이 줄로 본다(`scripts/ops/rehearsal.sh loki 101`).
 3. `MISMATCH`·`CANCEL_REJECTED`처럼 PG 콘솔 판단이 필요하면: PG 콘솔에서 실제 승인·취소를 확인한다. 콘솔에서 수동 환불했으면 다음 조회(30m 상한)를 기다린다. 시스템이 환불됨으로 닫는다.
 4. PG 조회가 안 되는데 콘솔·정산으로 결론을 확인했을 때만 사람 기록을 남긴다(환불 확인 대상 읽는 법의 표).
 - 사람 담당은 자동으로 돌아가지 않는다. 되돌리기 기능은 없다. 지금 처리나 사람 기록으로 끝낸다.
@@ -237,7 +238,7 @@ PG 미발송 종결 · warning · 패널 "종결 결과별 증가(10분)"
 **Diagnosis.**
 1. 패널 "환불 추적 막힌 원인"에서 `apply_failed`가 언제부터 늘었는지 본다.
 2. 대상: 환불 대상 목록(`?refundOwner=PERSON`, `?refundMoneyStatus=CHECKING` 등)에서 `lastCheckOutcome`이 `APPLY_FAILED`인 항목. `lastCheckCause`는 예외 클래스 이름이다.
-3. 한 주문의 경계 로그: `scripts/ops/rehearsal.sh loki 101`. Grafana Explore: `{app="commerce-api", level="ERROR"} | orderId="101"`. `causeType`으로 DB 연결·잠금·제약 위반·코드 오류를 가른다.
+3. 한 주문의 경계 로그: `scripts/ops/rehearsal.sh loki 101`. Grafana Explore: `{app="commerce-api", level="ERROR"} | orderId="101"`. `causeType`으로 DB 연결·잠금·제약 위반·코드 오류를 가른다. 지금 처리에서 난 실패는 ERROR 줄 없이 INFO `지금 처리를 눌렀습니다. … outcome=APPLY_FAILED`와 목록의 `lastCheckCause`로 본다.
 
 **Mitigation.**
 - DB 장애·코드 오류 모두 에스컬레이션 대상 [미정]에게 넘긴다. 고치기 전에는 지금 처리를 눌러도 같은 실패다.

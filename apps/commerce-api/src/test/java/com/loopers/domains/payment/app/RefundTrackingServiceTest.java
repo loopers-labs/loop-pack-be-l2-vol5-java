@@ -5,6 +5,7 @@ import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.loopers.common.domain.Money;
+import com.loopers.common.error.RuleViolationException;
 import com.loopers.domains.payment.app.port.LookupJitter;
 import com.loopers.domains.payment.app.port.PaymentCancelCommand;
 import com.loopers.domains.payment.app.port.PaymentCancelResult;
@@ -866,9 +867,9 @@ class RefundTrackingServiceTest {
             });
     }
 
-    // 현재 동작을 고정한다. 참모 판단(w10s5c-1)이 "막음"이면 두 번째 누름의 기대값(409·취소 1회)으로 뒤집는다.
+    // PG가 첫 요청이 효과 없었다고 명시한 경우라 다시 보내도 이중 환불이 아니다(참모 20:42 확정 ①).
     @Test
-    @DisplayName("[참모 확인 중 w10s5c-1] 사람 담당 청구 확인 대상에 지금 처리를 눌러 PG가 취소를 효과 없이 거절하면 청구 확인·사람 담당 그대로 CANCEL_REJECTED로 남고, 다시 누르면 취소를 한 번 더 보낸다")
+    @DisplayName("[참모 20:42 확정 ①] 사람 담당 청구 확인 대상에 지금 처리를 눌러 PG가 취소를 효과 없이 거절하면 청구 확인·사람 담당 그대로 CANCEL_REJECTED로 남고, 다시 누르면 취소를 한 번 더 보낸다")
     void processNowAgainAfterRejectedCancelSendsCancelAgain() {
         refundCases.put(withState(1, PG_A, "TR-1", MoneyStatus.CHARGED, Owner.PERSON, NOW.plus(HALF_PERSON)));
         lookup(gatewayA, 1, found(tx("TR-1", 1, AMOUNT, PaymentTransactionStatus.SUCCESS)));
@@ -898,6 +899,105 @@ class RefundTrackingServiceTest {
         assertThat(refundCases.get(1).getMoneyStatus()).isEqualTo(MoneyStatus.CHARGED);
         assertThat(outcomes).isEmpty();
         assertThat(checks).containsExactly(RefundCase.CheckOutcome.CANCEL_REJECTED, RefundCase.CheckOutcome.CANCEL_REJECTED);
+    }
+
+    @Test
+    @DisplayName("사람 담당 대상에 지금 처리를 두 번 누르면 누를 때마다 orderId·관리자 이름·마지막 확인 분류가 담긴 INFO가 한 줄씩 남고 거래 키는 남지 않는다")
+    void processNowLogsOneInfoPerPress() {
+        refundCases.put(withState(1, PG_A, "TR-1", MoneyStatus.CHARGED, Owner.PERSON, NOW.plus(HALF_PERSON)));
+        lookup(gatewayA, 1, found(tx("TR-1", 1, AMOUNT, PaymentTransactionStatus.SUCCESS)));
+        cancel(gatewayA, new PaymentCancelResult.Unknown("SocketTimeoutException"));
+        Logger serviceLogger = (Logger) LoggerFactory.getLogger(RefundTrackingService.class);
+        SnapshotAppender logs = new SnapshotAppender();
+        logs.start();
+        serviceLogger.addAppender(logs);
+
+        try {
+            service.processNow(1, "ops-admin");
+            service.processNow(1, "ops-admin");
+        } finally {
+            serviceLogger.detachAppender(logs);
+        }
+
+        List<ILoggingEvent> presses = pressLogs(logs);
+        assertThat(presses).hasSize(2);
+        assertThat(presses.get(0).getFormattedMessage()).contains("orderId=1", "admin=ops-admin", "outcome=CANCEL_UNKNOWN");
+        assertThat(presses.get(1).getFormattedMessage()).contains("orderId=1", "admin=ops-admin", "outcome=OK");
+        assertThat(presses).allSatisfy(event -> {
+            assertThat(event.getLevel()).isEqualTo(Level.INFO);
+            assertThat(event.getMDCPropertyMap()).containsEntry("orderId", "1");
+            assertThat(event.getFormattedMessage()).doesNotContain("TR-1", "SocketTimeoutException");
+            assertThat(event.getMDCPropertyMap().values()).noneMatch(value -> value.contains("TR-1"));
+        });
+    }
+
+    @Test
+    @DisplayName("지금 처리가 반영 실패로 끝나면 outcome=APPLY_FAILED인 INFO 한 줄을 남기고 원래 예외를 그대로 다시 던지며 예외 메시지·거래 키는 남기지 않는다")
+    void processNowLogsApplyFailedPress() {
+        refundCases.put(withState(1, PG_A, "TR-1", MoneyStatus.CHARGED, Owner.PERSON, NOW.plus(HALF_PERSON)));
+        lookup(gatewayA, 1, found(tx("TR-1", 1, AMOUNT, PaymentTransactionStatus.SUCCESS)));
+        refundCases.failNextSaveOf(MoneyStatus.REFUND_REQUESTED, new IllegalStateException("PG-SECRET 반영 메시지"));
+        Logger serviceLogger = (Logger) LoggerFactory.getLogger(RefundTrackingService.class);
+        SnapshotAppender logs = new SnapshotAppender();
+        logs.start();
+        serviceLogger.addAppender(logs);
+
+        try {
+            assertThatThrownBy(() -> service.processNow(1, "ops-admin"))
+                .isExactlyInstanceOf(IllegalStateException.class)
+                .hasMessage("PG-SECRET 반영 메시지");
+        } finally {
+            serviceLogger.detachAppender(logs);
+        }
+
+        assertThat(pressLogs(logs))
+            .singleElement()
+            .satisfies(event -> {
+                assertThat(event.getLevel()).isEqualTo(Level.INFO);
+                assertThat(event.getMDCPropertyMap()).containsEntry("orderId", "1");
+                assertThat(event.getFormattedMessage()).contains("orderId=1", "admin=ops-admin", "outcome=APPLY_FAILED")
+                    .doesNotContain("SECRET", "TR-1");
+            });
+    }
+
+    @ParameterizedTest(name = "대상={0}, 거절={1}")
+    @CsvSource({
+        "REFUNDED_PERSON, CONCLUDED",
+        "CHARGED_AUTO, NOT_PERSON",
+        "NONE, NOT_FOUND"
+    })
+    @DisplayName("지금 처리가 거절되면(돈 끝남·사람 담당 아님·대상 없음) PG를 부르지 않고 거절 사유가 담긴 INFO 한 줄을 남긴 뒤 원래 예외를 던진다")
+    void processNowLogsRejectedPress(String target, String rejected) {
+        if (target.equals("REFUNDED_PERSON")) {
+            refundCases.put(withState(1, PG_A, "TR-1", MoneyStatus.REFUNDED, Owner.PERSON, NOW.plus(HALF_PERSON)));
+        } else if (target.equals("CHARGED_AUTO")) {
+            refundCases.put(withState(1, PG_A, "TR-1", MoneyStatus.CHARGED, Owner.AUTO, NOW.plus(HALF_PERSON)));
+        }
+        Logger serviceLogger = (Logger) LoggerFactory.getLogger(RefundTrackingService.class);
+        SnapshotAppender logs = new SnapshotAppender();
+        logs.start();
+        serviceLogger.addAppender(logs);
+
+        try {
+            assertThatThrownBy(() -> service.processNow(1, "ops-admin"))
+                .isInstanceOf(rejected.equals("NOT_FOUND") ? RefundCaseNotFoundException.class : RuleViolationException.class);
+        } finally {
+            serviceLogger.detachAppender(logs);
+        }
+
+        verify(gatewayA, never()).verifyOrder(anyString(), any());
+        assertThat(pressLogs(logs))
+            .singleElement()
+            .satisfies(event -> {
+                assertThat(event.getLevel()).isEqualTo(Level.INFO);
+                assertThat(event.getMDCPropertyMap()).containsEntry("orderId", "1");
+                assertThat(event.getFormattedMessage()).contains("orderId=1", "admin=ops-admin", "rejected=" + rejected)
+                    .doesNotContain("outcome=", "TR-1");
+            });
+    }
+
+    private static List<ILoggingEvent> pressLogs(SnapshotAppender logs) {
+        return logs.list.stream().filter(event -> event.getFormattedMessage().startsWith("지금 처리를 눌렀습니다.")).toList();
     }
 
     private static PaymentGateway gateway(String providerId) {
@@ -1094,6 +1194,15 @@ class RefundTrackingServiceTest {
         @Override
         public void recordCheck(RefundCase.CheckOutcome outcome) {
             checks.add(outcome);
+        }
+    }
+
+    // 이벤트의 MDC는 처음 읽을 때 현재 스레드에서 가져오므로, 기록 시점의 값을 남기려고 받는 즉시 고정한다.
+    private static final class SnapshotAppender extends ListAppender<ILoggingEvent> {
+        @Override
+        protected void append(ILoggingEvent event) {
+            event.prepareForDeferredProcessing();
+            super.append(event);
         }
     }
 }

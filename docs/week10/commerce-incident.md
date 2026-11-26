@@ -825,7 +825,9 @@ REFUNDED일 때만 값이 있다. **우리가 본 경로**로 정한다.
 - 409: 담당 AUTO, 담당 이미 닫힘, 돈 이미 끝남(대상 그대로). 404: 대상 없음. 403: 비관리자·CSRF 없음. 반영 실패는 오류 응답(보통 500, 잠금 획득 실패는 503)이고 그 건의 `lastCheckOutcome`이 `APPLY_FAILED`다.
 - **만들지 않는 것**: 사람 담당 → AUTO 되돌리기, 새 타이머·기한(사용자: "이틀 뒤면 처리한 사람도 까먹겠다").
 - 거절 뒤 재누름 **[참모 20:42 확정 ①]**: PG가 취소를 효과 없이 거절하면(`CANCEL_REJECTED`) 돈은 `CHARGED`로 돌아가고 사람 담당 그대로다. 지금 처리를 다시 누르면 취소를 다시 보낸다(누를 때마다 1회, `refund_requested_at` 덮어씀). PG가 첫 요청이 효과 없었다고 명시한 경우라 이중 환불 위험이 없다는 판단이다.
-- 누를 때마다 경계 INFO 한 줄 **[참모 20:42 확정 ①]**: MDC `orderId`, 누른 관리자 이름(인증 이름), `outcome`(= `last_check_outcome`). 칼럼은 더하지 않는다. 비밀값·PG 텍스트·거래 키는 넣지 않는다.
+- 누를 때마다 경계 INFO 한 줄 **[참모 20:42 확정 ①]**: `지금 처리를 눌렀습니다. orderId=…, admin=…, outcome=…`. MDC `orderId`, 누른 관리자 이름(인증 이름), `outcome`(= `last_check_outcome`). 칼럼은 더하지 않는다. 비밀값·PG 텍스트·거래 키는 넣지 않는다.
+  - 반영 실패로 끝나도 `outcome=APPLY_FAILED`로 한 줄 남기고 원래 예외를 다시 던진다 **[PL 결정 w10s5c-P5]**.
+  - 409·404 거절도 한 줄 남긴다. `outcome` 대신 `rejected=CONCLUDED|NOT_PERSON|NOT_FOUND`(로그 전용 값, enum·칼럼 추가 없음) **[PL 결정 w10s5c-P5]**.
 
 **로컬 이전 SQL** (`sql/migrate-payment-refund-cases-v3.sql`): v2 뒤에 실행한다. 세 칸을 NULL 허용으로 더한다(information_schema + PREPARE, v2와 같은 방식). 다시 실행하면 아무것도 바꾸지 않는다.
 
@@ -878,7 +880,7 @@ REFUNDED일 때만 값이 있다. **우리가 본 경로**로 정한다.
 | 정산 파일 대사 | PG 정산 파일과 우리 기록을 맞춰 보지 않는다. 사람 기록(11-17)은 관리자의 말을 믿는다 | 범위 밖(11-9·11-18) |
 | 취소 멱등 키 | 취소 요청에 멱등 키가 없다(11-6). 한 번만은 상태(`REFUND_REQUESTED` commit 뒤 1회)로만 보장한다. 거절 뒤 지금 처리를 다시 누르면 다시 보낸다(11-19, PG가 효과 없음을 명시한 경우만) | 결과 모름이면 다시 보내지 않고 조회 |
 | 대량 장애 때 사람 담당 조회가 밀림 | `findDue`가 AUTO를 먼저 채우고 회차 상한 20은 AUTO·PERSON 합계다(11-15). AUTO 대상이 계속 20건 이상이면 PERSON 건 조회가 밀려 PG 사실로 담당을 자동 종료하는 것이 늦어진다 **[참모 19:41: 처리량 상한 20 유지가 우선]** | 사람은 지금 처리(11-19)로 한 건씩 당길 수 있다 |
-| 지금 처리 반영 실패의 로그 | 반영이 실패하면 응답은 500(잠금 실패 503)이고 causeType ERROR 줄은 남지 않는다(일반 advice) | 목록의 `lastCheckOutcome=APPLY_FAILED`·`lastCheckCause`로 확인(runbook) |
+| 지금 처리 반영 실패의 로그 | 반영이 실패하면 응답은 500(잠금 실패 503)이다. 누름 INFO(`outcome=APPLY_FAILED`)는 남지만 causeType ERROR 줄은 남지 않는다(일반 advice) | 목록의 `lastCheckOutcome=APPLY_FAILED`·`lastCheckCause`로 확인(runbook) |
 | 테이블 없는 DB의 v3 이전 SQL | `migrate-payment-refund-cases-v3.sql`을 `payment_refund_cases`가 없는 DB에서 돌려 보지 않았다 | v2 뒤에 실행 |
 | 다중 인스턴스 | 잠금·한 번만 규칙은 테스트 DB의 동시성 테스트로만 봤다. 여러 인스턴스 배포는 하지 않았다 | 행 잠금으로 직렬화 |
 | runbook 에스컬레이션 대상 역할 이름 | **[미정]** 팀 정의 사항이다. runbook은 "에스컬레이션 대상 [미정]"으로만 적었다 | 팀이 정하면 runbook만 고친다 |
