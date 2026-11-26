@@ -121,6 +121,22 @@ class AdminUnresolvedRefundCaseApiIntegrationTest {
     }
 
     @Test
+    @DisplayName("환불 확인 대상의 경과 시간 필터는 열린 시각 기준이고 경과 시간이 기준과 같으면 포함한다")
+    void filtersRefundCasesByOpenedAtAge() throws Exception {
+        assertThat(orderIds(list(get(PATH).param("status", "HANDED_TO_HUMAN", "REFUND_UNKNOWN")
+            .param("minAgeSeconds", "7200")))).containsExactly(handedOld, handedMiddle, refundUnknown);
+        assertThat(orderIds(list(get(PATH).param("status", "HANDED_TO_HUMAN").param("minAgeSeconds", "86401"))))
+            .containsExactly(handedOld);
+    }
+
+    @Test
+    @DisplayName("결제 대기 상태와 환불 확인 상태를 한 요청에 섞으면 원천이 달라 400이다")
+    void rejectsMixedSources() throws Exception {
+        mvc.perform(get(PATH).param("status", "PENDING", "HANDED_TO_HUMAN").with(user("admin").roles("ADMIN")))
+            .andExpect(status().isBadRequest());
+    }
+
+    @Test
     @DisplayName("환불 확인 대상이 있어도 status가 없거나 기존 값이면 결제 대기 PG 결제만 기존 항목 모양으로 준다")
     void keepsExistingStatusesOnPendingPayments() throws Exception {
         JsonNode all = list(get(PATH));
