@@ -738,6 +738,36 @@ class PaymentFacadeIntegrationTest {
                 .hasSize(1);
         }
 
+        @DisplayName("정상 접수된 생성 호출은 줄을 남기지 않는다")
+        @Test
+        void logsNothingForAcceptedCreate(CapturedOutput output) {
+            Order order = place(2);
+
+            Payment payment = confirm(order.getId(), "attempt-1");
+
+            assertThat(payment.getStatus()).isEqualTo(PaymentStatus.PENDING);
+            assertThat(createLines(output, payment)).isEmpty();
+        }
+
+        @DisplayName("거절된 생성 호출은 DB 에 실패로만 남으므로 거절이었다는 줄이 한 줄 남는다")
+        @Test
+        void logsRejectedCreate(CapturedOutput output) {
+            Order order = place(2);
+            PG.rejectNextCreate();
+
+            Payment payment = confirm(order.getId(), "attempt-1");
+
+            assertThat(createLines(output, payment)).singleElement().asString()
+                .contains("orderId=" + order.getId(), "result=rejected");
+        }
+
+        private List<String> createLines(CapturedOutput output, Payment payment) {
+            return output.getOut().lines()
+                .filter(line -> line.contains("paymentId=" + payment.getId()))
+                .filter(line -> line.contains("result="))
+                .toList();
+        }
+
         @DisplayName("reconcile 이 조회 결과로 상태를 바꾸면 어디서 무엇이 무엇으로 바뀌었는지 한 줄 남는다")
         @Test
         void logsStatusChangedByReconcile(CapturedOutput output) {
