@@ -31,6 +31,15 @@ public final class TestPgControl {
         }
     }
 
+    // 조회 지연·실패 설정을 읽는다.
+    public static JsonNode lookupSetting() {
+        HttpResponse<String> response = send("GET", "/test-control/v1/lookup", null);
+        if (response.statusCode() != 200) {
+            throw new IllegalStateException("조회 설정 확인 실패: " + response.statusCode());
+        }
+        return read(response);
+    }
+
     public static void scenario(String providerOrderId, String scenarioJson) {
         HttpResponse<String> response = send("PUT", "/test-control/v1/orders/" + providerOrderId + "/scenario", scenarioJson);
         if (response.statusCode() != 204) {

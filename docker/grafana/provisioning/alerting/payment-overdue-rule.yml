@@ -1,0 +1,84 @@
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: payment-overdue-unknown
+    folder: Commerce
+    interval: 10s
+    rules:
+      - uid: payment-overdue-unknown
+        title: 결제 미확인 자동 복구 기한 초과
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 60
+              to: 0
+            datasourceUid: loopers
+            model:
+              datasource:
+                type: prometheus
+                uid: loopers
+              editorMode: code
+              # 인스턴스마다 DB 전체 기준의 같은 값을 보고하므로 최댓값으로 묶습니다.
+              expr: max(payment_attempt_overdue_unknown)
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              reducer: last
+              refId: B
+              type: reduce
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              # 지표가 이미 주기 조회가 풀었어야 할 미확인만 세므로 한 건이라도 있으면 사람이 나설 때입니다.
+              conditions:
+                - evaluator:
+                    params:
+                      - 0
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - C
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: B
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+        noDataState: OK
+        execErrState: Error
+        # 지표에 5분 기한이 이미 들어 있어, 집계가 잠깐 실패해 남은 옛 값만 거르도록 1분만 유지합니다.
+        for: 1m
+        annotations:
+          summary: 결제 미확인이 자동 복구 기한을 넘겼습니다
+          description: "주기 조회가 풀지 못한 UNKNOWN 결제가 있습니다. 런북 docs/runbook/payment-response-lost.md를 따르세요."
+        labels:
+          component: payment
+          severity: critical
+        notification_settings:
+          receiver: Payment Alerts
+          group_by:
+            - alertname
+            - grafana_folder
+          group_wait: 0s
+          group_interval: 1m
+          repeat_interval: 1h

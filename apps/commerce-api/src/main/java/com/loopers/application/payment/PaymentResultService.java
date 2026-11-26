@@ -6,6 +6,8 @@ import com.loopers.domain.payment.PaymentAttemptStatus;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.slf4j.spi.LoggingEventBuilder;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -13,6 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 // PG 관찰을 결제 시도·주문·재고에 한 번만 반영한다.
 // PG 조회는 트랜잭션 밖에서 하고, 반영(TX B)·0행 판정·응답용 재조회는 각각 새 트랜잭션에서 수행한다.
 // 바깥 트랜잭션에 합류하면 이 경계가 무너지므로 트랜잭션 안에서 호출하면 거절한다.
+@Slf4j
 @RequiredArgsConstructor
 @Component
 public class PaymentResultService {
@@ -41,6 +44,7 @@ public class PaymentResultService {
         PaymentLookupObservation lookup = attempt.getTransactionKey() != null
             ? paymentGateway.lookup(attempt.getTransactionKey())
             : paymentGateway.lookupByOrder(attempt.getProviderOrderId());
+        logLookup(attempt, lookup);
         return applyLookup(attemptId, lookup);
     }
 
@@ -90,5 +94,31 @@ public class PaymentResultService {
         };
         return new PaymentObservation.Transaction(transaction.transactionKey(), transaction.providerOrderId(),
             transaction.amount(), status);
+    }
+
+    // 조회 불가는 callback과 주기 조회가 기존 warn을 함께 남기고 reconcile은 응답으로 알리므로, 여기서는 INFO로 남긴다.
+    // 콘솔에서도 찾을 수 있게 문장에 시도·주문 ID를 넣는다.
+    private void logLookup(PaymentAttempt attempt, PaymentLookupObservation lookup) {
+        LoggingEventBuilder event = log.atInfo()
+            .addKeyValue("event", "payment.lookup.observed")
+            .addKeyValue("attemptId", attempt.getId())
+            .addKeyValue("orderId", attempt.getOrderId());
+        switch (lookup) {
+            case PaymentLookupObservation.Found found -> event
+                .addKeyValue("outcome", "FOUND")
+                .addKeyValue("pgStatus", found.transactions().size() == 1 ? found.transactions().getFirst().status() : null)
+                .addKeyValue("transactionCount", found.transactions().size())
+                .log("PG 거래를 조회했습니다. attemptId={}, orderId={}, transactionCount={}",
+                    attempt.getId(), attempt.getOrderId(), found.transactions().size());
+            case PaymentLookupObservation.NotFound ignored -> event
+                .addKeyValue("outcome", "NOT_FOUND")
+                .addKeyValue("transactionCount", 0)
+                .log("PG 거래를 찾지 못했습니다. attemptId={}, orderId={}", attempt.getId(), attempt.getOrderId());
+            case PaymentLookupObservation.Unavailable unavailable -> event
+                .addKeyValue("outcome", "UNAVAILABLE")
+                .addKeyValue("reason", unavailable.kind())
+                .log("PG 거래를 조회하지 못했습니다. attemptId={}, orderId={}, reason={}",
+                    attempt.getId(), attempt.getOrderId(), unavailable.kind());
+        }
     }
 }
