@@ -45,10 +45,13 @@ import org.springframework.transaction.support.DefaultTransactionStatus;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -456,6 +459,7 @@ class RefundTrackingServiceTest {
         assertThat(refundCase.getOwnerClosedBy()).isNull();
         assertThat(refundCase.getCheckAttempts()).isEqualTo(1);
         assertThat(refundCase.getNextCheckAt()).isEqualTo(NOW.plus(HALF_PERSON));
+        assertThat(refundCase.getLastCheckOutcome()).isEqualTo(RefundCase.CheckOutcome.MISMATCH);
         assertThat(outcomes).isEmpty();
     }
 
@@ -827,6 +831,73 @@ class RefundTrackingServiceTest {
         assertThat(result.owner()).isEqualTo("PERSON");
         assertThat(result.ownerClosedAt()).isNull();
         assertThat(result.lastCheckOutcome()).isEqualTo("PG_UNREACHABLE");
+    }
+
+    @Test
+    @DisplayName("C1: 반영 실패 원인 기록마저 예외로 끝나면 원래 반영 예외를 그대로 다시 던지고 기록 실패는 예외 클래스 이름만 ERROR 한 줄로 남긴다")
+    void rethrowsOriginalWhenFailureRecordFails() {
+        refundCases.put(withState(1, PG_A, "TR-1", MoneyStatus.CHARGED, Owner.PERSON, NOW.plus(HALF_PERSON)));
+        lookup(gatewayA, 1, found(tx("TR-1", 1, AMOUNT, PaymentTransactionStatus.SUCCESS)));
+        refundCases.failNextSaveOf(MoneyStatus.REFUND_REQUESTED, new IllegalStateException("PG-SECRET 반영 메시지"));
+        doThrow(new IllegalArgumentException("RECORD-SECRET 기록 메시지")).when(failureRecorder)
+            .recordApplyFailed(anyLong(), anyString());
+        Logger serviceLogger = (Logger) LoggerFactory.getLogger(RefundTrackingService.class);
+        ListAppender<ILoggingEvent> logs = new ListAppender<>();
+        logs.start();
+        serviceLogger.addAppender(logs);
+
+        try {
+            assertThatThrownBy(() -> service.processNow(1, "ops-admin"))
+                .isExactlyInstanceOf(IllegalStateException.class)
+                .hasMessage("PG-SECRET 반영 메시지");
+        } finally {
+            serviceLogger.detachAppender(logs);
+        }
+
+        verify(failureRecorder, times(1)).recordApplyFailed(1, "IllegalStateException");
+        verify(gatewayA, never()).cancel(any());
+        assertThat(refundCases.get(1).getMoneyStatus()).isEqualTo(MoneyStatus.CHARGED);
+        assertThat(logs.list.stream().filter(event -> event.getLevel() == Level.ERROR).toList())
+            .singleElement()
+            .satisfies(event -> {
+                assertThat(event.getMDCPropertyMap()).containsEntry("orderId", "1");
+                assertThat(event.getFormattedMessage()).contains("orderId=1", "causeType=IllegalArgumentException")
+                    .doesNotContain("SECRET");
+            });
+    }
+
+    // 현재 동작을 고정한다. 참모 판단(w10s5c-1)이 "막음"이면 두 번째 누름의 기대값(409·취소 1회)으로 뒤집는다.
+    @Test
+    @DisplayName("[참모 확인 중 w10s5c-1] 사람 담당 청구 확인 대상에 지금 처리를 눌러 PG가 취소를 효과 없이 거절하면 청구 확인·사람 담당 그대로 CANCEL_REJECTED로 남고, 다시 누르면 취소를 한 번 더 보낸다")
+    void processNowAgainAfterRejectedCancelSendsCancelAgain() {
+        refundCases.put(withState(1, PG_A, "TR-1", MoneyStatus.CHARGED, Owner.PERSON, NOW.plus(HALF_PERSON)));
+        lookup(gatewayA, 1, found(tx("TR-1", 1, AMOUNT, PaymentTransactionStatus.SUCCESS)));
+        cancel(gatewayA, new PaymentCancelResult.RejectedNoEffect("ALREADY_SETTLED"));
+
+        RefundTrackingService.ProcessNowResult first = service.processNow(1, "ops-admin");
+
+        RefundCase rejected = refundCases.get(1);
+        assertThat(rejected.getMoneyStatus()).isEqualTo(MoneyStatus.CHARGED);
+        assertThat(rejected.isPersonOpen()).isTrue();
+        assertThat(rejected.getOwnerReason()).isEqualTo(RefundCase.HANDOFF_DEADLINE);
+        assertThat(rejected.getRefundRequestedAt()).isEqualTo(NOW);
+        assertThat(rejected.getLastCheckOutcome()).isEqualTo(RefundCase.CheckOutcome.CANCEL_REJECTED);
+        assertThat(rejected.getLastCheckCause()).isNull();
+        assertThat(first.moneyStatus()).isEqualTo("CHARGED");
+        assertThat(first.owner()).isEqualTo("PERSON");
+        assertThat(first.lastCheckOutcome()).isEqualTo("CANCEL_REJECTED");
+        verify(gatewayA, times(1)).cancel(any());
+
+        Instant later = NOW.plus(Duration.ofMinutes(3));
+        clock.set(later);
+        service.processNow(1, "ops-admin");
+
+        verify(gatewayA, times(2)).cancel(new PaymentCancelCommand(providerOrderId(1), "TR-1", AMOUNT));
+        assertThat(events.stream().filter("cancel:1"::equals)).hasSize(2);
+        assertThat(refundCases.get(1).getRefundRequestedAt()).isEqualTo(later);
+        assertThat(refundCases.get(1).getMoneyStatus()).isEqualTo(MoneyStatus.CHARGED);
+        assertThat(outcomes).isEmpty();
+        assertThat(checks).containsExactly(RefundCase.CheckOutcome.CANCEL_REJECTED, RefundCase.CheckOutcome.CANCEL_REJECTED);
     }
 
     private static PaymentGateway gateway(String providerId) {
