@@ -60,4 +60,14 @@ public interface PaymentAttemptRepository {
      * @return 갱신된 행 수
      */
     int recordLookup(Long attemptId, ZonedDateTime nextLookupAt, boolean manualCheckRequired);
+
+    /**
+     * 미종결 상태별 결제 시도 요약 (10주차 업무 지표 commerce.payment.unresolved 용).
+     * 종결 상태인 SUCCESS·FAILED 는 세지 않는다. 미확인은 아직 끝나지 않은 일만 뜻한다.
+     * 건수와 가장 오래된 생성 시각을 한 번의 집계 쿼리로 함께 얻으므로 둘이 같은 시점의 값이다.
+     *
+     * @return REQUESTED·PENDING·UNKNOWN 세 상태를 **항상** 담은 목록. 행이 없는 상태도 count 0 으로 포함한다.
+     *         "값 없음"을 돌려주지 않는 이유는, 0 건과 수집 실패를 운영자가 구분할 수 있어야 하기 때문이다.
+     */
+    List<UnresolvedStatusSummary> summarizeUnresolved();
 }
