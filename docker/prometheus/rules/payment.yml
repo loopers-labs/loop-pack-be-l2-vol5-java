@@ -32,7 +32,7 @@ groups:
           severity: critical
         annotations:
           summary: 결과 모름 결제가 새로 계속 생기고 20건 이상 쌓였습니다. 자동 재조회로 풀리지 않고 있습니다.
-          runbook_url: docs/runbook/week10.md#paymentunresolvedpiling
+          runbook_url: https://github.com/loopers-labs/loop-pack-be-l2-vol5-java/blob/L2J4Dot/docs/runbook/week10.md#paymentunresolvedpiling
           dashboard_url: http://localhost:3000/d/commerce-payment-incident
 
       # [임시] K=5건/10분, 10분 지속.
@@ -46,7 +46,7 @@ groups:
           severity: critical
         annotations:
           summary: 결과를 확인하지 못하고 만료로 종결한 결제가 10분에 5건 이상 계속됩니다.
-          runbook_url: docs/runbook/week10.md#paymentabandonedpiling
+          runbook_url: https://github.com/loopers-labs/loop-pack-be-l2-vol5-java/blob/L2J4Dot/docs/runbook/week10.md#paymentabandonedpiling
           dashboard_url: http://localhost:3000/d/commerce-payment-incident
 
       # [임시] 15m. needs_review는 자동으로 풀리지 않는 사람 확인 상태라 한 건도 남기되, 깨우지는 않는다.
@@ -58,7 +58,7 @@ groups:
           severity: warning
         annotations:
           summary: 사람 확인이 필요한 결제가 15분 넘게 남아 있습니다.
-          runbook_url: docs/runbook/week10.md#paymentneedsreview
+          runbook_url: https://github.com/loopers-labs/loop-pack-be-l2-vol5-java/blob/L2J4Dot/docs/runbook/week10.md#paymentneedsreview
           dashboard_url: http://localhost:3000/d/commerce-payment-incident
 
       # [임시] 종결 중 failed 비율 > 30% AND 10분 10건 이상, 5분 지속.
@@ -76,7 +76,7 @@ groups:
           severity: warning
         annotations:
           summary: 결제 거절(failed) 종결이 급증했습니다. 카드사·PG 판정을 확인하세요.
-          runbook_url: docs/runbook/week10.md#paymentdeclinesurge
+          runbook_url: https://github.com/loopers-labs/loop-pack-be-l2-vol5-java/blob/L2J4Dot/docs/runbook/week10.md#paymentdeclinesurge
           dashboard_url: http://localhost:3000/d/commerce-payment-incident
 
       # [임시] 10분 5건 이상, 5분 지속. not_sent는 PG에 요청이 닿지 않은 것이라 거절과 원인이 달라 규칙을 나눈다.
@@ -88,7 +88,7 @@ groups:
           severity: warning
         annotations:
           summary: PG에 결제 요청을 보내지 못한 종결(not_sent)이 10분에 5건 이상입니다. PG 연결을 확인하세요.
-          runbook_url: docs/runbook/week10.md#paymentpgunreachable
+          runbook_url: https://github.com/loopers-labs/loop-pack-be-l2-vol5-java/blob/L2J4Dot/docs/runbook/week10.md#paymentpgunreachable
           dashboard_url: http://localhost:3000/d/commerce-payment-incident
 
       # 결제 확정 API 응답 시간 꼬리(p99). 대상: 확정, 본인 결과 확인, 관리자 결과 확인(한 주문씩 PG를 부르는 경로).
@@ -111,7 +111,7 @@ groups:
           severity: warning
         annotations:
           summary: 결제 확정 API 응답 시간 p99가 1초를 넘은 채 10분 넘게 계속됩니다. PG 지연·응답 유실을 확인하세요.
-          runbook_url: docs/runbook/week10.md#paymentapilatencyp99high
+          runbook_url: https://github.com/loopers-labs/loop-pack-be-l2-vol5-java/blob/L2J4Dot/docs/runbook/week10.md#paymentapilatencyp99high
           dashboard_url: http://localhost:3000/d/commerce-payment-incident
 
       # (5단계 자리) 환불 규칙: 고객에게 약속한 환불 기한까지 남은 시간으로 급한 정도를 정한다.
@@ -130,5 +130,5 @@ groups:
           severity: warning
         annotations:
           summary: critical 가이드 서버가 5분 넘게 응답하지 않습니다. critical 알림은 근거 없이 원본만 갑니다.
-          runbook_url: docs/runbook/week10.md#guideserverdown
+          runbook_url: https://github.com/loopers-labs/loop-pack-be-l2-vol5-java/blob/L2J4Dot/docs/runbook/week10.md#guideserverdown
           dashboard_url: http://localhost:3000/d/commerce-payment-incident

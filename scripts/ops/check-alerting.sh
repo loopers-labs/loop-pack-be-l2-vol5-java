@@ -22,6 +22,8 @@ PROM_CONFIG="$ROOT/docker/grafana/prometheus.yml"
 DASHBOARD="$ROOT/docker/grafana/provisioning/dashboards/payment-incident.json"
 DATASOURCE="$ROOT/docker/grafana/provisioning/datasources/datasource.yml"
 RUNBOOK="$ROOT/docs/runbook/week10.md"
+# 운영 규칙·대시보드의 runbook 링크는 눌러서 열리는 저장소 웹 주소다(과제 최종 목적지인 원본 저장소, PR 머지 전에는 열리지 않을 수 있음).
+RUNBOOK_WEB_URL="https://github.com/loopers-labs/loop-pack-be-l2-vol5-java/blob/L2J4Dot/docs/runbook/week10.md"
 ALLOY_DIR="$ROOT/docker/alloy"
 LOKI_DIR="$ROOT/docker/loki"
 GUIDE_DIR="$ROOT/docker/guide"
@@ -93,13 +95,16 @@ route_case slack alertname=PaymentApiLatencyP99High severity=warning
 route_case slack alertname=SomethingWithoutSeverity
 
 step "dashboard / rule links"
-python3 - "$DASHBOARD" "$DATASOURCE" "$RULES_DIR/payment.yml" "$RUNBOOK" <<'PY'
+python3 - "$DASHBOARD" "$DATASOURCE" "$RULES_DIR/payment.yml" "$RUNBOOK" "$RUNBOOK_WEB_URL" <<'PY'
 import json
 import re
 import sys
 
-dashboard_path, datasource_path, rules_path, runbook_path = sys.argv[1:5]
+dashboard_path, datasource_path, rules_path, runbook_path, runbook_web_url = sys.argv[1:6]
 errors = []
+# GitHub 앵커 규칙: 소문자, 글자·숫자(한글 포함)·공백·-·_ 외 문자는 지우고 공백은 -.
+anchors = {re.sub(r"[^\w\- ]", "", h.strip().lower()).replace(" ", "-")
+           for h in re.findall(r"^#+\s+(.+)$", open(runbook_path, encoding="utf-8").read(), re.M)}
 
 dashboard = json.load(open(dashboard_path, encoding="utf-8"))
 uid = dashboard.get("uid")
@@ -117,8 +122,18 @@ for panel in panels:
             errors.append(f"panel '{panel.get('title')}' datasource {ref} 가 provisioning uid {sorted(datasource_uids)}에 없음")
     if not panel.get("targets"):
         errors.append(f"panel '{panel.get('title')}' query 없음")
-    if "docs/runbook/week10.md#" not in panel.get("description", ""):
-        errors.append(f"panel '{panel.get('title')}' 설명에 runbook 링크 없음")
+    description = panel.get("description", "")
+    panel_anchors = re.findall(re.escape(runbook_web_url) + r"#([\w-]+)", description)
+    if not panel_anchors:
+        errors.append(f"panel '{panel.get('title')}' 설명에 runbook 링크({runbook_web_url}#앵커) 없음")
+    for anchor in panel_anchors:
+        if anchor not in anchors:
+            errors.append(f"panel '{panel.get('title')}' runbook 앵커 #{anchor} 가 runbook에 없음")
+    if re.search(r"(?<![/\w])docs/runbook/week10\.md#", description):
+        errors.append(f"panel '{panel.get('title')}' 설명에 눌러서 열리지 않는 상대 경로 runbook 링크가 있음")
+for link in dashboard.get("links", []):
+    if "runbook" in link.get("title", "") and link.get("url") != runbook_web_url:
+        errors.append(f"dashboard link {link.get('url')} 이 runbook 웹 주소가 아님")
 
 rules = open(rules_path, encoding="utf-8").read()
 alerts = re.findall(r"^\s*- alert:\s*(\S+)", rules, re.M)
@@ -136,12 +151,10 @@ rule_lines = "\n".join(line.split("#", 1)[0] for line in rules.splitlines() if n
 if re.search(r"order_?id|user_?id", rule_lines, re.I):
     errors.append("규칙 파일에 orderId·userId가 있음")
 
-anchors = {re.sub(r"[^a-z0-9_-]", "", h.strip().lower().replace(" ", "-"))
-           for h in re.findall(r"^#+\s+(.+)$", open(runbook_path, encoding="utf-8").read(), re.M)}
 for url in runbook_urls:
     path, _, anchor = url.partition("#")
-    if path != "docs/runbook/week10.md" or anchor not in anchors:
-        errors.append(f"runbook_url {url} 의 앵커가 runbook에 없음")
+    if path != runbook_web_url or anchor not in anchors:
+        errors.append(f"runbook_url {url} 이 runbook 웹 주소가 아니거나 앵커가 runbook에 없음")
 
 print(f"  dashboard uid={uid} panels={len(panels)} datasource_uids={sorted(datasource_uids)}")
 print(f"  rules={len(alerts)} dashboard_url={len(dashboard_urls)} runbook_url={len(runbook_urls)} runbook_anchors={len(anchors)}")

@@ -20,7 +20,7 @@
       "id": 1,
       "type": "timeseries",
       "title": "미확인 결제 상태별",
-      "description": "PAYMENT_PENDING인 PG 결제 기록 수(send_started·pending·unknown·needs_review). DB 주기 조회라 갱신 주기만큼 늦다. 빨간 선은 critical 건수 조건 N=20.\nrunbook: docs/runbook/week10.md#paymentunresolvedpiling / runbook: docs/runbook/week10.md#paymentneedsreview",
+      "description": "PAYMENT_PENDING인 PG 결제 기록 수(send_started·pending·unknown·needs_review). DB 주기 조회라 갱신 주기만큼 늦다. 빨간 선은 critical 건수 조건 N=20.\nrunbook: https://github.com/loopers-labs/loop-pack-be-l2-vol5-java/blob/L2J4Dot/docs/runbook/week10.md#paymentunresolvedpiling / runbook: https://github.com/loopers-labs/loop-pack-be-l2-vol5-java/blob/L2J4Dot/docs/runbook/week10.md#paymentneedsreview",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -83,7 +83,7 @@
       "id": 2,
       "type": "timeseries",
       "title": "시작 대비 결과 모름 유입 비율(30분)",
-      "description": "최근 30분 결과 모름으로 새로 빠진 결제 수 / 새로 시작한 PG 결제 수. 빨간 선은 critical 비율 조건 X=0.2%.\nrunbook: docs/runbook/week10.md#paymentunresolvedpiling",
+      "description": "최근 30분 결과 모름으로 새로 빠진 결제 수 / 새로 시작한 PG 결제 수. 빨간 선은 critical 비율 조건 X=0.2%.\nrunbook: https://github.com/loopers-labs/loop-pack-be-l2-vol5-java/blob/L2J4Dot/docs/runbook/week10.md#paymentunresolvedpiling",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -147,7 +147,7 @@
       "id": 3,
       "type": "timeseries",
       "title": "종결 결과별 증가(10분)",
-      "description": "주문이 결제 종결로 처음 바뀐 수, result별(confirmed·failed·not_sent·expired). failed 급증은 거절, not_sent 급증은 PG 연결 문제다.\nrunbook: docs/runbook/week10.md#paymentdeclinesurge / runbook: docs/runbook/week10.md#paymentpgunreachable",
+      "description": "주문이 결제 종결로 처음 바뀐 수, result별(confirmed·failed·not_sent·expired). failed 급증은 거절, not_sent 급증은 PG 연결 문제다.\nrunbook: https://github.com/loopers-labs/loop-pack-be-l2-vol5-java/blob/L2J4Dot/docs/runbook/week10.md#paymentdeclinesurge / runbook: https://github.com/loopers-labs/loop-pack-be-l2-vol5-java/blob/L2J4Dot/docs/runbook/week10.md#paymentpgunreachable",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -194,7 +194,7 @@
       "id": 4,
       "type": "timeseries",
       "title": "만료 종결 증가(10분)",
-      "description": "결과를 확인하지 못하고 만료로 종결한 수. 빨간 선은 critical 조건 K=5.\nrunbook: docs/runbook/week10.md#paymentabandonedpiling",
+      "description": "결과를 확인하지 못하고 만료로 종결한 수. 빨간 선은 critical 조건 K=5.\nrunbook: https://github.com/loopers-labs/loop-pack-be-l2-vol5-java/blob/L2J4Dot/docs/runbook/week10.md#paymentabandonedpiling",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -257,7 +257,7 @@
       "id": 5,
       "type": "timeseries",
       "title": "PG 결제 시작 수(10분)",
-      "description": "새로 시작한 PG 결제 수(유입 비율의 분모), provider별.\nrunbook: docs/runbook/week10.md#paymentunresolvedpiling",
+      "description": "새로 시작한 PG 결제 수(유입 비율의 분모), provider별.\nrunbook: https://github.com/loopers-labs/loop-pack-be-l2-vol5-java/blob/L2J4Dot/docs/runbook/week10.md#paymentunresolvedpiling",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -313,7 +313,7 @@
       "id": 6,
       "type": "table",
       "title": "결제 알림 상태",
-      "description": "지금 pending·firing인 결제 알림. 각 알림의 runbook_url을 따라간다.\nrunbook: docs/runbook/week10.md#paymentunresolvedpiling 외 규칙별 앵커(GuideServerDown 포함)",
+      "description": "지금 pending·firing인 결제 알림. 각 알림의 runbook_url을 따라간다.\nrunbook: https://github.com/loopers-labs/loop-pack-be-l2-vol5-java/blob/L2J4Dot/docs/runbook/week10.md#paymentunresolvedpiling 외 규칙별 앵커(GuideServerDown 포함)",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -348,7 +348,7 @@
       "id": 7,
       "type": "logs",
       "title": "주문 번호로 경계 로그",
-      "description": "위 변수 orderId에 주문 번호를 넣으면 그 주문의 경계 로그(create 결과·조회 판정·종결)를 시간순으로 본다. orderId는 Loki structured metadata다(label 아님). 기본값 .+는 orderId가 붙은 경계 로그 전체다.\nrunbook: docs/runbook/week10.md#주문-번호로-경계-로그-찾기",
+      "description": "위 변수 orderId에 주문 번호를 넣으면 그 주문의 경계 로그(create 결과·조회 판정·종결)를 시간순으로 본다. orderId는 Loki structured metadata다(label 아님). 기본값 .+는 orderId가 붙은 경계 로그 전체다.\nrunbook: https://github.com/loopers-labs/loop-pack-be-l2-vol5-java/blob/L2J4Dot/docs/runbook/week10.md#주문-번호로-경계-로그-찾기",
       "datasource": {
         "type": "loki",
         "uid": "loki"
@@ -382,7 +382,7 @@
       "id": 8,
       "type": "stat",
       "title": "가이드 서버 가동",
-      "description": "critical 가이드 서버 up(1=가동). 0이 5분 지속되면 GuideServerDown(warning). 그동안 critical은 원본만 간다.\nrunbook: docs/runbook/week10.md#guideserverdown",
+      "description": "critical 가이드 서버 up(1=가동). 0이 5분 지속되면 GuideServerDown(warning). 그동안 critical은 원본만 간다.\nrunbook: https://github.com/loopers-labs/loop-pack-be-l2-vol5-java/blob/L2J4Dot/docs/runbook/week10.md#guideserverdown",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -437,7 +437,7 @@
       "id": 9,
       "type": "timeseries",
       "title": "결제 확정 API 응답 시간 p50·p90·p99(5분)",
-      "description": "확정·본인 결과 확인·관리자 결과 확인 경로의 응답 시간 분위수(5분 창). 빨간 선은 warning p99 조건 1s다(5분 100건 이상, 10분 지속일 때 울림). 노란 선은 PG read timeout 3s.\np99가 3s 근처면 응답 유실·PG 지연을 먼저 의심한다. p50만 오르면 전체 느려짐이라 이 알림 대상이 아니다.\nrunbook: docs/runbook/week10.md#paymentapilatencyp99high",
+      "description": "확정·본인 결과 확인·관리자 결과 확인 경로의 응답 시간 분위수(5분 창). 빨간 선은 warning p99 조건 1s다(5분 100건 이상, 10분 지속일 때 울림). 노란 선은 PG read timeout 3s.\np99가 3s 근처면 응답 유실·PG 지연을 먼저 의심한다. p50만 오르면 전체 느려짐이라 이 알림 대상이 아니다.\nrunbook: https://github.com/loopers-labs/loop-pack-be-l2-vol5-java/blob/L2J4Dot/docs/runbook/week10.md#paymentapilatencyp99high",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -524,7 +524,7 @@
     {
       "title": "runbook(docs/runbook/week10.md)",
       "type": "link",
-      "url": "docs/runbook/week10.md",
+      "url": "https://github.com/loopers-labs/loop-pack-be-l2-vol5-java/blob/L2J4Dot/docs/runbook/week10.md",
       "targetBlank": true
     }
   ],
