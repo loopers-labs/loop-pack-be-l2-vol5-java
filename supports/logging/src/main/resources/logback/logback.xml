@@ -10,11 +10,12 @@
 
     <springProfile name="dev">
         <include resource="appenders/json-console-appender.xml"/>
+        <include resource="appenders/async-console-appender.xml"/>
         <include resource="appenders/slack-appender.xml"/>
         <include resource="properties/slack-log-dev.xml"/>
         <logger name="com.loopers" level="DEBUG"/>
         <root level="INFO">
-            <appender-ref ref="CONSOLE"/>
+            <appender-ref ref="ASYNC-CONSOLE"/>
             <!-- /properties.slack-log-dev.xml 설정 후 활성화
             <appender-ref ref="ASYNC-SLACK"/>
              -->
@@ -23,11 +24,12 @@
 
     <springProfile name="qa">
         <include resource="appenders/json-console-appender.xml"/>
+        <include resource="appenders/async-console-appender.xml"/>
         <include resource="appenders/slack-appender.xml"/>
         <include resource="properties/slack-log-qa.xml"/>
         <logger name="com.loopers" level="INFO"/>
         <root level="INFO">
-            <appender-ref ref="CONSOLE"/>
+            <appender-ref ref="ASYNC-CONSOLE"/>
             <!-- /properties.slack-log-qa.xml 설정 후 활성화
             <appender-ref ref="ASYNC-SLACK"/>
              -->
@@ -36,11 +38,12 @@
 
     <springProfile name="prd">
         <include resource="appenders/json-console-appender.xml"/>
+        <include resource="appenders/async-console-appender.xml"/>
         <include resource="appenders/slack-appender.xml"/>
         <include resource="properties/slack-log-prd.xml"/>
         <logger name="com.loopers" level="INFO"/>
         <root level="INFO">
-            <appender-ref ref="CONSOLE"/>
+            <appender-ref ref="ASYNC-CONSOLE"/>
             <!-- /properties.slack-log-prd.xml 설정 후 활성화
             <appender-ref ref="ASYNC-SLACK"/>
              -->
