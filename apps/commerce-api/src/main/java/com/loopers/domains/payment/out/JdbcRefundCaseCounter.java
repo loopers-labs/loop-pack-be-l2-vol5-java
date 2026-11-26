@@ -3,6 +3,7 @@ package com.loopers.domains.payment.out;
 import com.loopers.domains.payment.app.port.RefundCaseCounter;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -18,11 +19,12 @@ public class JdbcRefundCaseCounter implements RefundCaseCounter {
     }
 
     @Override
-    public Map<String, Long> countByStatus() {
+    // 골격(w10s5b S7 Red): 사람 담당 중 수·가장 오래된 요청 시각은 Green에서 읽는다.
+    public Snapshot snapshot() {
         Map<String, Long> counts = new HashMap<>();
         jdbcTemplate.query(COUNT_SQL, resultSet -> {
             counts.put(resultSet.getString(1), resultSet.getLong(2));
         });
-        return counts;
+        return new Snapshot(counts, 0, Optional.empty());
     }
 }

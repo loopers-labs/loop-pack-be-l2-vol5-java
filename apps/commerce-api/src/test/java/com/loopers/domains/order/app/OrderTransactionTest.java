@@ -338,12 +338,12 @@ class OrderTransactionTest {
     }
 
     @Test
-    @DisplayName("결제 실패 주문의 늦은 성공을 사람에게 넘기는 대상 저장이 DB에 반영되고 셈 등록까지 지난 뒤 commit 직전에 실패하면 대상이 남지 않고 handed_to_human counter도 늘지 않는다")
+    @DisplayName("결제 실패 주문의 늦은 성공을 사람에게 넘기는 대상 저장이 DB에 반영되고 셈 등록까지 지난 뒤 commit 직전에 실패하면 대상이 남지 않고 사람 담당 이관(result_reversed) counter도 늘지 않는다")
     void doesNotCountReversalHandoffWhenRolledBack() {
         server.createBehavior(CreateBehavior.ACCEPT_FAILED);
         orderApplicationService.confirm(1, orderId, TestPgFixture.command());
         server.changeStatus(server.transactions().get(0).transactionKey(), "SUCCESS");
-        Counter handed = meterRegistry.find("commerce.payment.refund_outcome").tag("result", "handed_to_human").counter();
+        Counter handed = meterRegistry.find("commerce.payment.refund_person_assigned").tag("reason", "result_reversed").counter();
         double before = handed == null ? 0 : handed.count();
         failingRefundCaseRepository.failBeforeCommitAfterNextSave();
 
@@ -352,7 +352,7 @@ class OrderTransactionTest {
 
         assertThat(failingRefundCaseRepository.stateBeforeFailure()).endsWith("order=PAYMENT_FAILED, payment=FAILED, refundCases=1");
         assertThat(jdbcTemplate.queryForObject("select count(*) from payment_refund_cases", Long.class)).isZero();
-        Counter after = meterRegistry.find("commerce.payment.refund_outcome").tag("result", "handed_to_human").counter();
+        Counter after = meterRegistry.find("commerce.payment.refund_person_assigned").tag("reason", "result_reversed").counter();
         assertThat(after).isNotNull();
         assertThat(after.count() - before).isZero();
     }

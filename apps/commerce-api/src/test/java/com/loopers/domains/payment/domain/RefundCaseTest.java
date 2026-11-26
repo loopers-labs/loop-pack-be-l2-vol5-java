@@ -1,6 +1,7 @@
 package com.loopers.domains.payment.domain;
 
 import com.loopers.common.domain.Money;
+import com.loopers.common.error.RuleViolationException;
 import com.loopers.domains.payment.domain.RefundCase.MoneyStatus;
 import com.loopers.domains.payment.domain.RefundCase.Owner;
 import com.loopers.domains.payment.domain.RefundCase.RefundActor;
@@ -490,6 +491,63 @@ class RefundCaseTest {
 
         assertThat(concluded(MoneyStatus.REFUNDED, RefundActor.SYSTEM, Owner.AUTO).isHandoffDue(afterDeadline)).isFalse();
         assertThat(personOpen(MoneyStatus.CHECKING).isHandoffDue(afterDeadline)).isFalse();
+    }
+
+    @ParameterizedTest(name = "돈의 상태={0}, 기록={1}")
+    @CsvSource({"CHECKING, REFUNDED", "CHARGED, REFUNDED", "REFUND_REQUESTED, REFUNDED", "REFUND_UNKNOWN, REFUNDED",
+        "CHECKING, NO_CHARGE", "CHARGED, NO_CHARGE", "REFUND_REQUESTED, NO_CHARGE", "REFUND_UNKNOWN, NO_CHARGE"})
+    @DisplayName("S5: 사람 담당 중인 대상에 관리자가 환불함을 적으면 환불됨(PERSON), 청구 없음을 적으면 청구 없음으로 끝나고 담당은 그 관리자 이름으로 닫히며 조회를 멈춘다")
+    void personResolutionConcludesAndClosesOwner(MoneyStatus before, RefundCase.PersonResult result) {
+        RefundCase refundCase = personOpen(before);
+
+        refundCase.resolveByPerson(result, "ops-admin", LATE);
+
+        boolean refunded = result == RefundCase.PersonResult.REFUNDED;
+        assertThat(refundCase.getMoneyStatus()).isEqualTo(refunded ? MoneyStatus.REFUNDED : MoneyStatus.NO_CHARGE);
+        assertThat(refundCase.getRefundActor()).isEqualTo(refunded ? RefundActor.PERSON : null);
+        assertThat(refundCase.getConcludedAt()).isEqualTo(LATE);
+        assertThat(refundCase.getNextCheckAt()).isNull();
+        assertThat(refundCase.getOwner()).isEqualTo(Owner.PERSON);
+        assertThat(refundCase.getOwnerReason()).isEqualTo(RefundCase.HANDOFF_DEADLINE);
+        assertThat(refundCase.getOwnerClosedAt()).isEqualTo(LATE);
+        assertThat(refundCase.getOwnerClosedBy()).isEqualTo("ops-admin");
+        assertThat(refundCase.isPersonOpen()).isFalse();
+    }
+
+    @ParameterizedTest(name = "기록={0}")
+    @EnumSource(RefundCase.PersonResult.class)
+    @DisplayName("S5: 자동 담당 대상에는 사람 기록을 적을 수 없어 규칙 위반이고 돈·담당이 그대로다")
+    void rejectsPersonResolutionOnAutoOwner(RefundCase.PersonResult result) {
+        RefundCase refundCase = existing(MoneyStatus.CHECKING, Owner.AUTO, null, LATE, 1);
+
+        assertThatThrownBy(() -> refundCase.resolveByPerson(result, "ops-admin", LATE))
+            .isInstanceOf(RuleViolationException.class);
+        assertThat(refundCase.getMoneyStatus()).isEqualTo(MoneyStatus.CHECKING);
+        assertThat(refundCase.getOwnerClosedAt()).isNull();
+    }
+
+    @ParameterizedTest(name = "끝난 돈={0}, 기록={1}")
+    @CsvSource({"REFUNDED, REFUNDED", "REFUNDED, NO_CHARGE", "NO_CHARGE, REFUNDED", "NO_CHARGE, NO_CHARGE"})
+    @DisplayName("S5: 돈이 이미 끝나 담당이 닫힌 대상에는 사람 기록을 적을 수 없어 규칙 위반이고 처음 결론·종료 주체가 그대로다")
+    void rejectsPersonResolutionAfterConclusion(MoneyStatus concludedStatus, RefundCase.PersonResult result) {
+        RefundCase refundCase = concluded(concludedStatus,
+            concludedStatus == MoneyStatus.REFUNDED ? RefundActor.EXTERNAL : null, Owner.PERSON);
+
+        assertThatThrownBy(() -> refundCase.resolveByPerson(result, "ops-admin", LATE))
+            .isInstanceOf(RuleViolationException.class);
+        assertThat(refundCase.getMoneyStatus()).isEqualTo(concludedStatus);
+        assertThat(refundCase.getOwnerClosedBy()).isEqualTo(RefundCase.CLOSED_BY_SYSTEM);
+        assertThat(refundCase.getConcludedAt()).isEqualTo(EXPIRED_AT);
+    }
+
+    @Test
+    @DisplayName("S5: 담당이 열린 채 돈만 끝난 기록(모순 행)에도 사람 기록은 규칙 위반이다")
+    void rejectsPersonResolutionOnConcludedMoneyEvenIfOwnerOpen() {
+        RefundCase refundCase = existing(MoneyStatus.NO_CHARGE, Owner.PERSON, "TR-1", LATE, 1);
+
+        assertThatThrownBy(() -> refundCase.resolveByPerson(RefundCase.PersonResult.REFUNDED, "ops-admin", LATE))
+            .isInstanceOf(RuleViolationException.class);
+        assertThat(refundCase.getMoneyStatus()).isEqualTo(MoneyStatus.NO_CHARGE);
     }
 
     private static PaymentRecord pending(PaymentRecord.ProviderStatus providerStatus, String transactionKey) {

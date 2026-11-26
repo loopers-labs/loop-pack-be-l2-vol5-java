@@ -69,7 +69,7 @@ class RefundTrackingServiceTest {
 
     private final List<String> events = new CopyOnWriteArrayList<>();
     private final Set<String> blockedProviders = new HashSet<>();
-    private final List<RefundOutcomeRecorder.Outcome> outcomes = new CopyOnWriteArrayList<>();
+    private final List<String> outcomes = new CopyOnWriteArrayList<>();
     private final HalfJitter jitter = new HalfJitter();
     private InMemoryRefundCases refundCases;
     private PaymentGateway gatewayA;
@@ -86,10 +86,7 @@ class RefundTrackingServiceTest {
         clock.set(NOW);
         service = new RefundTrackingService(refundCases, new PaymentGatewayRegistry(List.of(gatewayA, gatewayB), List.of(PG_A, PG_B)),
             blockedProviders::contains, new TransactionTemplate(new RecordingTransactions(events)), clock,
-            outcome -> {
-                events.add("outcome:" + outcome);
-                outcomes.add(outcome);
-            }, jitter);
+            new RecordingOutcomes(), jitter);
     }
 
     @Test
@@ -102,14 +99,14 @@ class RefundTrackingServiceTest {
         service.trackDueCases();
 
         assertThat(events).containsSubsequence("save:1:REFUND_REQUESTED", "commit", "cancel:1", "save:1:REFUNDED", "commit",
-            "outcome:REFUNDED");
+            "outcome:REFUNDED/SYSTEM");
         assertThat(events.indexOf("cancel:1")).isGreaterThan(events.indexOf("save:1:REFUND_REQUESTED") + 1);
         verify(gatewayA, times(1)).cancel(new PaymentCancelCommand(providerOrderId(1), "TR-1", AMOUNT));
         assertThat(refundCases.get(1).getMoneyStatus()).isEqualTo(MoneyStatus.REFUNDED);
         assertThat(refundCases.get(1).getRefundActor()).isEqualTo(RefundActor.SYSTEM);
         assertThat(refundCases.get(1).getOwner()).isEqualTo(Owner.AUTO);
         assertThat(refundCases.get(1).getRefundRequestedAt()).isEqualTo(NOW);
-        assertThat(outcomes).containsExactly(RefundOutcomeRecorder.Outcome.REFUNDED);
+        assertThat(outcomes).containsExactly("REFUNDED/SYSTEM");
     }
 
     @Test
@@ -158,7 +155,7 @@ class RefundTrackingServiceTest {
     }
 
     @Test
-    @DisplayName("PG가 효과 없이 취소를 거절하면 자동으로 더 하지 않고 돈은 청구 확인·담당만 사람(REFUND_REJECTED)으로 두며 handed_to_human을 센다")
+    @DisplayName("PG가 효과 없이 취소를 거절하면 자동으로 더 하지 않고 돈은 청구 확인·담당만 사람(REFUND_REJECTED)으로 두며 사람 담당 이관을 사유별로 센다")
     void assignsPersonOnRejectedCancel() {
         refundCases.put(tracking(1, PG_A, "TR-1"));
         lookup(gatewayA, 1, found(tx("TR-1", 1, AMOUNT, PaymentTransactionStatus.SUCCESS)));
@@ -173,7 +170,7 @@ class RefundTrackingServiceTest {
         assertThat(refundCase.getOwnerChangedAt()).isEqualTo(NOW);
         assertThat(refundCase.getNextCheckAt()).isEqualTo(NOW.plus(HALF_PERSON));
         verify(gatewayA, times(1)).cancel(any());
-        assertThat(outcomes).containsExactly(RefundOutcomeRecorder.Outcome.HANDED_TO_HUMAN);
+        assertThat(outcomes).containsExactly("assigned:" + RefundCase.REFUND_REJECTED);
     }
 
     @Test
@@ -194,11 +191,11 @@ class RefundTrackingServiceTest {
         assertThat(events).containsSubsequence("save:1:REFUND_REQUESTED", "commit", "cancel:1", "save:1:REFUND_UNKNOWN", "commit");
         assertThat(events.stream().filter("cancel:1"::equals)).hasSize(1);
         assertThat(refundCases.get(2).getMoneyStatus()).isEqualTo(MoneyStatus.NO_CHARGE);
-        assertThat(outcomes).containsExactly(RefundOutcomeRecorder.Outcome.CLOSED_NO_CHARGE);
+        assertThat(outcomes).containsExactly("NO_CHARGE/SYSTEM");
     }
 
     @Test
-    @DisplayName("확인 중 대상의 조회가 일치하는 단일 FAILED면 취소 없이 청구 없음으로 닫고 closed_no_charge를 센다")
+    @DisplayName("확인 중 대상의 조회가 일치하는 단일 FAILED면 취소 없이 청구 없음으로 닫고 청구 없음(SYSTEM)을 센다")
     void closesWhenNoCharge() {
         refundCases.put(tracking(1, PG_A, "TR-1"));
         lookup(gatewayA, 1, found(tx("TR-1", 1, AMOUNT, PaymentTransactionStatus.FAILED)));
@@ -208,11 +205,11 @@ class RefundTrackingServiceTest {
         assertThat(refundCases.get(1).getMoneyStatus()).isEqualTo(MoneyStatus.NO_CHARGE);
         assertThat(refundCases.get(1).getRefundActor()).isNull();
         verify(gatewayA, never()).cancel(any());
-        assertThat(outcomes).containsExactly(RefundOutcomeRecorder.Outcome.CLOSED_NO_CHARGE);
+        assertThat(outcomes).containsExactly("NO_CHARGE/SYSTEM");
     }
 
     @Test
-    @DisplayName("S4: 확인 중 대상의 조회가 일치하는 단일 CANCELED면 청구 없음이 아니라 환불됨·주체 EXTERNAL로 끝나고 취소를 보내지 않으며 refunded를 센다")
+    @DisplayName("S4: 확인 중 대상의 조회가 일치하는 단일 CANCELED면 청구 없음이 아니라 환불됨·주체 EXTERNAL로 끝나고 취소를 보내지 않으며 환불됨(EXTERNAL)을 센다")
     void concludesExternalRefundWhileChecking() {
         refundCases.put(tracking(1, PG_A, "TR-1"));
         lookup(gatewayA, 1, found(tx("TR-1", 1, AMOUNT, PaymentTransactionStatus.CANCELED)));
@@ -223,7 +220,7 @@ class RefundTrackingServiceTest {
         assertThat(refundCases.get(1).getRefundActor()).isEqualTo(RefundActor.EXTERNAL);
         assertThat(refundCases.get(1).getConcludedAt()).isEqualTo(NOW);
         verify(gatewayA, never()).cancel(any());
-        assertThat(outcomes).containsExactly(RefundOutcomeRecorder.Outcome.REFUNDED);
+        assertThat(outcomes).containsExactly("REFUNDED/EXTERNAL");
     }
 
     @ParameterizedTest(name = "조회 결과={0}")
@@ -280,7 +277,7 @@ class RefundTrackingServiceTest {
 
     @ParameterizedTest(name = "조회 장면={0}")
     @ValueSource(strings = {"amount", "order", "key", "multiple-all", "multiple-single"})
-    @DisplayName("S2: 확인 중 대상에 금액·주문·키가 다른 단일 거래나 복수 거래가 보이면 취소하지 않고 청구 확인·담당만 사람(사유)으로 두며 handed_to_human을 센다")
+    @DisplayName("S2: 확인 중 대상에 금액·주문·키가 다른 단일 거래나 복수 거래가 보이면 취소하지 않고 청구 확인·담당만 사람(사유)으로 두며 사람 담당 이관을 사유별로 센다")
     void assignsPersonOnMismatchWhileChecking(String scene) {
         refundCases.put(tracking(1, PG_A, "TR-1"));
         PaymentTransaction matching = tx("TR-1", 1, AMOUNT, PaymentTransactionStatus.SUCCESS);
@@ -311,7 +308,7 @@ class RefundTrackingServiceTest {
         assertThat(refundCase.getTransactionKey()).isEqualTo("TR-1");
         assertThat(refundCase.getNextCheckAt()).isEqualTo(NOW.plus(HALF_PERSON));
         verify(gatewayA, never()).cancel(any());
-        assertThat(outcomes).containsExactly(RefundOutcomeRecorder.Outcome.HANDED_TO_HUMAN);
+        assertThat(outcomes).containsExactly("assigned:" + expectedReason);
     }
 
     @ParameterizedTest(name = "돈의 상태={0}")
@@ -330,7 +327,7 @@ class RefundTrackingServiceTest {
         assertThat(refundCase.getOwner()).isEqualTo(Owner.PERSON);
         assertThat(refundCase.getOwnerReason()).isEqualTo(RefundCase.MULTIPLE_TRANSACTIONS);
         verify(gatewayA, never()).cancel(any());
-        assertThat(outcomes).containsExactly(RefundOutcomeRecorder.Outcome.HANDED_TO_HUMAN);
+        assertThat(outcomes).containsExactly("assigned:" + RefundCase.MULTIPLE_TRANSACTIONS);
     }
 
     @ParameterizedTest(name = "돈의 상태={0}")
@@ -346,7 +343,7 @@ class RefundTrackingServiceTest {
         assertThat(refundCases.get(1).getRefundActor()).isEqualTo(RefundActor.SYSTEM);
         verify(gatewayA).verifyOrder(providerOrderId(1), "TR-1");
         verify(gatewayA, never()).cancel(any());
-        assertThat(outcomes).containsExactly(RefundOutcomeRecorder.Outcome.REFUNDED);
+        assertThat(outcomes).containsExactly("REFUNDED/SYSTEM");
     }
 
     @ParameterizedTest(name = "돈의 상태={0}")
@@ -366,7 +363,7 @@ class RefundTrackingServiceTest {
 
     @ParameterizedTest(name = "돈의 상태={0}")
     @EnumSource(value = MoneyStatus.class, names = {"CHECKING", "REFUND_REQUESTED", "REFUND_UNKNOWN"})
-    @DisplayName("S2: 이관 기한이 지난 자동 담당 대상은 조회하지 않고 돈의 상태는 그대로 두며 담당만 사람(HANDOFF_DEADLINE)으로 넘기고 handed_to_human을 센다")
+    @DisplayName("S2: 이관 기한이 지난 자동 담당 대상은 조회하지 않고 돈의 상태는 그대로 두며 담당만 사람(HANDOFF_DEADLINE)으로 넘기고 사람 담당 이관을 사유별로 센다")
     void assignsPersonAtDeadlineKeepingMoney(MoneyStatus moneyStatus) {
         refundCases.put(withStatus(1, PG_A, "TR-1", moneyStatus));
         Instant deadline = OPENED_AT.plus(Duration.ofDays(2));
@@ -383,7 +380,7 @@ class RefundTrackingServiceTest {
         assertThat(refundCase.getNextCheckAt()).isEqualTo(deadline.plus(HALF_PERSON));
         verify(gatewayA, never()).verifyOrder(anyString(), any());
         verify(gatewayA, never()).cancel(any());
-        assertThat(outcomes).containsExactly(RefundOutcomeRecorder.Outcome.HANDED_TO_HUMAN);
+        assertThat(outcomes).containsExactly("assigned:" + RefundCase.HANDOFF_DEADLINE);
     }
 
     @ParameterizedTest(name = "돈의 상태={0}")
@@ -424,7 +421,7 @@ class RefundTrackingServiceTest {
         assertThat(refundCase.getOwnerClosedBy()).isEqualTo(RefundCase.CLOSED_BY_SYSTEM);
         assertThat(refundCase.isPersonOpen()).isFalse();
         verify(gatewayA, never()).cancel(any());
-        assertThat(outcomes).containsExactly(RefundOutcomeRecorder.Outcome.REFUNDED);
+        assertThat(outcomes).containsExactly("REFUNDED/" + expectedActor);
     }
 
     @Test
@@ -439,7 +436,7 @@ class RefundTrackingServiceTest {
         assertThat(refundCase.getMoneyStatus()).isEqualTo(MoneyStatus.NO_CHARGE);
         assertThat(refundCase.getOwnerClosedAt()).isEqualTo(NOW);
         assertThat(refundCase.getOwnerClosedBy()).isEqualTo(RefundCase.CLOSED_BY_SYSTEM);
-        assertThat(outcomes).containsExactly(RefundOutcomeRecorder.Outcome.CLOSED_NO_CHARGE);
+        assertThat(outcomes).containsExactly("NO_CHARGE/SYSTEM");
     }
 
     @Test
@@ -764,6 +761,20 @@ class RefundTrackingServiceTest {
         @Override
         protected void doRollback(DefaultTransactionStatus status) {
             events.add("rollback");
+        }
+    }
+
+    // 결론은 "돈의 상태/주체", 사람 담당은 "assigned:사유"로 남긴다. 결론은 commit 순서도 보도록 events에도 남긴다.
+    private class RecordingOutcomes implements RefundOutcomeRecorder {
+        @Override
+        public void recordOutcome(Result result, RefundActor actor) {
+            events.add("outcome:" + result + "/" + actor);
+            outcomes.add(result + "/" + actor);
+        }
+
+        @Override
+        public void recordPersonAssigned(String reason) {
+            outcomes.add("assigned:" + reason);
         }
     }
 }

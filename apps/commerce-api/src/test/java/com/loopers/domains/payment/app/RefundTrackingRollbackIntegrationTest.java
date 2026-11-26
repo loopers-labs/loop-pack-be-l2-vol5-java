@@ -54,6 +54,7 @@ class RefundTrackingRollbackIntegrationTest {
     private static final long ORDER_ID = 3001;
     private static final String PROVIDER_ORDER_ID = String.format("LP-ORD-%010d", ORDER_ID);
     private static final String OUTCOME_METRIC = "commerce.payment.refund_outcome";
+    private static final String ASSIGNED_METRIC = "commerce.payment.refund_person_assigned";
 
     @Autowired private RefundTrackingService refundTracking;
     @Autowired private FailingRefundCases failingRefundCases;
@@ -84,9 +85,9 @@ class RefundTrackingRollbackIntegrationTest {
     }
 
     @ParameterizedTest(name = "장면={0} → 실패한 저장={1}/{2}")
-    @CsvSource({"failed, NO_CHARGE, AUTO, closed_no_charge", "deadline, CHECKING, PERSON, handed_to_human"})
+    @CsvSource({"failed, NO_CHARGE, AUTO, no_charge/system", "deadline, CHECKING, PERSON, assigned/handoff_deadline"})
     @DisplayName("청구 없음·사람 담당 저장이 flush되고 셈 등록까지 지난 뒤 commit 직전에 실패해 rollback되면 대상은 확인 중·자동 담당 그대로이고 counter는 늘지 않으며 건별 실패만 ERROR로 남는다")
-    void doesNotCountRolledBackConclusion(String scene, MoneyStatus failingMoney, Owner failingOwner, String result) {
+    void doesNotCountRolledBackConclusion(String scene, MoneyStatus failingMoney, Owner failingOwner, String counter) {
         failingRefundCases.save(RefundCase.restore(ORDER_ID, TestPgFixture.PROVIDER_ID, PROVIDER_ORDER_ID, new Money(1000),
             MoneyStatus.CHECKING, null, Owner.AUTO, null, null, null, null, PaymentRecord.ProviderStatus.PENDING, null, NOW,
             NOW.plus(RefundCase.HANDOFF_AFTER), NOW.plus(RefundCase.PROMISE_AFTER), NOW, 0, null, null));
@@ -94,7 +95,7 @@ class RefundTrackingRollbackIntegrationTest {
         if ("deadline".equals(scene)) {
             clock.set(NOW.plus(Duration.ofDays(2)));
         }
-        double before = outcome(result);
+        double before = outcome(counter);
         failingRefundCases.failOnSaveOf(failingMoney, failingOwner);
 
         refundTracking.trackDueCases();
@@ -104,7 +105,7 @@ class RefundTrackingRollbackIntegrationTest {
         assertThat(state(ORDER_ID)).isEqualTo("CHECKING/AUTO");
         assertThat(jdbc.queryForObject("select concluded_at is null and owner_changed_at is null from payment_refund_cases"
             + " where order_id = ?", Boolean.class, ORDER_ID)).isTrue();
-        assertThat(outcome(result) - before).isZero();
+        assertThat(outcome(counter) - before).isZero();
         assertThat(logs.list.stream().filter(event -> event.getLevel() == Level.ERROR).toList()).singleElement()
             .satisfies(event -> assertThat(event.getFormattedMessage()).contains("causeType=IllegalStateException"));
     }
@@ -114,8 +115,12 @@ class RefundTrackingRollbackIntegrationTest {
             String.class, orderId);
     }
 
-    private double outcome(String result) {
-        Counter counter = meterRegistry.find(OUTCOME_METRIC).tag("result", result).counter();
+    // "결과/주체"는 결론 counter, "assigned/사유"는 사람 담당 counter다.
+    private double outcome(String key) {
+        String[] parts = key.split("/");
+        Counter counter = "assigned".equals(parts[0])
+            ? meterRegistry.find(ASSIGNED_METRIC).tag("reason", parts[1]).counter()
+            : meterRegistry.find(OUTCOME_METRIC).tag("result", parts[0]).tag("actor", parts[1]).counter();
         return counter == null ? 0 : counter.count();
     }
 

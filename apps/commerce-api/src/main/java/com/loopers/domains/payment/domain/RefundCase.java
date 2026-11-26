@@ -13,6 +13,8 @@ public final class RefundCase {
 
     public enum RefundActor { SYSTEM, PERSON, EXTERNAL }
 
+    public enum PersonResult { REFUNDED, NO_CHARGE }
+
     // [임시] 자동 추적 2일 뒤 사람에게 넘기고, 고객에게는 4일 안 환불을 약속한다(사용자 결정 D188).
     public static final Duration HANDOFF_AFTER = Duration.ofDays(2);
     public static final Duration PROMISE_AFTER = Duration.ofDays(4);
@@ -190,6 +192,10 @@ public final class RefundCase {
             changeOwnerToPerson(REFUND_REJECTED, now);
         }
         nextCheckAt = now.plus(personCheckDelay);
+    }
+
+    // 골격(w10s5b S5 Red): 업무 로직은 Green에서 넣는다.
+    public void resolveByPerson(PersonResult result, String closedBy, Instant now) {
     }
 
     public void closeNoCharge(Instant now) {

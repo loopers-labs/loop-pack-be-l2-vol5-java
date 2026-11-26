@@ -249,7 +249,7 @@ class LateSuccessRefundCaseIntegrationTest {
 
     @ParameterizedTest(name = "앞선 종결={0}")
     @ValueSource(strings = {"payment-failed", "closed-no-charge"})
-    @DisplayName("결과 뒤집힘으로 사람 담당이 되면 commit 뒤 handed_to_human counter가 1 늘고 늦은 성공이 다시 와도 더 늘지 않는다")
+    @DisplayName("결과 뒤집힘으로 사람 담당이 되면 commit 뒤 사람 담당 이관(result_reversed) counter가 1 늘고 늦은 성공이 다시 와도 더 늘지 않는다")
     void countsReversalHandoffOnce(String prior) throws Exception {
         if (prior.equals("payment-failed")) {
             start(CreateBehavior.ACCEPT_FAILED);
@@ -271,7 +271,7 @@ class LateSuccessRefundCaseIntegrationTest {
     }
 
     @Test
-    @DisplayName("확인 중 대상에 늦은 성공이 합류하는 것은 담당 변경이 아니라 handed_to_human counter가 늘지 않는다")
+    @DisplayName("확인 중 대상에 늦은 성공이 합류하는 것은 담당 변경이 아니라 사람 담당 이관 counter가 늘지 않는다")
     void doesNotCountJoinIntoTrackingCase() throws Exception {
         start(CreateBehavior.ACCEPT_PENDING);
         clock.set(EXPIRES_AT);
@@ -288,7 +288,7 @@ class LateSuccessRefundCaseIntegrationTest {
     }
 
     private double handedToHuman() {
-        Counter counter = meterRegistry.find("commerce.payment.refund_outcome").tag("result", "handed_to_human").counter();
+        Counter counter = meterRegistry.find("commerce.payment.refund_person_assigned").tag("reason", "result_reversed").counter();
         return counter == null ? 0 : counter.count();
     }
 

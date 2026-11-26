@@ -3,6 +3,7 @@ package com.loopers.domains.payment.in;
 import com.loopers.domains.payment.app.port.RefundCaseCounter;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
+import java.time.Clock;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -28,7 +29,8 @@ public class RefundCaseMetrics {
     private final RefundCaseCounter refundCaseCounter;
     private final Map<String, AtomicReference<Double>> values;
 
-    public RefundCaseMetrics(RefundCaseCounter refundCaseCounter, MeterRegistry meterRegistry) {
+    // 골격(w10s5b S7 Red): clock은 Green에서 요청 경과 초 계산에 쓴다.
+    public RefundCaseMetrics(RefundCaseCounter refundCaseCounter, MeterRegistry meterRegistry, Clock clock) {
         this.refundCaseCounter = refundCaseCounter;
         Map<String, AtomicReference<Double>> registered = new HashMap<>();
         for (String status : TRACKED_STATUSES) {
@@ -45,7 +47,7 @@ public class RefundCaseMetrics {
     public void refresh() {
         Map<String, Long> counts;
         try {
-            counts = refundCaseCounter.countByStatus();
+            counts = refundCaseCounter.snapshot().countsByMoneyStatus();
         } catch (RuntimeException exception) {
             log.warn("환불 확인 대상 지표 갱신에 실패해 마지막 값을 유지합니다. causeType={}", exception.getClass().getSimpleName());
             return;

@@ -27,6 +27,7 @@ import com.loopers.support.pg.MutablePaymentClock;
 import com.loopers.support.pg.TestPgFixture;
 import com.loopers.utils.DatabaseCleanUp;
 import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Duration;
 import java.time.Instant;
@@ -65,12 +66,17 @@ class RefundTrackingIntegrationTest {
     private static final Instant EXPIRES_AT = NOW.plus(Duration.ofMinutes(2));
     private static final Instant FIRST_CHECK_AT = EXPIRES_AT.plus(RefundCase.FIRST_CHECK_DELAY);
     private static final String OUTCOME_METRIC = "commerce.payment.refund_outcome";
+    private static final String ASSIGNED_METRIC = "commerce.payment.refund_person_assigned";
+    private static final String CASES_METRIC = "commerce.payment.refund_cases";
+    private static final String PERSON_OPEN_METRIC = "commerce.payment.refund_person_open";
+    private static final String OLDEST_AGE_METRIC = "commerce.payment.refund_requested_oldest_age_seconds";
     private static final String SECRET_BODY_MARKER = "PG-SECRET-BODY";
 
     @Autowired private BrandApplicationService brands;
     @Autowired private ProductApplicationService products;
     @Autowired private OrderApplicationService orders;
     @Autowired private RefundTrackingService refundTracking;
+    @Autowired private RefundCaseMetrics refundCaseMetrics;
     @Autowired private PaymentRefundCaseRepository refundCases;
     @Autowired private MeterRegistry meterRegistry;
     @Autowired private MutablePaymentClock clock;
@@ -106,9 +112,9 @@ class RefundTrackingIntegrationTest {
     }
 
     @Test
-    @DisplayName("만료 뒤 PG가 단일 SUCCESS면 한 회차에 취소를 정확히 한 번 보내 환불됨(SYSTEM)이 되고 refunded가 1 늘며 다음 회차에도 취소는 그대로 1이다")
+    @DisplayName("만료 뒤 PG가 단일 SUCCESS면 한 회차에 취소를 정확히 한 번 보내 환불됨(SYSTEM)이 되고 환불됨(SYSTEM) counter가 1 늘며 다음 회차에도 취소는 그대로 1이다")
     void refundsLateSuccessExactlyOnce() {
-        double refundedBefore = outcome("refunded");
+        double refundedBefore = outcome("refunded", "system");
         long orderId = expiredOrder();
         server.changeStatus(transactionKey(orderId), "SUCCESS");
 
@@ -124,7 +130,7 @@ class RefundTrackingIntegrationTest {
         assertThat(refundCase.getConcludedAt()).isEqualTo(FIRST_CHECK_AT);
         assertThat(pg.cancelCalls(providerOrderId(orderId))).isEqualTo(1);
         assertThat(pgStatus(orderId)).isEqualTo("CANCELED");
-        assertThat(outcome("refunded") - refundedBefore).isEqualTo(1.0);
+        assertThat(outcome("refunded", "system") - refundedBefore).isEqualTo(1.0);
         assertThat(orderStatus(orderId)).isEqualTo("PAYMENT_EXPIRED");
     }
 
@@ -149,7 +155,7 @@ class RefundTrackingIntegrationTest {
     }
 
     @Test
-    @DisplayName("환불 요청함을 commit한 뒤 취소 전에 멈추면 다음 회차들은 조회만 하고, 기한에 돈은 환불 요청함 그대로 담당만 사람이 되며 그 뒤에도 조회만 해 취소를 한 번도 보내지 않는다")
+    @DisplayName("환불 요청함을 commit한 뒤 취소 전에 멈추면 다음 회차들은 조회만 하고, 기한에 돈은 환불 요청함 그대로 담당만 사람이 되며 그 뒤에도 조회만 해 취소를 한 번도 보내지 않으며 요청 정체 gauge가 요청 뒤 경과 초다")
     void neverSendsCancelAfterInterruptedRequest() {
         long orderId = expiredOrder();
         server.changeStatus(transactionKey(orderId), "SUCCESS");
@@ -179,6 +185,11 @@ class RefundTrackingIntegrationTest {
         assertThat(handed.getOwner()).isEqualTo(Owner.PERSON);
         assertThat(handed.getOwnerReason()).isEqualTo(RefundCase.HANDOFF_DEADLINE);
         assertThat(pg.cancelCalls(providerOrderId(orderId))).isZero();
+        refundCaseMetrics.refresh();
+        assertThat(gauge(CASES_METRIC, "refund_requested")).as("기한 이관 뒤에도 돈의 상태는 환불 요청함").isEqualTo(1.0);
+        assertThat(gauge(PERSON_OPEN_METRIC, null)).isEqualTo(1.0);
+        assertThat(gauge(OLDEST_AGE_METRIC, null)).as("요청 뒤 경과 초")
+            .isEqualTo((double) Duration.between(FIRST_CHECK_AT, EXPIRES_AT.plus(Duration.ofDays(2))).getSeconds());
 
         lookupsBefore = server.lookupCalls();
         clock.advance(Duration.ofMinutes(30));
@@ -190,9 +201,9 @@ class RefundTrackingIntegrationTest {
     }
 
     @Test
-    @DisplayName("만료 뒤 PG가 단일 FAILED면 취소 없이 청구 없음으로 닫고 closed_no_charge가 1 는다")
+    @DisplayName("만료 뒤 PG가 단일 FAILED면 취소 없이 청구 없음으로 닫고 청구 없음(SYSTEM) counter가 1 는다")
     void closesFailedPaymentWithoutRefund() {
-        double closedBefore = outcome("closed_no_charge");
+        double closedBefore = outcome("no_charge", "system");
         long orderId = expiredOrder();
         server.changeStatus(transactionKey(orderId), "FAILED");
 
@@ -201,7 +212,7 @@ class RefundTrackingIntegrationTest {
         assertThat(refundCase(orderId).getMoneyStatus()).isEqualTo(MoneyStatus.NO_CHARGE);
         assertThat(refundCase(orderId).getConcludedAt()).isEqualTo(FIRST_CHECK_AT);
         assertThat(pg.cancelCalls(providerOrderId(orderId))).isZero();
-        assertThat(outcome("closed_no_charge") - closedBefore).isEqualTo(1.0);
+        assertThat(outcome("no_charge", "system") - closedBefore).isEqualTo(1.0);
     }
 
     @Test
@@ -221,9 +232,9 @@ class RefundTrackingIntegrationTest {
 
     @ParameterizedTest(name = "조회 장면={0}")
     @ValueSource(strings = {"pending", "zero", "lookup-error"})
-    @DisplayName("S2: PENDING·0건·조회 실패가 이어지면 확인 중으로 간격을 늘리며 추적하다가 이관 기한(2일)에 조회 없이 돈은 확인 중 그대로 담당만 사람이 되고 counter가 는다")
+    @DisplayName("S2: PENDING·0건·조회 실패가 이어지면 확인 중으로 간격을 늘리며 추적하다가 이관 기한(2일)에 조회 없이 돈은 확인 중 그대로 담당만 사람이 되고 이관 counter가 늘며 gauge는 확인 중 1·사람 담당 중 1이다")
     void assignsPersonAtDeadlineWhileInconclusive(String scene) {
-        double handedBefore = outcome("handed_to_human");
+        double handedBefore = assigned("handoff_deadline");
         long orderId = expiredOrder();
         switch (scene) {
             case "zero" -> server.removeTransaction(transactionKey(orderId));
@@ -253,7 +264,11 @@ class RefundTrackingIntegrationTest {
         assertThat(handed.getNextCheckAt()).isEqualTo(deadline.plus(Duration.ofMinutes(30)));
         assertThat(server.lookupCalls() - lookupsBefore).isZero();
         assertThat(pg.cancelCalls(providerOrderId(orderId))).isZero();
-        assertThat(outcome("handed_to_human") - handedBefore).isEqualTo(1.0);
+        assertThat(assigned("handoff_deadline") - handedBefore).isEqualTo(1.0);
+        refundCaseMetrics.refresh();
+        assertThat(gauge(CASES_METRIC, "checking")).as("기한 이관 뒤 돈의 상태 gauge").isEqualTo(1.0);
+        assertThat(gauge(PERSON_OPEN_METRIC, null)).as("기한 이관 뒤 사람 담당 중 gauge").isEqualTo(1.0);
+        assertThat(gauge(OLDEST_AGE_METRIC, null)).as("환불 요청함 없음").isZero();
     }
 
     @ParameterizedTest(name = "PG 사실={0}")
@@ -507,9 +522,21 @@ class RefundTrackingIntegrationTest {
         return jdbc.queryForObject("select status from orders where id = ?", String.class, orderId);
     }
 
-    private double outcome(String result) {
-        Counter counter = meterRegistry.find(OUTCOME_METRIC).tag("result", result).counter();
+    private double outcome(String result, String actor) {
+        Counter counter = meterRegistry.find(OUTCOME_METRIC).tag("result", result).tag("actor", actor).counter();
         return counter == null ? 0 : counter.count();
+    }
+
+    private double assigned(String reason) {
+        Counter counter = meterRegistry.find(ASSIGNED_METRIC).tag("reason", reason).counter();
+        return counter == null ? 0 : counter.count();
+    }
+
+    // gauge가 없으면 -1이라 값 단언이 실패한다. 돈의 상태 gauge만 money_status label로 고른다.
+    private double gauge(String name, String moneyStatus) {
+        Gauge gauge = moneyStatus == null ? meterRegistry.find(name).gauge()
+            : meterRegistry.find(name).tag("money_status", moneyStatus).gauge();
+        return gauge == null ? -1 : gauge.value();
     }
 
     private List<ILoggingEvent> events(Level level) {
