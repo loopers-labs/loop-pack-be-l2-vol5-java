@@ -15,8 +15,11 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpEntity;
@@ -25,12 +28,14 @@ import org.springframework.http.HttpMethod;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@ExtendWith(OutputCaptureExtension.class)
 class CheckoutIncidentTest {
 
     private static final String ORDERS = "/api/v1/orders";
@@ -81,7 +86,7 @@ class CheckoutIncidentTest {
 
     @Test
     @DisplayName("PG 는 성공했는데 응답이 timeout 되거나 끊겨 잃은 세 주문은 UNKNOWN 으로 남고, 같은 세 주문을 reconcile 하면 PG 생성 호출을 더 보내지 않고 확정된다")
-    void lostResponsesStayUnknownUntilTheSameOrdersAreReconciled() {
+    void lostResponsesStayUnknownUntilTheSameOrdersAreReconciled(CapturedOutput output) {
         assertThat(PG.willDropNextCreateResponse()).isFalse();
         List<Long> baseline = placeOrders(10);
         baseline.forEach(this::confirm);
@@ -96,6 +101,7 @@ class CheckoutIncidentTest {
         assertThat(PG.createCount()).isEqualTo(10);
         assertThat(productService.getStock(coat)).isEqualTo(Quantity.of(STOCK - 10));
 
+        int faultStart = output.getOut().length();
         List<Long> fault = placeOrders(10);
         List<Long> timedOut = List.of(fault.get(2), fault.get(8));
         List<Long> disconnected = List.of(fault.get(5));
@@ -128,7 +134,22 @@ class CheckoutIncidentTest {
         assertThat(PG.createCount()).isEqualTo(20);
         assertThat(productService.getStock(coat)).isEqualTo(Quantity.of(STOCK - 20));
 
+        String faultLog = output.getOut().substring(faultStart);
+        assertThat(timedOut).allSatisfy(orderId -> assertThat(linesWith(faultLog, providerOrderIdOf(orderId)))
+            .singleElement().asString().contains("cause=timeout"));
+        assertThat(disconnected).allSatisfy(orderId -> assertThat(linesWith(faultLog, providerOrderIdOf(orderId)))
+            .singleElement().asString().contains("cause=connection_lost"));
+        assertThat(lost).allSatisfy(orderId ->
+            assertThat(linesWith(faultLog, "orderId=" + orderId + ",", "result=unknown")).hasSize(1));
+        assertThat(answered).allSatisfy(orderId -> {
+            assertThat(linesWith(faultLog, providerOrderIdOf(orderId))).isEmpty();
+            assertThat(linesWith(faultLog, "orderId=" + orderId + ",", "result=")).isEmpty();
+        });
+        assertThat(linesWith(faultLog, "error=")).isEmpty();
+        assertThat(linesWith(faultLog, "from=UNKNOWN")).isEmpty();
+
         assertThat(PG.willDropNextCreateResponse()).isFalse();
+        int recoveryStart = output.getOut().length();
         lost.forEach(this::reconcile);
 
         assertThat(withPaymentStatus(fault, PaymentStatus.SUCCESS)).containsExactlyElementsOf(fault);
@@ -143,6 +164,12 @@ class CheckoutIncidentTest {
 
         assertThat(confirmedOrders(fault)).containsExactlyElementsOf(fault);
         assertThat(fault).allSatisfy(orderId -> assertThat(outboxRows(orderId)).isEqualTo(1));
+        String recoveryLog = output.getOut().substring(recoveryStart);
+        assertThat(lost).allSatisfy(orderId ->
+            assertThat(linesWith(recoveryLog, "orderId=" + orderId + ",", "from="))
+                .singleElement().asString().contains("source=reconcile", "from=UNKNOWN", "to=SUCCESS"));
+        assertThat(linesWith(recoveryLog, "from=")).hasSize(3);
+        assertThat(linesWith(recoveryLog, "error=")).isEmpty();
         assertThat(PG.createCount()).isEqualTo(20);
         assertThat(productService.getStock(coat)).isEqualTo(Quantity.of(STOCK - 20));
     }
@@ -205,6 +232,16 @@ class CheckoutIncidentTest {
             .filter(orderId -> "CONFIRMED".equals(
                 testRestTemplate.exchange(ORDERS + "/" + orderId, HttpMethod.GET, new HttpEntity<>(null, headers()), ORDER)
                     .getBody().data().status()))
+            .toList();
+    }
+
+    private String providerOrderIdOf(Long orderId) {
+        return "providerOrderId=" + paymentOf(orderId).getProviderOrderId().value();
+    }
+
+    private List<String> linesWith(String log, String... markers) {
+        return log.lines()
+            .filter(line -> Arrays.stream(markers).allMatch(line::contains))
             .toList();
     }
 
