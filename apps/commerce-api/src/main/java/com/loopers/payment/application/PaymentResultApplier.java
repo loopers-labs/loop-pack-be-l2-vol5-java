@@ -87,20 +87,32 @@ public class PaymentResultApplier {
         try {
             if (payment.getTransactionKey() != null) {
                 Optional<PgTransaction> found = paymentGatewayPort.findByTransactionKey(payment.getTransactionKey());
-                logLookup(payment, "TRANSACTION_KEY", found.stream().toList(), source);
-                return found.map(transaction -> apply(paymentId, transaction, source))
-                    .orElseGet(() -> recordCheck(paymentId, NOT_FOUND, source));
+                if (found.isEmpty()) {
+                    log.info("payment.lookup.result orderId={} paymentId={} providerOrderId={} by=TRANSACTION_KEY found=0 pgStatus=- transactionKey=- source={}",
+                        payment.getOrderId(), paymentId, payment.getProviderOrderId(), source);
+                    return recordCheck(paymentId, NOT_FOUND, source);
+                }
+                PgTransaction transaction = found.get();
+                log.info("payment.lookup.result orderId={} paymentId={} providerOrderId={} by=TRANSACTION_KEY found=1 pgStatus={} transactionKey={} source={}",
+                    payment.getOrderId(), paymentId, payment.getProviderOrderId(), transaction.status(), transaction.transactionKey(), source);
+                return apply(paymentId, transaction, source);
             }
             List<PgTransaction> found = paymentGatewayPort.findByProviderOrderId(payment.getProviderOrderId());
-            logLookup(payment, "PROVIDER_ORDER_ID", found, source);
             if (found.isEmpty()) {
+                log.info("payment.lookup.result orderId={} paymentId={} providerOrderId={} by=PROVIDER_ORDER_ID found=0 pgStatus=- transactionKey=- source={}",
+                    payment.getOrderId(), paymentId, payment.getProviderOrderId(), source);
                 return recordCheck(paymentId, NOT_FOUND, source);
             }
             if (found.size() > 1) {
+                log.info("payment.lookup.result orderId={} paymentId={} providerOrderId={} by=PROVIDER_ORDER_ID found={} pgStatus=- transactionKey=- source={}",
+                    payment.getOrderId(), paymentId, payment.getProviderOrderId(), found.size(), source);
                 log.warn("PG 거래가 여러 건입니다 — 상태를 바꾸지 않습니다. paymentId={}, count={}", paymentId, found.size());
                 return recordCheck(paymentId, "MULTIPLE:" + found.size(), source);
             }
-            return apply(paymentId, found.get(0), source);
+            PgTransaction transaction = found.get(0);
+            log.info("payment.lookup.result orderId={} paymentId={} providerOrderId={} by=PROVIDER_ORDER_ID found=1 pgStatus={} transactionKey={} source={}",
+                payment.getOrderId(), paymentId, payment.getProviderOrderId(), transaction.status(), transaction.transactionKey(), source);
+            return apply(paymentId, transaction, source);
         } catch (PgLookupUnavailableException e) {
             log.info("payment.lookup.result orderId={} paymentId={} providerOrderId={} found=UNAVAILABLE reason={} source={}",
                 payment.getOrderId(), paymentId, payment.getProviderOrderId(), e.getMessage(), source);
@@ -234,13 +246,6 @@ public class PaymentResultApplier {
                 applied.orderId(), paymentId, applied.providerOrderId(), applied.from(), applied.to(), applied.outcome(), source);
         }
         return applied.outcome();
-    }
-
-    private void logLookup(Payment payment, String by, List<PgTransaction> found, PaymentResultSource source) {
-        PgTransaction only = found.size() == 1 ? found.get(0) : null;
-        log.info("payment.lookup.result orderId={} paymentId={} providerOrderId={} by={} found={} pgStatus={} transactionKey={} source={}",
-            payment.getOrderId(), payment.getId(), payment.getProviderOrderId(), by, found.size(),
-            only != null ? only.status() : "-", only != null ? only.transactionKey() : "-", source);
     }
 
     /**

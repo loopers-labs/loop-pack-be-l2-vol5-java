@@ -8,7 +8,6 @@ import com.loopers.payment.application.port.out.PgPaymentRequest;
 import com.loopers.payment.application.port.out.PgRejectedException;
 import com.loopers.payment.application.port.out.PgTransaction;
 import com.loopers.payment.application.port.out.PgUnknownResultException;
-import com.loopers.payment.domain.ExternalPaymentStatus;
 import com.loopers.payment.domain.Payment;
 import com.loopers.payment.domain.PaymentRequestedEvent;
 import lombok.extern.slf4j.Slf4j;
@@ -96,43 +95,47 @@ public class PaymentSender {
      * PG 생성 1회와 그 결과를 경계 로그 ② payment.create.result로 남긴다 (W10 D-5). 카드 번호는 남기지 않는다.
      */
     private void sendClaimed(Long paymentId, Claimed claimed) {
+        Long orderId = claimed.orderId();
+        String providerOrderId = claimed.request().providerOrderId();
         long startedAt = System.nanoTime();
         PgTransaction created;
         try {
             created = paymentGatewayPort.request(claimed.request());
         } catch (PgRejectedException e) {
-            logCreateResult(paymentId, claimed, "REJECTED", "-", null, startedAt);
+            log.warn("payment.create.result orderId={} paymentId={} providerOrderId={} result=REJECTED cause=- elapsedMs={} transactionKey=-",
+                orderId, paymentId, providerOrderId, elapsedMs(startedAt));
             paymentResultApplier.recordRejected(paymentId, e.getMessage());
             return;
         } catch (PgNotSentException e) {
-            logCreateResult(paymentId, claimed, "NOT_SENT", "-", null, startedAt);
+            log.warn("payment.create.result orderId={} paymentId={} providerOrderId={} result=NOT_SENT cause=- elapsedMs={} transactionKey=-",
+                orderId, paymentId, providerOrderId, elapsedMs(startedAt));
             paymentResultApplier.closeNotSentAfterClaim(paymentId);
             return;
         } catch (PgUnknownResultException e) {
-            logCreateResult(paymentId, claimed, "UNKNOWN", e.getReason().name(), null, startedAt);
+            log.warn("payment.create.result orderId={} paymentId={} providerOrderId={} result=UNKNOWN cause={} elapsedMs={} transactionKey=-",
+                orderId, paymentId, providerOrderId, e.getReason(), elapsedMs(startedAt));
             paymentResultApplier.recordUnknown(paymentId, PaymentResultSource.DISPATCH);
             return;
         } catch (RuntimeException e) {
             // 분류하지 못한 예외는 보냈을 수 있다고 본다 — 실패로 닫지 않는다
-            logCreateResult(paymentId, claimed, "UNKNOWN", "UNEXPECTED:" + e.getClass().getSimpleName(), null, startedAt);
+            log.warn("payment.create.result orderId={} paymentId={} providerOrderId={} result=UNKNOWN cause=UNEXPECTED:{} elapsedMs={} transactionKey=-",
+                orderId, paymentId, providerOrderId, e.getClass().getSimpleName(), elapsedMs(startedAt));
             paymentResultApplier.recordUnknown(paymentId, PaymentResultSource.DISPATCH);
             return;
         }
-        String result = created.status() == ExternalPaymentStatus.PENDING ? "ACCEPTED" : created.status().name();
-        logCreateResult(paymentId, claimed, result, "-", created.transactionKey(), startedAt);
+        switch (created.status()) {
+            case PENDING -> log.info("payment.create.result orderId={} paymentId={} providerOrderId={} result=ACCEPTED cause=- elapsedMs={} transactionKey={}",
+                orderId, paymentId, providerOrderId, elapsedMs(startedAt), created.transactionKey());
+            case SUCCESS -> log.info("payment.create.result orderId={} paymentId={} providerOrderId={} result=SUCCESS cause=- elapsedMs={} transactionKey={}",
+                orderId, paymentId, providerOrderId, elapsedMs(startedAt), created.transactionKey());
+            case FAILED -> log.warn("payment.create.result orderId={} paymentId={} providerOrderId={} result=FAILED cause=- elapsedMs={} transactionKey={}",
+                orderId, paymentId, providerOrderId, elapsedMs(startedAt), created.transactionKey());
+        }
         paymentResultApplier.recordCreated(paymentId, created);
     }
 
-    private static void logCreateResult(Long paymentId, Claimed claimed, String result, String cause, String transactionKey, long startedAt) {
-        long elapsedMs = (System.nanoTime() - startedAt) / 1_000_000;
-        String message = "payment.create.result orderId={} paymentId={} providerOrderId={} result={} cause={} elapsedMs={} transactionKey={}";
-        Object[] values = {claimed.orderId(), paymentId, claimed.request().providerOrderId(), result, cause, elapsedMs,
-            transactionKey != null ? transactionKey : "-"};
-        if ("ACCEPTED".equals(result) || "SUCCESS".equals(result)) {
-            log.info(message, values);
-        } else {
-            log.warn(message, values);
-        }
+    private static long elapsedMs(long startedAt) {
+        return (System.nanoTime() - startedAt) / 1_000_000;
     }
 
     /**
