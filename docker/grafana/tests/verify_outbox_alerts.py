@@ -12,6 +12,7 @@ import tempfile
 ALERTS = [
     ("outbox-blocked-rule.yml", "outbox-blocked.test.yml", "__OUTBOX_BLOCKED_EXPR__"),
     ("outbox-delay-rule.yml", "outbox-delay.test.yml", "__OUTBOX_DELAY_EXPR__"),
+    ("payment-overdue-rule.yml", "payment-overdue.test.yml", "__PAYMENT_OVERDUE_EXPR__"),
 ]
 
 THRESHOLD = re.compile(r"evaluator:\s*\n\s*params:\s*\n\s*-\s*([0-9.]+)\s*\n\s*type:\s*gt\b")

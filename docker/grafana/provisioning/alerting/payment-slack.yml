@@ -1,0 +1,15 @@
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: Payment Alerts
+    receivers:
+      - uid: payment-slack
+        type: slack
+        # 지표가 0이 되면 해결 소식을 보냅니다. 충돌이나 24시간 경과로 지표에서 빠진 미확인이 남을 수 있어 확인할 곳을 적습니다.
+        disableResolveMessage: false
+        settings:
+          url: $SLACK_WEBHOOK_URI
+          username: Commerce Payment
+          title: '{{ if eq .Status "firing" }}[발생]{{ else }}[해결]{{ end }} {{ .CommonAnnotations.summary }}'
+          text: '{{ if eq .Status "firing" }}{{ .CommonAnnotations.description }}{{ else }}기한을 넘긴 결제 미확인이 0건이 됐습니다. 충돌이 기록됐거나 생성 후 24시간이 지난 미확인은 경보에서 빠지므로 런북 2-2 질의로 남은 건을 확인하세요.{{ end }}'
