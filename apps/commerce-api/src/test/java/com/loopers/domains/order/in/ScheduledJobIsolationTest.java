@@ -2,6 +2,8 @@ package com.loopers.domains.order.in;
 
 import com.loopers.domains.order.app.OrderApplicationService;
 import com.loopers.domains.order.app.OrderOutboxRelay;
+import com.loopers.domains.payment.app.RefundTrackingService;
+import com.loopers.domains.payment.in.RefundCaseMetrics;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -26,7 +28,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.fail;
 import static org.mockito.Mockito.doAnswer;
 
-// 1-3 격벽: 스케줄 작업마다 전용 스레드에서 돈다. 세 작업을 모두 켜고 주기를 50ms로 줄인 뒤, 작업이 부르는 대상을 mock으로 바꿔
+// 1-3 격벽: 스케줄 작업마다 전용 스레드에서 돈다. 네 작업(10주차 5단계 환불 추적 포함)을 모두 켜고 주기를 50ms로 줄인 뒤, 작업이 부르는 대상을 mock으로 바꿔
 // 실행 스레드를 기록하고 필요한 작업만 래치로 붙잡는다. 스케줄 등록(ContextRefreshedEvent) 전에 stub을 끝내 실행 중 stub 경합을 피하고,
 // 테스트마다 mock을 초기화하면 stub이 사라지므로 reset을 끈다.
 // 스케줄러를 켠 컨텍스트가 캐시에 남지 않게 클래스가 끝나면 닫고, 닫을 때 돌던 작업이 끝날 때까지 기다린다.
@@ -38,6 +40,8 @@ import static org.mockito.Mockito.doAnswer;
     "commerce.outbox.relay.fixed-delay=PT0.05S",
     "commerce.payment.unresolved-metric.enabled=true",
     "commerce.payment.unresolved-metric.refresh-interval=50ms",
+    "payment.refund.scheduler.enabled=true",
+    "payment.refund.scheduler.fixed-delay=PT0.05S",
     "spring.task.scheduling.shutdown.await-termination=true",
     "spring.task.scheduling.shutdown.await-termination-period=15s"
 })
@@ -48,10 +52,13 @@ class ScheduledJobIsolationTest {
     private static final String LOOKUP = "payment-lookup";
     private static final String RELAY = "outbox-relay";
     private static final String METRIC = "unresolved-metric";
+    private static final String REFUND = "payment-refund";
 
     @MockitoBean(reset = MockReset.NONE) private OrderApplicationService orderApplicationService;
     @MockitoBean(reset = MockReset.NONE) private OrderOutboxRelay orderOutboxRelay;
     @MockitoBean(reset = MockReset.NONE) private UnresolvedPaymentMetrics unresolvedPaymentMetrics;
+    @MockitoBean(reset = MockReset.NONE) private RefundTrackingService refundTrackingService;
+    @MockitoBean(reset = MockReset.NONE) private RefundCaseMetrics refundCaseMetrics;
     @Autowired private JobProbe probe;
 
     @AfterEach
@@ -110,6 +117,56 @@ class ScheduledJobIsolationTest {
         }
     }
 
+    @Test
+    @DisplayName("환불 추적은 sched-payment-refund- 이름의 전용 스레드에서 돌고 다른 세 작업의 스레드와 겹치지 않는다")
+    void refundTrackingRunsOnItsOwnNamedThread() throws InterruptedException {
+        probe.clearThreads();
+
+        awaitCalls(REFUND, () -> probe.threads(REFUND).size(), 1);
+        awaitCalls(LOOKUP, () -> probe.threads(LOOKUP).size(), 1);
+        awaitCalls(RELAY, () -> probe.threads(RELAY).size(), 1);
+        awaitCalls(METRIC, () -> probe.threads(METRIC).size(), 1);
+
+        assertThat(probe.threads(REFUND)).as("환불 추적 스레드").allMatch(name -> name.startsWith("sched-payment-refund-"));
+        assertThat(probe.threads(REFUND)).doesNotContainAnyElementsOf(probe.threads(LOOKUP))
+            .doesNotContainAnyElementsOf(probe.threads(RELAY))
+            .doesNotContainAnyElementsOf(probe.threads(METRIC));
+    }
+
+    @Test
+    @DisplayName("환불 추적 작업이 붙잡혀 있어도 결제 재조회·relay·gauge 갱신은 3초 안에 두 번 이상 더 돈다")
+    void otherJobsRunWhileRefundTrackingIsBlocked() throws InterruptedException {
+        CountDownLatch release = new CountDownLatch(1);
+        try {
+            CountDownLatch refundEntered = probe.blockRefund(release);
+            assertThat(refundEntered.await(WAIT_SECONDS, TimeUnit.SECONDS)).as("환불 추적 작업이 막힌 장면에 들어감").isTrue();
+            int lookupBefore = probe.lookupCalls.get();
+            int relayBefore = probe.relayCalls.get();
+            int metricBefore = probe.metricCalls.get();
+
+            awaitCalls(LOOKUP, probe.lookupCalls::get, lookupBefore + 2);
+            awaitCalls(RELAY, probe.relayCalls::get, relayBefore + 2);
+            awaitCalls(METRIC, probe.metricCalls::get, metricBefore + 2);
+        } finally {
+            release.countDown();
+        }
+    }
+
+    @Test
+    @DisplayName("결제 재조회가 붙잡혀 있어도 환불 추적은 3초 안에 두 번 이상 더 돈다")
+    void refundTrackingRunsWhileLookupIsBlocked() throws InterruptedException {
+        CountDownLatch release = new CountDownLatch(1);
+        try {
+            CountDownLatch lookupEntered = probe.blockLookup(release);
+            assertThat(lookupEntered.await(WAIT_SECONDS, TimeUnit.SECONDS)).as("결제 재조회 작업이 막힌 장면에 들어감").isTrue();
+            int refundBefore = probe.refundCalls.get();
+
+            awaitCalls(REFUND, probe.refundCalls::get, refundBefore + 2);
+        } finally {
+            release.countDown();
+        }
+    }
+
     private void awaitCalls(String job, IntSupplier calls, int expected) throws InterruptedException {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(WAIT_SECONDS);
         while (System.nanoTime() < deadline) {
@@ -129,8 +186,10 @@ class ScheduledJobIsolationTest {
         private final AtomicInteger lookupCalls = new AtomicInteger();
         private final AtomicInteger relayCalls = new AtomicInteger();
         private final AtomicInteger metricCalls = new AtomicInteger();
+        private final AtomicInteger refundCalls = new AtomicInteger();
         private volatile Gate lookupGate;
         private volatile Gate relayGate;
+        private volatile Gate refundGate;
 
         CountDownLatch blockLookup(CountDownLatch release) {
             Gate gate = new Gate(release);
@@ -144,11 +203,19 @@ class ScheduledJobIsolationTest {
             return gate.entered;
         }
 
+        CountDownLatch blockRefund(CountDownLatch release) {
+            Gate gate = new Gate(release);
+            refundGate = gate;
+            return gate.entered;
+        }
+
         void reset() {
             releaseGate(lookupGate);
             releaseGate(relayGate);
+            releaseGate(refundGate);
             lookupGate = null;
             relayGate = null;
+            refundGate = null;
         }
 
         void clearThreads() {
@@ -174,6 +241,12 @@ class ScheduledJobIsolationTest {
         void onMetric() {
             record(METRIC);
             metricCalls.incrementAndGet();
+        }
+
+        void onRefund() throws InterruptedException {
+            record(REFUND);
+            refundCalls.incrementAndGet();
+            pass(refundGate);
         }
 
         private void record(String job) {
@@ -210,7 +283,8 @@ class ScheduledJobIsolationTest {
 
         @Bean
         SmartInitializingSingleton scheduledJobStubs(JobProbe jobProbe, OrderApplicationService orderApplicationService,
-            OrderOutboxRelay orderOutboxRelay, UnresolvedPaymentMetrics unresolvedPaymentMetrics) {
+            OrderOutboxRelay orderOutboxRelay, UnresolvedPaymentMetrics unresolvedPaymentMetrics,
+            RefundTrackingService refundTrackingService) {
             return () -> {
                 doAnswer(invocation -> {
                     jobProbe.onLookup();
@@ -228,6 +302,10 @@ class ScheduledJobIsolationTest {
                     jobProbe.onMetric();
                     return null;
                 }).when(unresolvedPaymentMetrics).refresh();
+                doAnswer(invocation -> {
+                    jobProbe.onRefund();
+                    return null;
+                }).when(refundTrackingService).trackDueCases();
             };
         }
     }

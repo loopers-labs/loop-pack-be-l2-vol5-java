@@ -2,6 +2,8 @@ package com.loopers.domains.payment.out;
 
 import com.loopers.domains.payment.app.port.PaymentRefundCaseRepository;
 import com.loopers.domains.payment.domain.RefundCase;
+import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,5 +33,16 @@ public class PaymentRefundCasePersistenceAdapter implements PaymentRefundCaseRep
     @Transactional(readOnly = true)
     public Optional<RefundCase> findByOrderId(long orderId) {
         return paymentRefundCaseJpaRepository.findById(orderId).map(PaymentRefundCaseJpaEntity::toRefundCase);
+    }
+
+    @Override
+    public Optional<RefundCase> findByOrderIdForUpdate(long orderId) {
+        return Optional.empty();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<Long> findDue(Instant now, int limit) {
+        return List.of();
     }
 }

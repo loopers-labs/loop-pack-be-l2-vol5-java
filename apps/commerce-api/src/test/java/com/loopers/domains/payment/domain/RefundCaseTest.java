@@ -6,9 +6,11 @@ import java.time.Instant;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class RefundCaseTest {
     private static final Instant STARTED_AT = Instant.parse("2026-10-21T00:00:00Z");
@@ -139,6 +141,189 @@ class RefundCaseTest {
         assertThat(refundCase.getPromiseAt()).isEqualTo(LATE.plus(Duration.ofDays(4)));
         assertThat(refundCase.getConcludedAt()).isEqualTo(LATE);
         assertThat(refundCase.getNextCheckAt()).isNull();
+    }
+
+    @Test
+    @DisplayName("추적 중 대상에 환불을 요청하면 REFUND_REQUESTED가 되고 조회로 찾은 키·요청 시각을 남기며 결과 확인은 1분 뒤로 잡는다")
+    void requestsRefundFromTracking() {
+        RefundCase refundCase = existing(RefundCase.Status.TRACKING, null, LATE, 2);
+
+        refundCase.requestRefund("TR-9", LATE);
+
+        assertThat(refundCase.getStatus()).isEqualTo(RefundCase.Status.REFUND_REQUESTED);
+        assertThat(refundCase.getTransactionKey()).isEqualTo("TR-9");
+        assertThat(refundCase.getRefundRequestedAt()).isEqualTo(LATE);
+        assertThat(refundCase.getNextCheckAt()).isEqualTo(LATE.plus(Duration.ofMinutes(1)));
+        assertThat(refundCase.getConcludedAt()).isNull();
+    }
+
+    @Test
+    @DisplayName("이미 키 TR-1을 아는 추적 대상에 환불을 요청하면 저장된 키를 그대로 둔다")
+    void keepsStoredKeyOnRefundRequest() {
+        RefundCase refundCase = existing(RefundCase.Status.TRACKING, "TR-1", LATE, 0);
+
+        refundCase.requestRefund("TR-1", LATE);
+
+        assertThat(refundCase.getTransactionKey()).isEqualTo("TR-1");
+    }
+
+    @ParameterizedTest(name = "상태={0}")
+    @EnumSource(value = RefundCase.Status.class, names = "TRACKING", mode = EnumSource.Mode.EXCLUDE)
+    @DisplayName("추적 중이 아닌 대상에는 환불을 다시 요청할 수 없어 예외가 나고 상태·요청 시각이 그대로다(환불 요청은 한 번만)")
+    void rejectsRefundRequestOutsideTracking(RefundCase.Status status) {
+        RefundCase refundCase = existing(status, "TR-1", LATE, 1);
+
+        assertThatThrownBy(() -> refundCase.requestRefund("TR-1", LATE)).isInstanceOf(IllegalStateException.class);
+
+        assertThat(refundCase.getStatus()).isEqualTo(status);
+        assertThat(refundCase.getRefundRequestedAt()).isNull();
+    }
+
+    @ParameterizedTest(name = "상태={0}")
+    @EnumSource(value = RefundCase.Status.class, names = {"REFUND_REQUESTED", "REFUND_UNKNOWN"})
+    @DisplayName("환불 요청 뒤 상태에서 취소가 확인되면 REFUNDED로 결론 나고 결론 시각을 남기며 다음 조회는 없다")
+    void marksRefunded(RefundCase.Status status) {
+        RefundCase refundCase = existing(status, "TR-1", LATE, 1);
+
+        refundCase.markRefunded(LATE);
+
+        assertThat(refundCase.getStatus()).isEqualTo(RefundCase.Status.REFUNDED);
+        assertThat(refundCase.getConcludedAt()).isEqualTo(LATE);
+        assertThat(refundCase.getNextCheckAt()).isNull();
+        assertThat(refundCase.isConcluded()).isTrue();
+    }
+
+    @ParameterizedTest(name = "상태={0}")
+    @EnumSource(value = RefundCase.Status.class, names = {"TRACKING", "REFUNDED", "CLOSED_NO_CHARGE", "HANDED_TO_HUMAN"})
+    @DisplayName("환불을 요청하지 않았거나 이미 결론 난 대상은 환불 완료로 바꿀 수 없어 예외가 난다")
+    void rejectsRefundedWithoutRequest(RefundCase.Status status) {
+        RefundCase refundCase = existing(status, "TR-1", LATE, 1);
+
+        assertThatThrownBy(() -> refundCase.markRefunded(LATE)).isInstanceOf(IllegalStateException.class);
+
+        assertThat(refundCase.getStatus()).isEqualTo(status);
+    }
+
+    @Test
+    @DisplayName("취소 결과를 모르면 REFUND_UNKNOWN이 되고 결론 없이 1분 뒤 조회로 확인한다")
+    void marksRefundUnknown() {
+        RefundCase refundCase = existing(RefundCase.Status.REFUND_REQUESTED, "TR-1", LATE, 1);
+
+        refundCase.markRefundUnknown(LATE);
+
+        assertThat(refundCase.getStatus()).isEqualTo(RefundCase.Status.REFUND_UNKNOWN);
+        assertThat(refundCase.getNextCheckAt()).isEqualTo(LATE.plus(Duration.ofMinutes(1)));
+        assertThat(refundCase.getConcludedAt()).isNull();
+        assertThat(refundCase.isConcluded()).isFalse();
+    }
+
+    @ParameterizedTest(name = "상태={0}")
+    @EnumSource(value = RefundCase.Status.class, names = "REFUND_REQUESTED", mode = EnumSource.Mode.EXCLUDE)
+    @DisplayName("환불 요청 직후가 아닌 대상은 결과 모름으로 바꿀 수 없어 예외가 난다")
+    void rejectsRefundUnknownOutsideRequested(RefundCase.Status status) {
+        RefundCase refundCase = existing(status, "TR-1", LATE, 1);
+
+        assertThatThrownBy(() -> refundCase.markRefundUnknown(LATE)).isInstanceOf(IllegalStateException.class);
+
+        assertThat(refundCase.getStatus()).isEqualTo(status);
+    }
+
+    @Test
+    @DisplayName("추적 중 대상이 돈 안 나감으로 확인되면 CLOSED_NO_CHARGE로 결론 나고 다음 조회는 없다")
+    void closesNoCharge() {
+        RefundCase refundCase = existing(RefundCase.Status.TRACKING, "TR-1", LATE, 1);
+
+        refundCase.closeNoCharge(LATE);
+
+        assertThat(refundCase.getStatus()).isEqualTo(RefundCase.Status.CLOSED_NO_CHARGE);
+        assertThat(refundCase.getConcludedAt()).isEqualTo(LATE);
+        assertThat(refundCase.getNextCheckAt()).isNull();
+        assertThat(refundCase.isConcluded()).isTrue();
+    }
+
+    @ParameterizedTest(name = "상태={0}")
+    @EnumSource(value = RefundCase.Status.class, names = "TRACKING", mode = EnumSource.Mode.EXCLUDE)
+    @DisplayName("환불을 요청한 뒤나 결론 난 대상은 돈 안 나감으로 닫을 수 없어 예외가 난다")
+    void rejectsCloseOutsideTracking(RefundCase.Status status) {
+        RefundCase refundCase = existing(status, "TR-1", LATE, 1);
+
+        assertThatThrownBy(() -> refundCase.closeNoCharge(LATE)).isInstanceOf(IllegalStateException.class);
+
+        assertThat(refundCase.getStatus()).isEqualTo(status);
+    }
+
+    @ParameterizedTest(name = "상태={0}")
+    @EnumSource(value = RefundCase.Status.class, names = {"TRACKING", "REFUND_REQUESTED", "REFUND_UNKNOWN"})
+    @DisplayName("결론 전 대상을 사람에게 넘기면 HANDED_TO_HUMAN으로 결론 나고 사유·결론 시각을 남기며 다음 조회는 없다")
+    void handsOffUnconcludedCase(RefundCase.Status status) {
+        RefundCase refundCase = existing(status, "TR-1", LATE, 1);
+
+        refundCase.handOff(RefundCase.HANDOFF_DEADLINE, LATE);
+
+        assertThat(refundCase.getStatus()).isEqualTo(RefundCase.Status.HANDED_TO_HUMAN);
+        assertThat(refundCase.getReason()).isEqualTo(RefundCase.HANDOFF_DEADLINE);
+        assertThat(refundCase.getConcludedAt()).isEqualTo(LATE);
+        assertThat(refundCase.getNextCheckAt()).isNull();
+    }
+
+    @ParameterizedTest(name = "결론 상태={0}")
+    @EnumSource(value = RefundCase.Status.class, names = {"REFUNDED", "CLOSED_NO_CHARGE", "HANDED_TO_HUMAN"})
+    @DisplayName("결론 난 대상은 결론 상태로 보고 사람에게 다시 넘기거나 조회 일정을 바꿀 수 없어 예외가 나며 값이 그대로다")
+    void keepsConcludedCase(RefundCase.Status status) {
+        RefundCase refundCase = existing(status, "TR-1", null, 1);
+
+        assertThat(refundCase.isConcluded()).isTrue();
+        assertThatThrownBy(() -> refundCase.handOff(RefundCase.HANDOFF_DEADLINE, LATE)).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> refundCase.recordInconclusiveCheck(LATE)).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> refundCase.postponeCheck(LATE)).isInstanceOf(IllegalStateException.class);
+
+        assertThat(refundCase.getStatus()).isEqualTo(status);
+        assertThat(refundCase.getNextCheckAt()).isNull();
+        assertThat(refundCase.getCheckAttempts()).isEqualTo(1);
+    }
+
+    @ParameterizedTest(name = "조회 전 횟수={0} → 다음 간격 {1}분")
+    @CsvSource({"0, 1", "1, 2", "2, 4", "5, 32", "6, 60", "20, 60", "40, 60"})
+    @DisplayName("결론 없는 조회를 기록하면 조회 횟수가 1 늘고 다음 조회 간격은 1분에서 두 배씩 늘다가 1시간에서 멈춘다")
+    void backsOffInconclusiveChecks(int attemptsBefore, long expectedMinutes) {
+        RefundCase refundCase = existing(RefundCase.Status.TRACKING, null, LATE, attemptsBefore);
+
+        refundCase.recordInconclusiveCheck(LATE);
+
+        assertThat(refundCase.getCheckAttempts()).isEqualTo(attemptsBefore + 1);
+        assertThat(refundCase.getNextCheckAt()).isEqualTo(LATE.plus(Duration.ofMinutes(expectedMinutes)));
+        assertThat(refundCase.getStatus()).isEqualTo(RefundCase.Status.TRACKING);
+    }
+
+    @ParameterizedTest(name = "조회 횟수={0} → 미룬 간격 {1}분")
+    @CsvSource({"0, 1", "1, 1", "3, 4", "7, 60"})
+    @DisplayName("조회 회로 때문에 조회하지 못하면 조회 횟수는 그대로이고 마지막 간격만큼 다음 조회를 미룬다")
+    void postponesWithoutCountingAttempt(int attempts, long expectedMinutes) {
+        RefundCase refundCase = existing(RefundCase.Status.REFUND_UNKNOWN, "TR-1", LATE, attempts);
+
+        refundCase.postponeCheck(LATE);
+
+        assertThat(refundCase.getCheckAttempts()).isEqualTo(attempts);
+        assertThat(refundCase.getNextCheckAt()).isEqualTo(LATE.plus(Duration.ofMinutes(expectedMinutes)));
+        assertThat(refundCase.getStatus()).isEqualTo(RefundCase.Status.REFUND_UNKNOWN);
+    }
+
+    @ParameterizedTest(name = "지금=이관 기한{0}초")
+    @CsvSource({"-1, false", "0, true", "1, true"})
+    @DisplayName("결론 전 대상은 지금이 이관 기한(연 시각+2일)과 같거나 지나면 사람에게 넘길 때다")
+    void detectsHandoffDeadline(long offsetSeconds, boolean expected) {
+        RefundCase refundCase = existing(RefundCase.Status.TRACKING, null, LATE, 3);
+        Instant handoffAt = EXPIRED_AT.plus(Duration.ofDays(2));
+
+        assertThat(refundCase.isHandoffDue(handoffAt.plusSeconds(offsetSeconds))).isEqualTo(expected);
+    }
+
+    @Test
+    @DisplayName("결론 난 대상은 이관 기한이 지나도 다시 넘길 때가 아니다")
+    void concludedCaseIsNeverHandoffDue() {
+        RefundCase refundCase = existing(RefundCase.Status.REFUNDED, "TR-1", null, 3);
+
+        assertThat(refundCase.isHandoffDue(EXPIRED_AT.plus(Duration.ofDays(3)))).isFalse();
     }
 
     private static PaymentRecord pending(PaymentRecord.ProviderStatus providerStatus, String transactionKey) {

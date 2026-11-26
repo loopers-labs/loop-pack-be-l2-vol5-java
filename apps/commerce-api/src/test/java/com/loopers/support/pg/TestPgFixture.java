@@ -33,6 +33,7 @@ public class TestPgFixture {
     private volatile TestPgServer server;
     private volatile PaymentGateway delegate;
     private volatile boolean crashBeforeSend;
+    private volatile boolean crashBeforeCancel;
     private volatile String failingLookupOrder;
     private final PaymentGateway gateway = new DelegatingGateway();
 
@@ -59,6 +60,7 @@ public class TestPgFixture {
         }
         delegate = newClient();
         crashBeforeSend = false;
+        crashBeforeCancel = false;
         failingLookupOrder = null;
         return server;
     }
@@ -80,6 +82,15 @@ public class TestPgFixture {
     // 트랜잭션 A commit 뒤 create를 보내기 전에 프로세스가 멈춘 상황을 흉내 낸다. 서버에는 아무 요청도 가지 않는다.
     public void crashBeforeSend() {
         crashBeforeSend = true;
+    }
+
+    // 환불 요청 상태를 commit한 뒤 취소를 보내기 전에 프로세스가 멈춘 상황을 흉내 낸다. 서버에는 취소 요청이 가지 않는다.
+    public void crashBeforeCancel() {
+        crashBeforeCancel = true;
+    }
+
+    public void resumeCancel() {
+        crashBeforeCancel = false;
     }
 
     public void failLookupFor(String providerOrderId) {
@@ -115,6 +126,7 @@ public class TestPgFixture {
         server = null;
         delegate = null;
         crashBeforeSend = false;
+        crashBeforeCancel = false;
         failingLookupOrder = null;
         if (current != null) {
             current.close();
@@ -157,6 +169,9 @@ public class TestPgFixture {
 
         @Override
         public PaymentCancelResult cancel(PaymentCancelCommand command) {
+            if (crashBeforeCancel) {
+                throw new IllegalStateException("주입된 취소 전 중단");
+            }
             return client().cancel(command);
         }
     }

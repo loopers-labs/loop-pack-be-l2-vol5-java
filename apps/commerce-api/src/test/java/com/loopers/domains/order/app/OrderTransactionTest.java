@@ -647,5 +647,15 @@ class OrderTransactionTest {
         public Optional<RefundCase> findByOrderId(long orderId) {
             return delegate.findByOrderId(orderId);
         }
+
+        @Override
+        public Optional<RefundCase> findByOrderIdForUpdate(long orderId) {
+            return delegate.findByOrderIdForUpdate(orderId);
+        }
+
+        @Override
+        public List<Long> findDue(Instant now, int limit) {
+            return delegate.findDue(now, limit);
+        }
     }
 }

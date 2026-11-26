@@ -12,6 +12,13 @@ public final class RefundCase {
     public static final Duration HANDOFF_AFTER = Duration.ofDays(2);
     public static final Duration PROMISE_AFTER = Duration.ofDays(4);
     public static final String RESULT_REVERSED = "RESULT_REVERSED";
+    public static final String HANDOFF_DEADLINE = "HANDOFF_DEADLINE";
+    public static final String TRANSACTION_MISMATCH = "TRANSACTION_MISMATCH";
+    public static final String MULTIPLE_TRANSACTIONS = "MULTIPLE_TRANSACTIONS";
+    public static final String REFUND_REJECTED = "REFUND_REJECTED";
+    // [임시] 결론 없는 조회 뒤 다음 조회 간격은 1분에서 두 배씩 늘려 1시간에서 멈춘다(계획 2-2).
+    public static final Duration FIRST_CHECK_DELAY = Duration.ofMinutes(1);
+    public static final Duration MAX_CHECK_DELAY = Duration.ofHours(1);
 
     private final long orderId;
     private final String providerId;
@@ -98,6 +105,35 @@ public final class RefundCase {
             case REFUNDED, HANDED_TO_HUMAN -> {
             }
         }
+    }
+
+    public boolean isConcluded() {
+        return false;
+    }
+
+    public boolean isHandoffDue(Instant now) {
+        return false;
+    }
+
+    public void requestRefund(String foundTransactionKey, Instant now) {
+    }
+
+    public void markRefunded(Instant now) {
+    }
+
+    public void markRefundUnknown(Instant now) {
+    }
+
+    public void closeNoCharge(Instant now) {
+    }
+
+    public void handOff(String handoffReason, Instant now) {
+    }
+
+    public void recordInconclusiveCheck(Instant now) {
+    }
+
+    public void postponeCheck(Instant now) {
     }
 
     private void storeKey(String reportedTransactionKey) {

@@ -8,17 +8,24 @@ import com.loopers.domains.order.out.OrderConfirmedOutboxJpaRepository;
 import com.loopers.domains.order.out.OrderConfirmedOutboxPersistenceAdapter;
 import com.loopers.domains.payment.app.PaymentGatewayRegistry;
 import com.loopers.domains.payment.app.PaymentLookupPolicy;
+import com.loopers.domains.payment.app.RefundTrackingService;
 import com.loopers.domains.payment.app.port.PaymentAnomalyRepository;
 import com.loopers.domains.payment.app.port.PaymentCreateResult;
 import com.loopers.domains.payment.app.port.PaymentGateway;
 import com.loopers.domains.payment.app.port.PaymentLookupScheduleRepository;
 import com.loopers.domains.payment.app.port.PaymentRefundCaseRepository;
 import com.loopers.domains.payment.app.port.PaymentTransactionsLookup;
+import com.loopers.domains.payment.app.port.RefundCaseCounter;
+import com.loopers.domains.payment.app.port.RefundOutcomeRecorder;
 import com.loopers.domains.payment.domain.LookupBackoff;
 import com.loopers.domains.payment.domain.PaymentRecord;
 import com.loopers.domains.payment.domain.RefundCase;
 import com.loopers.domains.payment.in.PaymentCallbackController;
+import com.loopers.domains.payment.in.RefundCaseMetrics;
+import com.loopers.domains.payment.in.RefundTrackingScheduler;
 import com.loopers.domains.payment.out.CircuitBreakingPaymentGateway;
+import com.loopers.domains.payment.out.JdbcRefundCaseCounter;
+import com.loopers.domains.payment.out.MicrometerRefundOutcomeRecorder;
 import com.loopers.domains.payment.out.PaymentAnomalyJpaEntity;
 import com.loopers.domains.payment.out.PaymentAnomalyPersistenceAdapter;
 import com.loopers.domains.payment.out.PaymentCircuitBreakers;
@@ -242,6 +249,13 @@ class ArchitectureTest {
         assertThat(app.contain(PaymentRefundCaseRepository.class)).isTrue();
         assertThat(out.contain(PaymentRefundCaseJpaEntity.class)).isTrue();
         assertThat(out.contain(PaymentRefundCasePersistenceAdapter.class)).isTrue();
+        assertThat(app.contain(RefundTrackingService.class)).isTrue();
+        assertThat(app.contain(RefundOutcomeRecorder.class)).isTrue();
+        assertThat(app.contain(RefundCaseCounter.class)).isTrue();
+        assertThat(in.contain(RefundTrackingScheduler.class)).isTrue();
+        assertThat(in.contain(RefundCaseMetrics.class)).isTrue();
+        assertThat(out.contain(MicrometerRefundOutcomeRecorder.class)).isTrue();
+        assertThat(out.contain(JdbcRefundCaseCounter.class)).isTrue();
     }
 
     @Test
