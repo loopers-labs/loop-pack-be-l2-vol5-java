@@ -1,6 +1,6 @@
 # Week 10 — 결제 사고 관측
 
-이 문서는 10주차 결제 사고 대응의 결정을 적는다. 1~7절은 1단계(관측과 테스트 PG fixture 사고 제어), 8절은 사고 연결 테스트, 9절은 4단계 4a 운영 도구, 10절은 4b 운영 도구 확장, 11절은 5단계 늦은 성공 자동 환불이다.
+이 문서는 10주차 결제 사고 대응의 결정을 적는다. 1~7절은 1단계(관측과 테스트 PG fixture 사고 제어), 8절은 사고 연결 테스트, 9절은 4단계 4a 운영 도구, 10절은 4b 운영 도구 확장, 11절은 5단계 늦은 성공 자동 환불, 12절은 검증 범위·남은 위험이다.
 나머지 설계(1~29절)는 `docs/week8/commerce-coupon.md`를 따른다.
 
 - **[사용자 결정]**: 사용자가 정한 것(결정 기록 week10). 바꾸려면 승인이 필요하다.
@@ -166,6 +166,7 @@
 | `PaymentNeedsReview` | warning | `max(unresolved{status="needs_review"}) > 0`, `for: 15m` | 15m | 자동으로 풀리지 않는 사람 확인 상태다. 깨우지는 않는다 |
 | `PaymentDeclineSurge` | warning | failed 비율(종결 중) > 30% AND `increase(failed[10m]) ≥ 10`, `for: 5m` | 30%, 10건, 5m | 카드사·PG 판정 이상. 건수 조건이 소량 시간대의 우연한 거절을 거른다 |
 | `PaymentPgUnreachable` | warning | `increase(not_sent[10m]) ≥ 5`, `for: 5m` | 5건, 5m | PG에 요청이 닿지 않은 것이라 거절과 원인이 달라 규칙을 나눈다 |
+| `PaymentApiLatencyP99High` | warning | 결제 확정·reconcile 경로(고객 confirm·고객 reconcile·관리자 reconcile) `histogram_quantile(0.99, …[5m]) > 1s` AND 5m 요청 ≥ 100건, `for: 10m` | 1s, 100건, 10m | 정상 확정은 수십 ms다. PG read timeout 3s 앞에서 PG 지연·응답 유실을 의심할 수준이다. 건수 조건이 소량 시간대 흔들림을 거른다 **[사용자 결정 A, 참모 13:27]** |
 
 - **[사용자 결정 D, 계획 수정 1]** Piling의 "증가 중"은 gauge `deriv`가 아니라 유입 counter로 잰다. 만료(2분)가 미확인을 빼 가서, PG가 길게 죽으면 유입과 만료가 비슷해져 gauge가 높은 채 평평해진다. 그러면 `deriv > 0`이 거짓이 되어 가장 심각할 때 울리지 않는다. 같은 이유로 만료 누적을 잡는 Abandoned를 새로 두었다.
 - **[구현 판단]** 유입 0이고 unknown만 남은 정체는 Piling이 울리지 않는다. 새 유입이 없으면 자동 재조회·만료가 처리 중이다. 만료가 쌓이면 Abandoned가 잡는다.
@@ -778,7 +779,7 @@ REFUNDED일 때만 값이 있다. **우리가 본 경로**로 정한다.
 
 ### 11-18. 범위 밖 (5b)
 
-- 사람 담당 건에 자동 취소를 보내는 것(사용자 확인 중, 현재 보내지 않음, 11-13)
+- ~~사람 담당 건에 자동 취소를 보내는 것(사용자 확인 중, 현재 보내지 않음, 11-13)~~ → 11-19로 대체(자동 회차는 보내지 않음, 지금 처리만 `CHARGED`에서 보냄)
 - 운영 데이터 이전(5단계 미배포, 로컬 이전 SQL만)
 - 고객 주문 응답에 환불 상태 노출(Q4 유지), 고객 알림
 - 부분 환불, 정산 파일 대사, 실제 PG 연동(취소 API는 [가정])
@@ -823,6 +824,124 @@ REFUNDED일 때만 값이 있다. **우리가 본 경로**로 정한다.
 - 응답: 돈의 상태, 환불 주체, 담당, 담당 종료 시각·종료자, 마지막 확인 3칸. 돈이 끝나면 담당을 같은 TX에서 닫고 종료자는 누른 관리자 이름이다. 우리 취소로 끝나면 환불 주체 `SYSTEM`.
 - 409: 담당 AUTO, 담당 이미 닫힘, 돈 이미 끝남(대상 그대로). 404: 대상 없음. 403: 비관리자·CSRF 없음. 반영 실패는 오류 응답(보통 500, 잠금 획득 실패는 503)이고 그 건의 `lastCheckOutcome`이 `APPLY_FAILED`다.
 - **만들지 않는 것**: 사람 담당 → AUTO 되돌리기, 새 타이머·기한(사용자: "이틀 뒤면 처리한 사람도 까먹겠다").
-- 거절 뒤 재누름 **[참모 확인 중 w10s5c-1]**: PG가 취소를 효과 없이 거절하면(`CANCEL_REJECTED`) 돈은 `CHARGED`로 돌아가고 사람 담당 그대로다. 지금 처리를 다시 누르면 취소를 다시 보낸다(누를 때마다 1회, `refund_requested_at` 덮어씀). PG가 첫 요청이 효과 없었다고 명시한 경우라 이중 환불 위험이 없다는 판단이다. 참모 판단이 "막음"이면 이 동작과 그 테스트를 바꾼다.
+- 거절 뒤 재누름 **[참모 20:42 확정 ①]**: PG가 취소를 효과 없이 거절하면(`CANCEL_REJECTED`) 돈은 `CHARGED`로 돌아가고 사람 담당 그대로다. 지금 처리를 다시 누르면 취소를 다시 보낸다(누를 때마다 1회, `refund_requested_at` 덮어씀). PG가 첫 요청이 효과 없었다고 명시한 경우라 이중 환불 위험이 없다는 판단이다.
+- 누를 때마다 경계 INFO 한 줄 **[참모 20:42 확정 ①]**: MDC `orderId`, 누른 관리자 이름(인증 이름), `outcome`(= `last_check_outcome`). 칼럼은 더하지 않는다. 비밀값·PG 텍스트·거래 키는 넣지 않는다.
 
 **로컬 이전 SQL** (`sql/migrate-payment-refund-cases-v3.sql`): v2 뒤에 실행한다. 세 칸을 NULL 허용으로 더한다(information_schema + PREPARE, v2와 같은 방식). 다시 실행하면 아무것도 바꾸지 않는다.
+
+## 12. 검증 범위·남은 위험
+
+무엇을 증명했고 무엇을 증명하지 못했는지 한곳에 모은다. 테스트 통과는 아래 표의 범위만 뜻한다.
+
+### 12-1. 증명한 것
+
+**테스트**
+
+| 검사 | 결과 | 비고 |
+| --- | --- | --- |
+| `./gradlew :apps:commerce-api:check`(test·e2eTest·Checkstyle·ArchUnit) | `[회귀 결과: 6단계 2번]` | 직전 기록: 84dcede에서 test 1135·e2eTest 4, 실패·skip 0 |
+| 다른 모듈 검사 | `[회귀 결과: 6단계 2번]` | — |
+| `scripts/ops/check-alerting.sh`(promtool·amtool·대시보드·가이드 테스트) | `[회귀 결과: 6단계 2번]` | 직전 기록: rules 12, promtool 40, guide 16, ALL CHECKS PASSED |
+| 사고 연결 E2E(8절) | 제출용 한 벌 `docs/week10/evidence/20261125T082202Z-068161dd/` | H1 채택·H2·H3 기각, 복구 뒤 증거 해시 같음 |
+
+**변이(판별력)** — 결함을 넣어 테스트가 실패하는지 본 것. 모두 원복을 diff·바이트 비교로 확인했다.
+
+| 단계 | 변이 수 | 무엇을 깨 봤나(요지) | 잡은 테스트 |
+| --- | --- | --- | --- |
+| 1단계 관측 | 4 | 결과 counter를 UNCHANGED·CONFLICT에서 세기, commit 전 즉시 세기, PG 조건 제거 | C2·C2b·C3·G1 |
+| 1b | 1 | 미발송을 `failed`로 세기 | `PaymentOutcomeCounterIntegrationTest` 2건 |
+| 2단계 사고 E2E | 6 | create 재전송, 반영 두 번, 유실 주입 제거, 유실 거래 PENDING, 본인 확인 제거, 장부 덮어쓰기 | M1~M6, 단계별 단언 |
+| 4a 운영 도구 | 일괄·counter 12, 규칙 9 | 연속 실패 리셋·집계, 회로 차단 조건, pacer 위치, 예외 시 중단, counter 즉시 증가 / 규칙 건수·for·비율 조건 제거 등 | 일괄 서비스·counter rollback 테스트, promtool |
+| 4b 확장 | 가이드 17, p99 규칙 4 | 제한 시간·식별자 차단 등 / 건수·for·기준·uri | `test_guide.py`, promtool |
+| 5단계 늦은 성공 환불 | 서비스 10, 규칙 8 | 재요청 허용, 요청 전 commit 제거, 결론 재처리, 상한 제거, 잠금 아래 재확인 제거, 합류 잠금 제거, 만료 TX 밖 생성, counter afterCommit 제거 2 | F2·F4·F7·F9·F10, 서비스, JoinLock, rollback 테스트 |
+| 5b 두 축 모델 | 14 + 규칙 13 | jitter 제거, PERSON 취소 허용, findDue AUTO만, 자동 종료 제거, 담당 검사·NO_CHARGE 모순 검사 제거, label 대문자, counter afterCommit 제거 2 등 | S1~S10, promtool |
+| 5b R1·R3 | 2 | 기한 재확인 제거, R1 조건 되돌림 | 서비스·통합 2, 도메인·HTTP 2 |
+| 5c 막힌 원인·지금 처리 | 7 + 규칙 2 | 원인 기록을 반영 TX 안에서, 사람 트리거 분기를 스케줄러에, 요청 뒤 재전송, 담당 검사 제거, counter 사전 등록 제거, MISMATCH→OK, 기록기 예외로 덮기 | C1·C4·C5·C7·C8·C9·R3, QA 보강 |
+
+- 변이 기록 원본은 단계별 review 파일이다(저장소 밖). 이 표는 요지만 옮겼다.
+- 판별하지 못한 변이: 4b 가이드 LLM 여유 0 되돌리기는 5회 중 3회만 검출(시간 의존). 5단계 F3는 재요청 변이를 못 잡는다(F4·서비스 테스트가 판별).
+
+**리허설(사람 흐름)**
+
+| 회 | 기록 | 범위 | 결과 |
+| --- | --- | --- | --- |
+| 1 | `docs/week10/rehearsal.md`(2026-11-25, 로컬 1회) | 응답 유실 → 알림 → 가이드 → 대시보드 → Loki → 관리자 목록 → 일괄 확정 → 알림 해제 | 성공. 막힌 지점 B1·B3·B4 수정, B2·B5 기록 |
+| 2 | `[리허설 재실행: evidence 경로]` | — | — |
+
+### 12-2. 증명하지 못한 것
+
+| 항목 | 왜 못 했나 / 무엇이 위험한가 | 지금의 대응 |
+| --- | --- | --- |
+| 실제 PG 취소 API | 과정 PG 계약에 취소가 없다. 요청·응답 모양은 [가정](11-6)이고 test-pg만 구현한다 | 실제 PG가 다르면 어댑터만 바꾼다 |
+| 새 환불 지표의 실제 Prometheus 이름 | `refund_cases`·`refund_person_open`·`refund_requested_oldest_age_seconds`·`refund_outcome`·`refund_person_assigned`·`refund_check`는 Micrometer 변환 규칙으로만 대조했다. 실제 scrape 없음. 환불 규칙은 리허설에 넣지 않았다 | promtool 시계열 테스트로 식 모양만 고정 |
+| 임계값 | 모든 [임시] 값(12-3)은 운영 트래픽으로 정하지 않았다 | 측정 뒤 조정 |
+| 정산 파일 대사 | PG 정산 파일과 우리 기록을 맞춰 보지 않는다. 사람 기록(11-17)은 관리자의 말을 믿는다 | 범위 밖(11-9·11-18) |
+| 취소 멱등 키 | 취소 요청에 멱등 키가 없다(11-6). 한 번만은 상태(`REFUND_REQUESTED` commit 뒤 1회)로만 보장한다. 거절 뒤 지금 처리를 다시 누르면 다시 보낸다(11-19, PG가 효과 없음을 명시한 경우만) | 결과 모름이면 다시 보내지 않고 조회 |
+| 대량 장애 때 사람 담당 조회가 밀림 | `findDue`가 AUTO를 먼저 채우고 회차 상한 20은 AUTO·PERSON 합계다(11-15). AUTO 대상이 계속 20건 이상이면 PERSON 건 조회가 밀려 PG 사실로 담당을 자동 종료하는 것이 늦어진다 **[참모 19:41: 처리량 상한 20 유지가 우선]** | 사람은 지금 처리(11-19)로 한 건씩 당길 수 있다 |
+| 지금 처리 반영 실패의 로그 | 반영이 실패하면 응답은 500(잠금 실패 503)이고 causeType ERROR 줄은 남지 않는다(일반 advice) | 목록의 `lastCheckOutcome=APPLY_FAILED`·`lastCheckCause`로 확인(runbook) |
+| 테이블 없는 DB의 v3 이전 SQL | `migrate-payment-refund-cases-v3.sql`을 `payment_refund_cases`가 없는 DB에서 돌려 보지 않았다 | v2 뒤에 실행 |
+| 다중 인스턴스 | 잠금·한 번만 규칙은 테스트 DB의 동시성 테스트로만 봤다. 여러 인스턴스 배포는 하지 않았다 | 행 잠금으로 직렬화 |
+| runbook 에스컬레이션 대상 역할 이름 | **[미정]** 팀 정의 사항이다. runbook은 "에스컬레이션 대상 [미정]"으로만 적었다 | 팀이 정하면 runbook만 고친다 |
+| 실제 Slack·LLM·Grafana MCP | 연결·호출하지 않았다(9-8·10-8). Viewer 토큰 생성은 승인 대상 | 가짜 수신기, 결정적 요약 |
+| 만료 경로 리허설 | `PaymentAbandonedPiling`은 리허설하지 않았다(10-8) | promtool 테스트만 |
+
+**그 밖에 남은 사실** (단계별 review "사실로 남기는 것" 중 HEAD에서 아직 유효한 것)
+
+| 출처 | 사실 |
+| --- | --- |
+| 1단계 | `payment_records.provider_order_id` 인덱스 없음. callback 조회가 전체 탐색일 수 있다(6절) |
+| 1단계 | 만료 INFO는 commit 전에 남긴다. 만료 TX가 rollback되면 INFO만 남을 수 있다(4-2) |
+| 1b | 잠금 전 스냅샷과 잠금 뒤 재조회 사이 경합이면 Verified인데 MDC에 거래 키가 없을 수 있다(남의 키는 붙지 않음, 추론) |
+| 2단계 | E2E의 포인트·쿠폰 불변은 0과 0 비교라 판별력이 약하다 |
+| 4a | `unknown_entered`의 PENDING→UNKNOWN 경로 테스트가 없다(9-8) |
+| 4a | 일괄 확정의 시작 전 회로 검사는 목록 안 종결 주문의 PG까지 본다. 종결 주문만 막힌 PG에 걸려도 전체 503이다 |
+| 4a | pacer 대기가 interrupt되면 요청 전체가 예외로 끝나 부분 결과를 잃는다 |
+| 4a | 미확인 목록의 결제 대기 수만 건 규모 쿼리 계획은 확인하지 않았다(9-8) |
+| 4b | streamer의 `spring.application.name`이 `commerce-api`다. local로 함께 띄우면 같은 로그 파일·같은 8081을 쓴다(10-8) |
+| 4b | Alloy 읽기 위치(`/var/lib/alloy/data`)가 볼륨이 아니다. 재기동하면 같은 줄이 다시 들어갈 수 있다(추정) |
+| 4b | `grafana/grafana` 이미지 버전 미고정. 가이드 실패 시 Slack 자리에 원본 두 번, resolved 통지 최대 5분 늦음(10-4·10-8) |
+| 5단계 | 관리자 환불 목록은 `opened_at` 순 정렬인데 그 칸 인덱스가 없다. 대상이 많이 쌓이면 정렬 비용이 커진다 |
+| 5단계 | 기능 이전에 만료된 주문은 늦은 성공이 와야 대상이 생긴다(소급 생성 없음). 취소 호출 예외 때 WARN이 2줄 남는다 |
+| 5b | v2 이전 SQL은 옛 `CLOSED_NO_CHARGE`의 외부 환불(CANCELED) 구분을 잃는다(로컬 데이터만) |
+| 5b | 비종결 돈의 상태 문자열이 `UnresolvedPaymentQueryService`·`PaymentRefundCaseJpaRepository.findDue`·`RefundCaseMetrics`에 따로 있다(경미한 중복) |
+
+- 이미 고쳐져 뺀 것: 기한 직후 취소 경계(R3, 11-13), 수동 reconcile 반영 실패의 원문 ERROR(6절), gauge 갱신 풀 경합(7절), 래퍼·4a counter 실제 수집(리허설), runbook 상대 경로(GitHub URL), Grafana MCP의 Loki 원시 로그(범주 제외).
+
+### 12-3. [임시] 값
+
+코드 경로 줄임: `RC` = `payment/domain/RefundCase.java`, `RTS` = `payment/app/RefundTrackingService.java`(모두 `apps/commerce-api/src/main/java/com/loopers/domains/` 아래), `app.yml` = `apps/commerce-api/src/main/resources/application.yml`, `rules` = `docker/prometheus/rules/payment.yml`.
+
+| 값 | 위치(파일:줄) | 뜻 | 바꾸는 곳 | 문서 | 대조 |
+| --- | --- | --- | --- | --- | --- |
+| 15s | `app.yml:65` | 미확인·환불 gauge DB 갱신 주기 | yml `commerce.payment.unresolved-metric.refresh-interval` | 4-1 | 일치 |
+| 0.2%·20건·10m | `rules:34·36·37` | `PaymentUnresolvedPiling` 유입 비율·unknown 건수·지속 | 규칙 + `payment_test.yml` | 9-2 | 일치 |
+| 5건·10m 창·10m | `rules:50·51` | `PaymentAbandonedPiling` | 규칙 | 9-2 | 일치 |
+| 15m | `rules:63` | `PaymentNeedsReview` 지속 | 규칙 | 9-2 | 일치 |
+| 30%·10건·5m | `rules:78·80·81` | `PaymentDeclineSurge` | 규칙 | 9-2 | 일치 |
+| 5건·5m | `rules:92·93` | `PaymentPgUnreachable` | 규칙 | 9-2 | 일치 |
+| p99 > 1s·5m 100건·10m | `rules:112·115·116` | `PaymentApiLatencyP99High`(결제 API 지연) | 규칙 | 9-2 | 일치 |
+| 1h·4h·4h | `docker/alertmanager/alertmanager.yml:22·27·31·17` | repeat_interval critical·warning·기본 | Alertmanager 설정 | 9-2 | 일치 |
+| 50건 | `app.yml:104`(기본값 `order/config/PaymentReconcileBatchConfig.java:12`) | 일괄 확정 한 번 최대 | yml `payment.reconcile-batch.max-orders` | 9-6 | 일치 |
+| 200ms(test 0ms) | `app.yml:105`(test `:185`) | 일괄 확정 PG 조회 간격 | yml `payment.reconcile-batch.interval` | 9-6 | 일치 |
+| 3건 | `app.yml:106` | 일괄 확정 연속 실패 한도 | yml `payment.reconcile-batch.consecutive-failure-limit` | 9-6 | 일치 |
+| 10MB·3개·100MB | `supports/logging/src/main/resources/appenders/json-file-appender.xml:6·7·8` | local JSON 로그 롤링 | `logging.logback.rollingpolicy.*` | 10-2 | 일치 |
+| 72h | `docker/loki/loki.yml:32` | Loki 보존 | Loki 설정 | 10-3 | 일치 |
+| 10s | `docker/guide/guide.py:90`(환경 변수 `:104`) | 가이드 근거 수집 제한 시간 | `GUIDE_TIMEOUT_SECONDS` | 10-4 | 일치 |
+| 5m | `rules:205` | `GuideServerDown` 지속 | 규칙 | 10-4 | 일치 |
+| 2일 | `RC:28` | 자동 추적 기한 `handoff_at` | 도메인 상수(P8: 설정 아님) | 11-2·11-5 | 일치 |
+| 4일 | `RC:29` | 고객 약속 `promise_at` | 도메인 상수 | 11-2·11-5 | 일치 |
+| 1m | `RC:37`(사용 `RTS:256·333`, `order/app/OrderApplicationService.java:312`) | 첫 조회·환불 요청 뒤·결과 모름 뒤 jitter 상한, 배증 시작값 | 도메인 상수 | 11-5·11-14 | 일치 |
+| 1h | `RC:38`(배증 `RC:321~325`) | 결론 없는 조회 뒤 상한의 최대 | 도메인 상수 | 11-5·11-14 | 일치 |
+| 30m | `RC:39`(사용 `RTS:314·355`, `OrderApplicationService.java:521·526`) | 사람 담당 조회 jitter 상한 | 도메인 상수 | 11-13·11-14 | 일치 |
+| 20건 | `RTS:36` | 환불 추적 회차 상한(AUTO·PERSON 합계) | 코드 상수 | 11-5·11-15 | 일치 |
+| 30s | `app.yml:98` | 환불 추적 회차 주기 | yml `payment.refund.scheduler.fixed-delay` | 11-5 | 일치 |
+| 100자 | `RC:41` | `last_check_cause` 최대 길이(칸 `VARCHAR(100)`) | 도메인 상수 + DDL | 11-19 | 일치([임시] 아님, P4) |
+| 15m | `rules:132` | `PaymentRefundNeedsPerson` 지속 | 규칙 | 11-16 | 일치 |
+| 600s·5m | `rules:144·145` | `PaymentRefundRequestStuck` | 규칙 | 11-16 | 일치 |
+| 30m | `rules:158` | `PaymentRefundUnknown` 지속 | 규칙 | 11-8·11-16 | 일치 |
+| 10건·30m·10m | `rules:171·173·174` | `PaymentRefundPiling` | 규칙 | 11-16 | 일치 |
+| 15m 창·5m | `rules:188·189` | `PaymentRefundApplyFailed` | 규칙 | 11-19 | 일치 |
+| 2m | `app.yml:100` | 결제 만료 | yml `payment.expiry.timeout` | 8주차 26절(이 문서는 인용만) | 일치 |
+| 1s·3s | `app.yml:76·77` | PG 연결·읽기 timeout | yml `payment.providers.test-pg.*` | 8주차 21절 | 일치 |
+
+- 리허설 전용 값(10-7, `docker/prometheus/rules/rehearsal/`)은 운영 값이 아니라 표에서 뺐다.
