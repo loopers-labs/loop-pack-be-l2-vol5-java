@@ -37,8 +37,9 @@ public class CircuitBreakingPaymentGateway implements PaymentGateway {
         }
     }
 
+    // 취소는 조회 회로를 거치지 않는다. 회로가 열려도 환불은 나가야 하고, 취소 실패가 조회 회로 표본을 흐리면 안 된다.
     @Override
     public PaymentCancelResult cancel(PaymentCancelCommand command) {
-        return new PaymentCancelResult.Unknown("미구현");
+        return paymentGateway.cancel(command);
     }
 }

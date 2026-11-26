@@ -4,9 +4,11 @@
 #   scripts/ops/test-pg.sh start                      # 포그라운드로 띄운다(Ctrl+C로 종료). 결제 127.0.0.1:8082, 제어 127.0.0.1:8083
 #   scripts/ops/test-pg.sh lose  LP-ORD-0000000101    # 이 주문의 create를 SUCCESS로 저장한 뒤 응답을 늦춰 앱이 결과를 모르게 한다
 #   scripts/ops/test-pg.sh clear LP-ORD-0000000101    # 위 지정을 해제한다
+#   scripts/ops/test-pg.sh lose-cancel  LP-ORD-0000000101  # 이 주문의 취소를 CANCELED로 확정한 뒤 응답을 늦춰 앱이 취소 결과를 모르게 한다
+#   scripts/ops/test-pg.sh clear-cancel LP-ORD-0000000101  # 위 취소 유실 지정을 해제한다(create 유실 지정은 그대로)
 #   scripts/ops/test-pg.sh behavior ACCEPT_SUCCESS    # 전역 create 동작(TestPgServer.CreateBehavior 이름)
 #   scripts/ops/test-pg.sh lookup-behavior ERROR_500  # 전역 조회 동작(TestPgServer.LookupBehavior 이름). NORMAL이면 원래대로
-#   scripts/ops/test-pg.sh status                     # create·조회 호출 수, 현재 create·조회 동작, 유실 지정 주문 목록
+#   scripts/ops/test-pg.sh status                     # create·조회·취소 호출 수, 현재 create·조회 동작, create·취소 유실 지정 주문 목록
 # 환경 변수: TEST_PG_PORT(8082), TEST_PG_CONTROL_PORT(8083), TEST_PG_DELAY_MILLIS(5000), TEST_PG_USER_ID(135135)
 set -euo pipefail
 
@@ -14,7 +16,8 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CONTROL_URL="http://127.0.0.1:${TEST_PG_CONTROL_PORT:-8083}/control"
 
 usage() {
-    echo "사용법: $0 start | lose ORDER_ID | clear ORDER_ID | behavior NAME | lookup-behavior NAME | status" >&2
+    echo "사용법: $0 start | lose ORDER_ID | clear ORDER_ID | lose-cancel ORDER_ID | clear-cancel ORDER_ID" \
+        "| behavior NAME | lookup-behavior NAME | status" >&2
     exit 2
 }
 
@@ -41,6 +44,15 @@ case "$1" in
             METHOD="DELETE"
         fi
         control -X "$METHOD" "$CONTROL_URL/lost-responses/$2"
+        ;;
+    lose-cancel | clear-cancel)
+        [[ $# -eq 2 ]] || usage
+        if [[ "$1" == "lose-cancel" ]]; then
+            METHOD="PUT"
+        else
+            METHOD="DELETE"
+        fi
+        control -X "$METHOD" "$CONTROL_URL/lost-cancels/$2"
         ;;
     behavior)
         [[ $# -eq 2 ]] || usage

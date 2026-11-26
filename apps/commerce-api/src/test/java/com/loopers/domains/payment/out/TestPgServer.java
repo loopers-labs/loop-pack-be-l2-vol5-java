@@ -29,6 +29,9 @@ public final class TestPgServer implements AutoCloseable {
     static final String PAYMENTS_PATH = "/api/v1/payments";
     static final String REJECT_CODE = "TEST_PG_REJECTED_BEFORE_CREATE";
     static final String CANCEL_REJECT_CODE = "TEST_PG_CANCEL_REJECTED";
+    private static final String CANCEL_SUFFIX = "/cancel";
+    // 어댑터가 응답 본문을 결과·로그에 옮기지 않는지 확인하는 표식이다.
+    private static final String SECRET_BODY_MARKER = "PG-SECRET-BODY";
 
     public enum CreateBehavior {
         ACCEPT_PENDING,
@@ -37,6 +40,7 @@ public final class TestPgServer implements AutoCloseable {
         ACCEPT_WITH_200,
         ACCEPT_BLANK_TRANSACTION_KEY,
         ACCEPT_UNKNOWN_STATUS,
+        ACCEPT_CANCELED_STATUS,
         ACCEPT_AMOUNT_MISMATCH,
         ACCEPT_ORDER_ID_MISMATCH,
         ACCEPT_AMOUNT_AS_STRING,
@@ -109,6 +113,8 @@ public final class TestPgServer implements AutoCloseable {
     private final AtomicInteger keySequence = new AtomicInteger();
     private final Map<String, OrderBehavior> orderBehaviors = new ConcurrentHashMap<>();
     private final Map<String, AtomicInteger> createCallsByOrder = new ConcurrentHashMap<>();
+    private final Map<String, AtomicInteger> cancelCallsByOrder = new ConcurrentHashMap<>();
+    private final Set<String> lostCancelOrderIds = ConcurrentHashMap.newKeySet();
     private final Set<String> lookupErrorOrderIds = ConcurrentHashMap.newKeySet();
     private volatile CreateBehavior createBehavior = CreateBehavior.ACCEPT_PENDING;
     private volatile LookupBehavior lookupBehavior = LookupBehavior.NORMAL;
@@ -177,7 +183,9 @@ public final class TestPgServer implements AutoCloseable {
     }
 
     public long createCalls() {
-        return requests.stream().filter(request -> request.method().equals("POST")).count();
+        return requests.stream()
+            .filter(request -> request.method().equals("POST") && request.rawPath().equals(PAYMENTS_PATH))
+            .count();
     }
 
     public long lookupCalls() {
@@ -220,21 +228,30 @@ public final class TestPgServer implements AutoCloseable {
     }
 
     public long cancelCalls() {
-        return 0;
+        return requests.stream()
+            .filter(request -> request.method().equals("POST") && isCancelPath(request.rawPath()))
+            .count();
     }
 
     public int cancelCalls(String providerOrderId) {
-        return 0;
+        AtomicInteger calls = cancelCallsByOrder.get(providerOrderId);
+        if (calls == null) {
+            return 0;
+        }
+        return calls.get();
     }
 
+    // create 응답 유실과 따로 둔다. 한 주문에 두 지정이 함께 있을 수 있다.
     public void loseCancelResponse(String providerOrderId) {
+        lostCancelOrderIds.add(providerOrderId);
     }
 
     public void clearLostCancel(String providerOrderId) {
+        lostCancelOrderIds.remove(providerOrderId);
     }
 
     public Set<String> lostCancelOrderIds() {
-        return Set.of();
+        return Set.copyOf(lostCancelOrderIds);
     }
 
     @Override
@@ -256,6 +273,8 @@ public final class TestPgServer implements AutoCloseable {
             }
             if (exchange.getRequestMethod().equals("POST") && uri.getRawPath().equals(PAYMENTS_PATH)) {
                 handleCreate(exchange, objectMapper.readTree(body));
+            } else if (exchange.getRequestMethod().equals("POST") && isCancelPath(uri.getRawPath())) {
+                handleCancel(exchange, uri.getRawPath(), body);
             } else if (exchange.getRequestMethod().equals("GET")) {
                 handleLookup(exchange, uri);
             } else {
@@ -287,6 +306,7 @@ public final class TestPgServer implements AutoCloseable {
                 transactionJson(new StoredTransaction(" ", orderId, amount, "PENDING")));
             // 포트가 모르는 상태 문자열이다. CANCELED는 취소 조회 상태로 포트가 안다.
             case ACCEPT_UNKNOWN_STATUS -> send(exchange, 202, transactionJson(store(orderId, amount, "REFUNDING")));
+            case ACCEPT_CANCELED_STATUS -> send(exchange, 202, transactionJson(store(orderId, amount, "CANCELED")));
             case ACCEPT_AMOUNT_MISMATCH -> {
                 StoredTransaction stored = store(orderId, amount, "PENDING");
                 send(exchange, 202, transactionJson(
@@ -333,6 +353,106 @@ public final class TestPgServer implements AutoCloseable {
             case DROP_CONNECTION_AFTER_CREATE -> store(orderId, amount, "PENDING");
             default -> throw new IllegalStateException("지원하지 않는 동작: " + createBehavior);
         }
+    }
+
+    // 거래가 없으면 장면과 상관없이 404다. 장면은 취소할 거래가 있을 때의 응답만 바꾼다.
+    private void handleCancel(HttpExchange exchange, String rawPath, String body) throws IOException, InterruptedException {
+        String key = URLDecoder.decode(
+            rawPath.substring(PAYMENTS_PATH.length() + 1, rawPath.length() - CANCEL_SUFFIX.length()), StandardCharsets.UTF_8);
+        JsonNode request = body.isBlank() ? objectMapper.createObjectNode() : objectMapper.readTree(body);
+        String orderId = request.path("orderId").asText();
+        long amount = request.path("amount").asLong();
+        // 응답 종류와 상관없이 요청을 받은 순간 센다. 중복 취소를 감지해야 한다.
+        cancelCallsByOrder.computeIfAbsent(orderId, ignored -> new AtomicInteger()).incrementAndGet();
+        StoredTransaction stored = transactions.get(key);
+        if (stored == null) {
+            send(exchange, 404, "{\"code\":\"NOT_FOUND\"}");
+            return;
+        }
+        switch (cancelBehavior) {
+            case NORMAL -> cancelByContract(exchange, stored, orderId, amount);
+            case OK_WITHOUT_CANCEL -> send(exchange, 200, transactionJson(stored));
+            case OK_AMOUNT_MISMATCH -> {
+                StoredTransaction canceled = markCanceled(stored);
+                send(exchange, 200, transactionJson(new StoredTransaction(
+                    canceled.transactionKey(), canceled.orderId(), canceled.amount() + 1, canceled.status())));
+            }
+            case OK_ORDER_ID_MISMATCH -> {
+                StoredTransaction canceled = markCanceled(stored);
+                send(exchange, 200, transactionJson(new StoredTransaction(
+                    canceled.transactionKey(), canceled.orderId() + "-X", canceled.amount(), canceled.status())));
+            }
+            case OK_KEY_MISMATCH -> {
+                StoredTransaction canceled = markCanceled(stored);
+                send(exchange, 200, transactionJson(new StoredTransaction(
+                    canceled.transactionKey() + "-X", canceled.orderId(), canceled.amount(), canceled.status())));
+            }
+            case OK_BROKEN_JSON -> {
+                markCanceled(stored);
+                send(exchange, 200, "{\"transactionKey\":\"TR-");
+            }
+            case ACCEPT_202 -> send(exchange, 202, transactionJson(markCanceled(stored)));
+            case REJECT_OTHER_CODE -> send(exchange, 422, cancelRejectJson(key, orderId, amount, "CANCEL_NOT_ALLOWED", false));
+            case REJECT_WITHOUT_BODY -> send(exchange, 422, null);
+            case REJECT_AFTER_CANCEL -> {
+                markCanceled(stored);
+                send(exchange, 422, cancelRejectJson(key, orderId, amount, CANCEL_REJECT_CODE, true));
+            }
+            case ERROR_500_AFTER_CANCEL -> {
+                markCanceled(stored);
+                send(exchange, 500, "{\"code\":\"INTERNAL_ERROR\"}");
+            }
+            case ERROR_500_WITHOUT_CANCEL -> send(exchange, 500, null);
+            case ERROR_500_WITH_SECRET_BODY ->
+                send(exchange, 500, "{\"code\":\"INTERNAL_ERROR\",\"detail\":\"" + SECRET_BODY_MARKER + "\"}");
+            case DELAY_AFTER_CANCEL -> {
+                StoredTransaction canceled = markCanceled(stored);
+                Thread.sleep(delay.toMillis());
+                send(exchange, 200, transactionJson(canceled));
+            }
+            // 취소한 뒤 응답 헤더 없이 연결을 닫는다(HttpExchange.close가 연결을 끊는다).
+            case DROP_CONNECTION_AFTER_CANCEL -> markCanceled(stored);
+            default -> throw new IllegalStateException("지원하지 않는 동작: " + cancelBehavior);
+        }
+    }
+
+    // 가정 계약: 승인(SUCCESS) 거래만 취소한다. 이미 취소면 같은 200, 주문·금액 불일치나 미승인 거래는 효과 없는 422다.
+    private void cancelByContract(HttpExchange exchange, StoredTransaction stored, String orderId, long amount)
+        throws IOException, InterruptedException {
+        boolean sameRequest = stored.orderId().equals(orderId) && stored.amount() == amount;
+        boolean cancelable = stored.status().equals("SUCCESS") || stored.status().equals("CANCELED");
+        if (!sameRequest || !cancelable) {
+            send(exchange, 422, cancelRejectJson(stored.transactionKey(), orderId, amount, CANCEL_REJECT_CODE, false));
+            return;
+        }
+        StoredTransaction canceled = markCanceled(stored);
+        if (lostCancelOrderIds.contains(orderId)) {
+            // 취소를 확정한 뒤 read timeout보다 늦게 응답해, 클라이언트는 결과를 모르게 한다.
+            Thread.sleep(delay.toMillis());
+        }
+        send(exchange, 200, transactionJson(canceled));
+    }
+
+    private StoredTransaction markCanceled(StoredTransaction stored) {
+        StoredTransaction canceled = new StoredTransaction(
+            stored.transactionKey(), stored.orderId(), stored.amount(), "CANCELED");
+        transactions.put(stored.transactionKey(), canceled);
+        return canceled;
+    }
+
+    private String cancelRejectJson(String key, String orderId, long amount, String code, boolean canceled) {
+        ObjectNode node = objectMapper.createObjectNode();
+        node.put("code", code);
+        node.put("transactionKey", key);
+        node.put("orderId", orderId);
+        node.put("amount", amount);
+        node.put("canceled", canceled);
+        return node.toString();
+    }
+
+    private static boolean isCancelPath(String rawPath) {
+        return rawPath.startsWith(PAYMENTS_PATH + "/") && rawPath.endsWith(CANCEL_SUFFIX)
+            && rawPath.length() > PAYMENTS_PATH.length() + 1 + CANCEL_SUFFIX.length();
     }
 
     private void handleLookup(HttpExchange exchange, URI uri) throws IOException, InterruptedException {

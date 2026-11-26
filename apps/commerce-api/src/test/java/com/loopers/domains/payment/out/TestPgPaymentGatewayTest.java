@@ -145,6 +145,7 @@ class TestPgPaymentGatewayTest {
             CreateBehavior.ACCEPT_WITH_200,
             CreateBehavior.ACCEPT_BLANK_TRANSACTION_KEY,
             CreateBehavior.ACCEPT_UNKNOWN_STATUS,
+            CreateBehavior.ACCEPT_CANCELED_STATUS,
             CreateBehavior.ACCEPT_AMOUNT_MISMATCH,
             CreateBehavior.ACCEPT_ORDER_ID_MISMATCH,
             CreateBehavior.ACCEPT_AMOUNT_AS_STRING,
@@ -231,6 +232,17 @@ class TestPgPaymentGatewayTest {
             String key = server.transactions().get(0).transactionKey();
             assertThat(result).isEqualTo(new PaymentCreateResult.Accepted(
                 new PaymentTransaction(key, ORDER_ID, new Money(AMOUNT), PaymentTransactionStatus.SUCCESS)));
+        }
+
+        @Test
+        @DisplayName("202 응답의 거래 상태가 CANCELED면 접수 계약 밖이라 결과 모름으로 분류한다")
+        void canceledStatusOnCreateIsUnknown() {
+            server.createBehavior(CreateBehavior.ACCEPT_CANCELED_STATUS);
+
+            PaymentCreateResult result = gateway.create(command());
+
+            assertThat(result).isInstanceOf(PaymentCreateResult.Unknown.class);
+            assertThat(server.createCalls()).isEqualTo(1);
         }
 
         @Test

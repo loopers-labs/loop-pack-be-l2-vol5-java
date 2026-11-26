@@ -37,6 +37,7 @@ public class TestPgPaymentGateway implements PaymentGateway {
     private static final String PAYMENTS_PATH = "/api/v1/payments";
     private static final String USER_ID_HEADER = "X-USER-ID";
     private static final String REJECT_CODE = "TEST_PG_REJECTED_BEFORE_CREATE";
+    private static final String CANCEL_REJECT_CODE = "TEST_PG_CANCEL_REJECTED";
     private static final int ACCEPTED = 202;
     private static final int NOT_FOUND = 404;
     private static final int OK = 200;
@@ -111,9 +112,41 @@ public class TestPgPaymentGateway implements PaymentGateway {
         return findByOrderId(providerOrderId);
     }
 
+    // 취소 API는 과정 PG 계약에 없는 가정이다(w10s5-3). 분류는 create와 같다: 연결 전 실패만 미발송, 의심되면 결과 모름.
     @Override
     public PaymentCancelResult cancel(PaymentCancelCommand command) {
-        return new PaymentCancelResult.Unknown("미구현");
+        byte[] body;
+        try {
+            body = objectMapper.writeValueAsBytes(cancelBody(command));
+        } catch (JsonProcessingException e) {
+            return cancelNotSent("요청 본문 생성 실패: " + e.getClass().getSimpleName(), command);
+        }
+        try {
+            PaymentCancelResult result = restClient.post()
+                .uri(PAYMENTS_PATH + "/{transactionKey}/cancel", command.transactionKey())
+                .contentType(MediaType.APPLICATION_JSON)
+                .accept(MediaType.APPLICATION_JSON)
+                .body(body)
+                .exchange((request, response) -> classifyCancel(response.getStatusCode().value(),
+                    response.getBody().readAllBytes(), command));
+            if (result instanceof PaymentCancelResult.Unknown unknown) {
+                log.debug("테스트 PG 결제 취소 결과를 알 수 없습니다. providerOrderId={}, reason={}",
+                    command.providerOrderId(), unknown.reason());
+            }
+            return result;
+        } catch (RestClientException e) {
+            String reason = causeSummary(e);
+            if (failedBeforeSending(e)) {
+                return cancelNotSent(reason, command);
+            }
+            log.debug("테스트 PG 결제 취소 결과를 알 수 없습니다. providerOrderId={}, reason={}", command.providerOrderId(), reason);
+            return new PaymentCancelResult.Unknown(reason);
+        } catch (RuntimeException e) {
+            // 요청이 나갔는지 판단할 수 없으므로 결과 모름이다.
+            String reason = e.getClass().getSimpleName();
+            log.debug("테스트 PG 결제 취소 결과를 알 수 없습니다. providerOrderId={}, reason={}", command.providerOrderId(), reason);
+            return new PaymentCancelResult.Unknown(reason);
+        }
     }
 
     PaymentTransactionLookup findByTransactionKey(String transactionKey) {
@@ -182,10 +215,42 @@ public class TestPgPaymentGateway implements PaymentGateway {
         return body;
     }
 
+    private Map<String, Object> cancelBody(PaymentCancelCommand command) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("orderId", command.providerOrderId());
+        body.put("amount", command.amount().value());
+        return body;
+    }
+
+    private PaymentCancelResult classifyCancel(int status, byte[] body, PaymentCancelCommand command) {
+        if (status == OK) {
+            return readTree(body)
+                .flatMap(this::toTransaction)
+                .filter(transaction -> isCanceled(transaction, command))
+                .<PaymentCancelResult>map(PaymentCancelResult.Canceled::new)
+                .orElseGet(() -> new PaymentCancelResult.Unknown("HTTP 200 응답 형식 오류 또는 요청 값 불일치"));
+        }
+        if (status == UNPROCESSABLE && isCancelRejectedWithoutEffect(readTree(body), command)) {
+            return new PaymentCancelResult.RejectedNoEffect(CANCEL_REJECT_CODE);
+        }
+        return new PaymentCancelResult.Unknown("HTTP " + status);
+    }
+
+    private boolean isCancelRejectedWithoutEffect(Optional<JsonNode> body, PaymentCancelCommand command) {
+        return body.filter(node -> textEquals(node.get("code"), CANCEL_REJECT_CODE))
+            .filter(node -> node.path("canceled").isBoolean() && !node.path("canceled").booleanValue())
+            .filter(node -> textEquals(node.get("transactionKey"), command.transactionKey()))
+            .filter(node -> textEquals(node.get("orderId"), command.providerOrderId()))
+            .filter(node -> amountOf(node).filter(amount -> amount == command.amount().value()).isPresent())
+            .isPresent();
+    }
+
+    // create 응답의 CANCELED는 접수 계약 밖이라 결과 모름으로 둔다(create 동작 불변, w10s5 PL 결정).
     private PaymentCreateResult classifyCreate(int status, byte[] body, PaymentCreateCommand command) {
         if (status == ACCEPTED) {
             return readTree(body)
                 .flatMap(this::toTransaction)
+                .filter(transaction -> transaction.status() != PaymentTransactionStatus.CANCELED)
                 .filter(transaction -> matches(transaction, command))
                 .<PaymentCreateResult>map(PaymentCreateResult.Accepted::new)
                 .orElseGet(() -> new PaymentCreateResult.Unknown("HTTP 202 응답 형식 오류 또는 요청 값 불일치"));
@@ -235,6 +300,13 @@ public class TestPgPaymentGateway implements PaymentGateway {
         return transaction.providerOrderId().equals(command.providerOrderId()) && transaction.amount().equals(command.amount());
     }
 
+    private static boolean isCanceled(PaymentTransaction transaction, PaymentCancelCommand command) {
+        return transaction.status() == PaymentTransactionStatus.CANCELED
+            && transaction.transactionKey().equals(command.transactionKey())
+            && transaction.providerOrderId().equals(command.providerOrderId())
+            && transaction.amount().equals(command.amount());
+    }
+
     private static Optional<Long> amountOf(JsonNode node) {
         JsonNode amount = node.get("amount");
         if (amount == null || !amount.isIntegralNumber() || !amount.canConvertToLong() || amount.longValue() < 0) {
@@ -273,6 +345,11 @@ public class TestPgPaymentGateway implements PaymentGateway {
     private static PaymentCreateResult notSent(String reason, PaymentCreateCommand command) {
         log.debug("테스트 PG에 결제 생성 요청을 보내지 못했습니다. providerOrderId={}, reason={}", command.providerOrderId(), reason);
         return new PaymentCreateResult.NotSent(reason);
+    }
+
+    private static PaymentCancelResult cancelNotSent(String reason, PaymentCancelCommand command) {
+        log.debug("테스트 PG에 결제 취소 요청을 보내지 못했습니다. providerOrderId={}, reason={}", command.providerOrderId(), reason);
+        return new PaymentCancelResult.NotSent(reason);
     }
 
     private static PaymentTransactionLookup lookupFailed(String reason) {

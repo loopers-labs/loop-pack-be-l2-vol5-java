@@ -29,7 +29,8 @@ public record PaymentReport(PaymentRecord.ProviderStatus status, String transact
             case PENDING -> PaymentRecord.ProviderStatus.PENDING;
             case SUCCESS -> PaymentRecord.ProviderStatus.SUCCESS;
             case FAILED -> PaymentRecord.ProviderStatus.FAILED;
-            case CANCELED -> PaymentRecord.ProviderStatus.UNKNOWN;
+            // 승인 뒤 취소된 거래는 돈이 나가지 않은 확정 결과라 FAILED와 같이 다룬다(w10s5 P5).
+            case CANCELED -> PaymentRecord.ProviderStatus.FAILED;
         };
         return new PaymentReport(status, transaction.transactionKey());
     }

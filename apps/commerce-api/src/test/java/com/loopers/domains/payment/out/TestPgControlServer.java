@@ -24,6 +24,7 @@ public final class TestPgControlServer implements AutoCloseable {
     private static final String CREATE_BEHAVIOR_PATH = CONTROL_PATH + "/create-behavior";
     private static final String LOOKUP_BEHAVIOR_PATH = CONTROL_PATH + "/lookup-behavior";
     private static final String LOST_RESPONSES_PREFIX = CONTROL_PATH + "/lost-responses/";
+    private static final String LOST_CANCELS_PREFIX = CONTROL_PATH + "/lost-cancels/";
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final TestPgServer testPgServer;
@@ -61,6 +62,8 @@ public final class TestPgControlServer implements AutoCloseable {
                 changeLookupBehavior(exchange);
             } else if (path.startsWith(LOST_RESPONSES_PREFIX) && path.length() > LOST_RESPONSES_PREFIX.length()) {
                 changeLostResponse(exchange, method, path);
+            } else if (path.startsWith(LOST_CANCELS_PREFIX) && path.length() > LOST_CANCELS_PREFIX.length()) {
+                changeLostCancel(exchange, method, path);
             } else {
                 send(exchange, 404, null);
             }
@@ -108,14 +111,30 @@ public final class TestPgControlServer implements AutoCloseable {
         }
     }
 
+    private void changeLostCancel(HttpExchange exchange, String method, String path) throws IOException {
+        String providerOrderId = URLDecoder.decode(path.substring(LOST_CANCELS_PREFIX.length()), StandardCharsets.UTF_8);
+        if (method.equals("PUT")) {
+            testPgServer.loseCancelResponse(providerOrderId);
+            send(exchange, 204, null);
+        } else if (method.equals("DELETE")) {
+            testPgServer.clearLostCancel(providerOrderId);
+            send(exchange, 204, null);
+        } else {
+            send(exchange, 405, null);
+        }
+    }
+
     private String statusJson() {
         ObjectNode node = objectMapper.createObjectNode();
         node.put("createBehavior", testPgServer.createBehavior().name());
         node.put("lookupBehavior", testPgServer.lookupBehavior().name());
         node.put("createCalls", testPgServer.createCalls());
         node.put("lookupCalls", testPgServer.lookupCalls());
+        node.put("cancelCalls", testPgServer.cancelCalls());
         ArrayNode lost = node.putArray("lostResponseOrderIds");
         testPgServer.lostResponseOrderIds().stream().sorted().forEach(lost::add);
+        ArrayNode lostCancels = node.putArray("lostCancelOrderIds");
+        testPgServer.lostCancelOrderIds().stream().sorted().forEach(lostCancels::add);
         return node.toString();
     }
 
