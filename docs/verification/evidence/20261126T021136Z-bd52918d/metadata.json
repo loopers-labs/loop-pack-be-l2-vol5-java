@@ -1,0 +1,17 @@
+{
+  "schemaVersion" : 1,
+  "runId" : "20261126T021136Z-bd52918d",
+  "mode" : "AUTO",
+  "operator" : "AUTO",
+  "startedAt" : "2026-11-26T02:11:36.502880Z",
+  "syntheticClock" : "2026-11-23T01:00:00Z",
+  "code" : {
+    "head" : "c3fb22cc34cc372e8064eb971f828226b908b1af",
+    "trackedDiffSha256" : "dce9cf3d4699f32278c01b665a7391fd477fc831a951412dafdb2b8975c6411a",
+    "trackedDiffBytes" : 74062,
+    "untracked" : [ {
+      "path" : "apps/commerce-api/src/test/java/com/loopers/infrastructure/order/CheckoutIncidentObservationTest.java",
+      "sha256" : "f259da1adbf58520dd9187cd6c2ebbfe2e34d6a301188324c88eea2c72469e1e"
+    } ]
+  }
+}

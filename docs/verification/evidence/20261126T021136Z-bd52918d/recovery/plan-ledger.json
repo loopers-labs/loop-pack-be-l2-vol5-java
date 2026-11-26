@@ -1,0 +1,22 @@
+[ {
+  "sequence" : 1,
+  "stage" : "FAULT",
+  "operation" : "CREATE",
+  "target" : "LP-ORD-0000000011",
+  "plan" : "SUCCESS_THEN_CLOSE_EARLY",
+  "succeeded" : true
+}, {
+  "sequence" : 2,
+  "stage" : "FAULT",
+  "operation" : "CREATE",
+  "target" : "LP-ORD-0000000012",
+  "plan" : "SUCCESS_THEN_CLOSE_EARLY",
+  "succeeded" : true
+}, {
+  "sequence" : 3,
+  "stage" : "FAULT",
+  "operation" : "CREATE",
+  "target" : "LP-ORD-0000000013",
+  "plan" : "SUCCESS_THEN_CLOSE_EARLY",
+  "succeeded" : true
+} ]

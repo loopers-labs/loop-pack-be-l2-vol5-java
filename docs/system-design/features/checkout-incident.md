@@ -370,9 +370,11 @@ RECOVERY:
 
 `sealFault()`는 필수파일/내용 assertion 성공 후 fault의 SHA-256목록과 코드 진단원문·예상 파일 hash를 봉인한다. accepted 진행 기록은 봉인 fault 파일과 별도로 저장한다. `verifyFaultUnchanged()`는복구 뒤기존파일바이트hash를비교한다. 파일존재/hash일치만으로상태/효과를통과시키지않는다. 실패 원문은별도순번/시각파일에append방식으로추가하며기존파일에덮어쓰지않는다. 증거파일쓰기실패면특히복구 전진행을중단한다. 오류기록도실패하면원래오류를가리지않고suppressed/별도실패로알린다.
 
-build는ignore대상이므로성공/실패 원문보존과Git제출을구분한다. 승인후선별한실행의허용원문/metadata/가설/검증범위·재현명령만 `docs/week10/verification/evidence/<runId>/`에바이트그대로복사하고원본hash와대조한다. 2026-11-23 실행 `20261123T124038Z-670e178c`의 사본·manifest를 해당 경로에 보존했다. Git 포함 여부·최종 제출 판단은 별도이며 현재 untracked다. 로컬scenario-review·HANDOFF·프롬프트를필수근거로링크하지않는다. stage/ignore변경은자동수행하지않는다.
+build는 ignore 대상이므로 원문 보존과 Git 제출을 구분한다. 과거 `20261123T124038Z-670e178c`의 사본은 로컬 `docs/week10/verification/evidence/`에 보존한다. 사용자 결정으로 최신 실행 `20261126T021136Z-bd52918d`의 원문55파일을 `docs/verification/evidence/<runId>/`에 바이트 그대로 복사하고 원본·보존 사본과 대조했다. 실행별 manifest1개에 원본 경로·상대경로·bytes·SHA-256과 실행 코드의 커밋 연결을 기록하며 metadata·fault 봉인은 고치지 않는다. 로컬 HANDOFF·프롬프트·전체 검사 XML/자식 로그를 함께 일괄 제출하지 않는다. 최종 stage/commit은 별도 사용자 지시에 따른다.
 
 ### 9.2 제한 시간과 정리
+
+**실패 상태 보존 보완(2026-11-26 사용자 승인):** 실패 시 정리 전에 확보 가능한 주문·결제 식별자/상태, 예약·Outbox, PG 거래·수신 횟수/journal과 진단 로그를 별도의 실패 snapshot으로 추가한다. 정상 단계 파일이나 봉인된 fault 원문은 수정하지 않는다. 검증 assertion을 다시 호출하지 않고 읽은 실제 값만 저장한다. 준비가 끝나지 않은 자원과 수집/저장 실패는 정상적인 빈 결과와 구분한다. 한 수집원의 실패가 다른 수집과 원래 실패 기록·정리를 막지 않게 하고, 추가 오류는 최초 오류에 suppressed로 남긴다. 실패 수집의 DB 연결·읽기에도 유한한 대기 한도를 적용하며, DB 접속 불가·프로세스 종료·디스크 고장 때 모든 상태가 저장된다고 보장하지 않는다. 기존 `failures/<순번>-<단계>.json`은 최초 실패 요약으로 유지하고, 같은 순번의 `failures/<순번>-<단계>/`에 orders·reservations·stock·outbox·pg-state·diagnostic-log·roster JSON을 독립적으로 추가한다. 수집값은 `COLLECTED`·capturedAt·value로, 수집 불가는 `UNAVAILABLE`·capturedAt·failureClass로 구분한다. 진단 appender 시작 전은 수집 불가이며, 시작된 수집기에 실제 사건이 없을 때만 수집된 빈 목록으로 남긴다. DB 값은 문자열로 보존하고 비밀번호·카드·SQL 연결 오류 원문은 snapshot에 넣지 않는다. 실패 수집 전용 DB 연결에 connectTimeout/socketTimeout 각 1초, 쿼리 1초를 적용하고 정상 조회 설정은 바꾸지 않는다. 각 수집은 순차 조회이며 단일 원자 snapshot이나 전체 수집의 엄밀한 1초 상한을 뜻하지 않는다. 구현·관련 검증 결과는 실행 기록에 별도로 남긴다.
 
 |구간|한도/정책|
 |---|---|
@@ -390,7 +392,10 @@ cleanup은 전역 실행 한도와 별도로 주간 랭킹 검증 설계 §11.6�
 try:
   setup → baseline → fault/diagnose/seal → recovery → downstream → finalchecks
 catch original:
-  가능한범위의failure snapshot을추가저장,원래오류유지
+  실패 단계/시각/원래 오류를 기록
+  cleanup 전에 assertion 없는 읽기로 준비된 DB/PG 상태와 진단 로그를 실패 전용 새 경로에 수집
+  각 수집/저장 실패는 original의 suppressed로 남기고 독립적인 나머지 수집을 계속
+  original을 유지해 실패 전파
 finally:
   이번run이향후등록할주입/콜백호출중지,등록gate가있으면자기것해제
   relay진입중단/idle대기

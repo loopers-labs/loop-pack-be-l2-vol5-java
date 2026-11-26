@@ -1,0 +1,47 @@
+{
+  "sealedAt" : "2026-11-26T02:12:11.799588Z",
+  "expectationsSha256" : "889969859a73e02ea0e29402f34410d13993207ccaa1927887eb3bd08f51e7c4",
+  "files" : [ {
+    "sha256" : "e61207394372ce0e88641a1060d3a06debc9ccfa449aaee67318ddd1e77cc998",
+    "path" : "fault/deliveries.json"
+  }, {
+    "sha256" : "719f2adbc5130b61488601d7e995ffc6fdd06ac394309b46deba35118e978ee0",
+    "path" : "fault/diagnosis.json"
+  }, {
+    "sha256" : "ea215ec5ea06c223bb66d5828f63ede4a6dcd0c32fa06776efd15ae3f6d1f017",
+    "path" : "fault/diagnostic-log.txt"
+  }, {
+    "sha256" : "0f47cf9b2561fd10e97d8ec283409fe4cd30b2e1bcbafb2c1c3f109865039569",
+    "path" : "fault/direct-observation.txt"
+  }, {
+    "sha256" : "71b6a0d5a5948da7f71ef900559738e60272e7115651f454545a928498b85fff",
+    "path" : "fault/health-response.json"
+  }, {
+    "sha256" : "b9613659d8f4412c778e34293d5b865fb188c5814379ee3bfb8c819432e70020",
+    "path" : "fault/health-response.txt"
+  }, {
+    "sha256" : "c80f4265d605154a0311ab898c1314e1acb57af33db5de649f46359e833e1a75",
+    "path" : "fault/orders.json"
+  }, {
+    "sha256" : "27ae6482b008a758ef4473b4393f5b4bdcce5b287a3af4fd1b68da629006ebd1",
+    "path" : "fault/pg-state.json"
+  }, {
+    "sha256" : "6a36ef279092f26244e611bdd95a5f66df1845c972eef77e86506e5a0099ced0",
+    "path" : "fault/plan-ledger.json"
+  }, {
+    "sha256" : "e20370493d6fc3e9caf91d15a846c2c6e0a5ee5fc01d5f44b2849014dba8ba40",
+    "path" : "fault/preserved.json"
+  }, {
+    "sha256" : "1d5c95360218b523fb3b590e30db162acf4f020ef1237d91bf71fbcf6670927c",
+    "path" : "fault/prometheus-response.json"
+  }, {
+    "sha256" : "0a8560950c4d9186eb0d1e0432cb1784723184c9938c041896728647a2b3bf1d",
+    "path" : "fault/prometheus-response.txt"
+  }, {
+    "sha256" : "5100f4d82e065d467640408587eae2eeb421619fbe3a5e3069d2dc02ad52a49d",
+    "path" : "fault/summary.json"
+  }, {
+    "sha256" : "0550beb2d6b989024268c5e60593808b3c8bb84ee8bbdf478ab82b89ed39ddd7",
+    "path" : "fault/u-lookups.json"
+  } ]
+}

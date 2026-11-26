@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.regex.Pattern;
+import java.util.function.Supplier;
 import java.util.stream.Stream;
 
 /**
@@ -167,6 +168,35 @@ final class IncidentEvidenceWriter {
         } catch (RuntimeException e) {
             original.addSuppressed(e);
         }
+    }
+
+    /** 원래 실패 기록을 먼저 남기고, 독립 수집원별 실제 값 또는 수집 실패를 새 파일로 보존한다. */
+    synchronized void recordFailureSnapshotKeeping(Throwable original, IncidentStage stage, Map<String, ?> context,
+                                                   Map<String, Supplier<?>> sources) {
+        recordFailureKeeping(original, stage, context);
+        String stageName = stage == null ? "setup" : stage.directoryName();
+        Path directory = runDir.resolve("failures").resolve("%03d-%s".formatted(failureSequence, stageName));
+        sources.forEach((name, source) -> {
+            Map<String, Object> snapshot = new LinkedHashMap<>();
+            snapshot.put("capturedAt", Instant.now().toString());
+            try {
+                snapshot.put("value", source.get());
+                snapshot.put("status", "COLLECTED");
+            } catch (RuntimeException error) {
+                if (error != original) {
+                    original.addSuppressed(error);
+                }
+                snapshot.put("status", "UNAVAILABLE");
+                snapshot.put("failureClass", error.getClass().getName());
+            }
+            try {
+                writeJson(directory.resolve(requireName(name) + ".json"), snapshot);
+            } catch (RuntimeException error) {
+                if (error != original) {
+                    original.addSuppressed(error);
+                }
+            }
+        });
     }
 
     private List<Map<String, String>> hashes(Path dir) {

@@ -85,6 +85,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -192,8 +193,64 @@ final class CheckoutIncidentScenario {
             if (failure instanceof AssertionError || failure instanceof IllegalStateException) {
                 context.put("message", failure.getMessage());
             }
-            writer.recordFailureKeeping(failure, stage, context);
+            recordFailureSnapshot(failure, context);
         }, this::release);
+    }
+
+    void recordFailureSnapshot(Throwable original, Map<String, ?> context) {
+        Map<String, Supplier<?>> sources = new LinkedHashMap<>();
+        sources.put("orders", () -> failureRows("SELECT o.id, o.user_id, o.status, o.paid_amount, o.confirmed_at, "
+            + "p.attempt_key, p.provider_account, p.provider_order_id, p.transaction_key, p.amount, "
+            + "p.status AS payment_status, p.verification_status FROM orders o "
+            + "LEFT JOIN payment p ON p.order_id = o.id ORDER BY o.id"));
+        sources.put("reservations", () -> failureRows("SELECT order_id, product_id, cause, changed_quantity, "
+            + "before_quantity, after_quantity FROM stock_history ORDER BY id"));
+        sources.put("stock", () -> failureRows("SELECT id, stock_quantity FROM product ORDER BY id"));
+        sources.put("outbox", () -> failureRows("SELECT order_id, event_id, status, attempt_count, published_at "
+            + "FROM order_confirmed_outbox ORDER BY order_id"));
+        sources.put("pg-state", () -> {
+            if (pg == null) {
+                throw new IllegalStateException("PG 준비 전");
+            }
+            return pgState(pg.state());
+        });
+        sources.put("diagnostic-log", () -> {
+            if (!diagnostics.isStarted()) {
+                throw new IllegalStateException("진단 로그 수집 준비 전");
+            }
+            return diagnosticLines();
+        });
+        sources.put("roster", () -> {
+            if (roster == null) {
+                throw new IllegalStateException("주문 명단 준비 전");
+            }
+            return roster;
+        });
+        writer.recordFailureSnapshotKeeping(original, stage, context, sources);
+    }
+
+    private List<Map<String, String>> failureRows(String sql) {
+        return failureJdbc(fresh).queryForList(sql).stream().map(row -> {
+            Map<String, String> values = new LinkedHashMap<>();
+            row.forEach((key, value) -> values.put(key, String.valueOf(value)));
+            return values;
+        }).toList();
+    }
+
+    /** 정상 조회 설정을 바꾸지 않고 실패 수집 연결·읽기·쿼리 대기를 각각 제한한다. */
+    static JdbcTemplate failureJdbc(JdbcTemplate source) {
+        if (source == null || !(source.getDataSource() instanceof DriverManagerDataSource original)) {
+            throw new IllegalStateException("실패 수집용 DB 준비 전");
+        }
+        String url = original.getUrl();
+        if (url == null) {
+            throw new IllegalStateException("실패 수집용 DB 주소 없음");
+        }
+        url = url.replaceAll("(?i)(connectTimeout|socketTimeout)=[^&]*", "$1=1000");
+        url += (url.contains("?") ? "&" : "?") + "connectTimeout=1000&socketTimeout=1000";
+        JdbcTemplate reader = new JdbcTemplate(new DriverManagerDataSource(url, original.getUsername(), original.getPassword()));
+        reader.setQueryTimeout(1);
+        return reader;
     }
 
     @FunctionalInterface
@@ -795,16 +852,7 @@ final class CheckoutIncidentScenario {
     }
 
     private void writeStageEvidence(IncidentStage target, Map<String, Object> summary, String directObservation) {
-        FixtureState state = pg.state();
-        Map<String, Object> pgState = new LinkedHashMap<>();
-        pgState.put("transactions", state.transactions().stream().map(t -> Map.of("transactionKey", t.transactionKey(),
-            "orderId", t.orderId(), "amount", t.amount(), "status", t.status().name())).toList());
-        pgState.put("counts", Map.of("createReceived", state.counts().createReceived(),
-            "lookupByKeyReceived", state.counts().lookupByKeyReceived(),
-            "lookupByOrderReceived", state.counts().lookupByOrderReceived(), "callbackSent", state.counts().callbackSent()));
-        pgState.put("journal", state.journal().stream().map(CheckoutIncidentScenario::journal).toList());
-        pgState.put("activeRequests", state.activeRequests());
-        pgState.put("activeCallbackJobs", state.activeCallbackJobs());
+        Map<String, Object> pgState = pgState(pg.state());
         String logs = diagnosticLines().stream().collect(Collectors.joining("\n", "", "\n"));
         writer.writeStage(target, StageSnapshot.of(
             new StageSnapshot.Json("summary", summary),
@@ -815,6 +863,19 @@ final class CheckoutIncidentScenario {
             new StageSnapshot.Json("deliveries", List.copyOf(deliveries)),
             new StageSnapshot.Raw("direct-observation.txt", directObservation.getBytes(StandardCharsets.UTF_8)),
             new StageSnapshot.Raw("diagnostic-log.txt", logs.getBytes(StandardCharsets.UTF_8))));
+    }
+
+    private static Map<String, Object> pgState(FixtureState state) {
+        Map<String, Object> pgState = new LinkedHashMap<>();
+        pgState.put("transactions", state.transactions().stream().map(t -> Map.of("transactionKey", t.transactionKey(),
+            "orderId", t.orderId(), "amount", t.amount(), "status", t.status().name())).toList());
+        pgState.put("counts", Map.of("createReceived", state.counts().createReceived(),
+            "lookupByKeyReceived", state.counts().lookupByKeyReceived(),
+            "lookupByOrderReceived", state.counts().lookupByOrderReceived(), "callbackSent", state.counts().callbackSent()));
+        pgState.put("journal", state.journal().stream().map(CheckoutIncidentScenario::journal).toList());
+        pgState.put("activeRequests", state.activeRequests());
+        pgState.put("activeCallbackJobs", state.activeCallbackJobs());
+        return pgState;
     }
 
     private static Map<String, Object> journal(JournalEntry entry) {

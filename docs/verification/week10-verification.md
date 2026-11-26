@@ -2,7 +2,7 @@
 
 실습 8번에 따라 여섯 기능의 확인 증거·미확인 위험과 관련 검사 결과를 정리한다. 사고 자체의 진단·복구·후속 결과는 `docs/verification/checkout-incident.md`에 있다.
 
-검증 기준은 2절의 2026-11-26 최종 회귀다. 관측 원문 보존 보완을 포함한 최신 미커밋 코드의 실행 결과를 정리한다.
+사고의 전체 검증 기준은 2절의 2026-11-26 최종 회귀다. 그 뒤 실패 상태 보존을 보완한 관련 검사 결과는 3절로 구분한다. 전체 회귀를 보완 후 코드의 전체 통과 근거로 확대하지 않는다.
 
 ## 1. 기능별 검증 범위와 남은 위험
 
@@ -10,8 +10,8 @@
 
 |기능|이번에 확인한 증거|미확인 위험·범위 경계|
 |---|---|---|
-|상품·브랜드·좋아요·관리자|`ProductV1ApiE2ETest`, `BrandAdminV1ApiTest`, `LikeV1ApiE2ETest`, `AdminProductCommandIntegrationTest`, `ProductCacheReadIntegrationTest`·`ProductCacheInvalidationIntegrationTest` 등 기존 조회·관리·캐시 회귀. AUTO는 실제 상품 A/B의 주문·예약·활동을 연결|AUTO 중 삭제·관리 변경·캐시 장애를 유발하지 않았다. 운영 데이터 규모·다중 인스턴스의 캐시 보호를 새로 검증하지 않았다|
-|포인트·주문·PG|`PointV1ApiE2ETest`, `PaymentRestartIntegrationTest` 등 기존 회귀. AUTO는 단일 시도·예약 유지, 같은 거래 조회 복구·반복 적용·소유권을 확인하고 포인트 잔액·이력 불변 대조|AUTO의 포인트 검증은 미사용 값 보존이며 결제와 포인트 혼합 사용을 새로 검증한 것이 아니다. 실 PG·실계정·모든 통신 장애는 미검증|
+|상품·브랜드·좋아요·관리자|`ProductV1ApiE2ETest`, `BrandAdminV1ApiTest`, `LikeV1ApiE2ETest`, `AdminProductCommandIntegrationTest`, `ProductCacheReadIntegrationTest`·`ProductCacheInvalidationIntegrationTest` 등 기존 조회·관리·캐시 회귀. `ProductAdminV1ApiTest`는 상품 삭제, `LikeV1ApiE2ETest.CancelLike`는 타인 소유권 거절, `BrandFacadeIntegrationTest.BulkSoftDelete.keepsExistingLikeCancelAndPastOrders`와 `ProductCacheInvalidationIntegrationTest.hidesDeletedEvenOnHit`는 삭제 뒤 과거 주문 보존을 확인. 연결 테스트는 실제 상품 A/B의 주문·예약·활동을 연결|AUTO 중 삭제·관리 변경·캐시 장애를 유발하지 않았다. 운영 데이터 규모·다중 인스턴스의 캐시 보호를 새로 검증하지 않았다|
+|포인트·주문·PG|`PointV1ApiE2ETest`, `PaymentRestartIntegrationTest`, `PaymentRecoveryFlowIntegrationTest` 등 기존 회귀. 마지막 테스트는 조회 EMPTY/Unavailable·거래 충돌·PENDING 등 비성공 결과를 성공으로 바꾸지 않는 경로를 확인. AUTO는 단일 시도·예약 유지, 같은 거래 조회 복구·반복 적용·소유권을 확인하고 포인트 잔액·이력 불변 대조|AUTO의 포인트 검증은 미사용 값 보존이며 결제와 포인트 혼합 사용을 새로 검증한 것이 아니다. 실 PG·실계정·모든 통신 장애는 미검증|
 |이벤트·Outbox|`OrderOutboxDeliveryEndToEndIntegrationTest`·O11 회귀와 AUTO의 실제 relay→Kafka→streamer 활동·같은 사실 재발행 중복 방지|AUTO에서 발행 gap 장애를 추가로 만들지는 않았다. O11 회귀와 사고 복구의 후속 전달 검증을 구분한다. 운영 broker 장애·다중 인스턴스는 미검증|
 |쿠폰|`CouponApiE2ETest`와 `CouponIssueTransactionIntegrationTest`의 Races 등 최종 check의 기존 발급·목록·경쟁 회귀. AUTO는 보유 쿠폰·캠페인 값 불변 대조|AUTO에서 쿠폰 발급 경쟁·사용을 일으키지 않았다. 공유 Redis 장애용 W8 opt-in 8건은 이번에 미실행이며 해당 장애 보호를 이번 결과로 주장하지 않는다|
 |랭킹|`WeeklyRankingFlowTest`, batch의 `RankingJobRestartTest`·`WeeklyRankingBatchContractTest`·`WeeklyRankingLaunchTest` 등 회귀. AUTO는 복구 후 실제 활동 40행을 새 snapshot에 반영하고 공개 API A40/B20 확인|AUTO 자체는 같은 instance 재시작·revision 충돌을 재현하지 않는다(관련 기존 회귀와 구분). 운영 입력량·부하·다중 실행은 미검증|
@@ -25,6 +25,7 @@
 |---|---|
 |실행 시각·결과|2026-11-26 10:57:35~11:14:14 KST, 종료코드 0, BUILD SUCCESSFUL in 16m 38s, 52 actionable tasks 모두 executed|
 |코드 기준|HEAD `c3fb22c` + tracked diff 74,062바이트(SHA-256 `dce9cf3d…411a`, 테스트 2파일·설계 문서 3파일) + untracked 코드 `CheckoutIncidentObservationTest.java`(SHA-256 `f259da1a…9e1e`). W10 run `metadata.json`의 diff hash·untracked hash가 실행 전 기록과 같고, 실행 뒤 코드 파일도 실행 전 사본과 같았다|
+|커밋 연결|실행 당시 변경 코드3파일을 커밋 `31db770`의 해당 파일과 바이트 대조해 모두 동일함을 확인했다. 이후 실패 상태 보존 코드 변경은 3절의 별도 관련 검사 범위다. 원본 metadata는 수정하지 않았다.|
 |환경|Java 21.0.12(Homebrew), Gradle 8.13, Docker. Kafka는 property/환경변수 미설정으로 기본 `localhost:19092`의 기존 공유 broker를 사용했다. MySQL·Redis는 테스트 컨테이너. heap 1g·`forkEvery = 30`은 그대로 유지|
 
 |대상|tests|failures·errors|skipped|비고|
@@ -44,11 +45,32 @@ modules·supports의 test는 NO-SOURCE다. 실행 로그에 `OutOfMemoryError`�
 - `check.log`·`check-timing.txt`: 전체 출력과 실제 시작/종료 시각·종료코드
 - `after/`: 새 test-results·reports·jacoco, 새 W10 run 전체 사본(원본과 hash 일치), streamer·batch 자식 로그
 
-기존 사고 run 15개와 `docs/week10/verification/evidence/` 사본·manifest 645파일은 실행 전후 SHA-256이 같았다.
+기존 사고 run 15개와 로컬 전용 `docs/week10/verification/evidence/` 사본·manifest 645파일은 실행 전후 SHA-256이 같았다. 제출하는 새 사고 원문은 [실행별 증거 목록](evidence/20261126T021136Z-bd52918d/manifest.json)에서 확인한다.
 
-## 3. 공통 미확인 범위
+## 3. 실패 상태 보존 보완 관련 검사 (2026-11-26)
+
+기준은 커밋 `31db770` 이후 `CheckoutIncidentScenario`·`IncidentEvidenceWriter` 수정과 신규 `CheckoutIncidentFailureSnapshotTest`다. 제품 결제 계약이나 정상 단계의 기대값은 바꾸지 않았다.
+
+```bash
+./gradlew :apps:commerce-api:test \
+  --tests '*CheckoutIncidentFailureSnapshotTest' \
+  --tests '*CheckoutIncidentLifecycleTest' \
+  --tests '*IncidentEvidenceWriterTest' \
+  --tests '*CheckoutIncidentObservationTest' \
+  --tests '*ArchitectureTest' \
+  :apps:commerce-api:checkstyleMain :apps:commerce-api:checkstyleTest \
+  --rerun-tasks --no-build-cache
+```
+
+Java 21.0.12, 최종 BUILD SUCCESSFUL(25초). XML 32건(신규9·lifecycle4·writer7·observation9·architecture3), 실패·오류·skip 0. API Checkstyle main/test 위반 0. Gradle 캐시 접근 제한으로 실행 전 실패한 시도와 실제 검사 결과를 구분했다.
+
+로그 수집기 시작 전을 UNAVAILABLE, 시작 후 이벤트가 없음을 COLLECTED/빈 목록으로 구분하도록 재검토 보완한 뒤 같은 32건을 다시 실행해 모두 통과했다. 최종 소스 사본·XML·Checkstyle·로그는 `/tmp/w10-final-two-fixes-20261126-n35x7w8z/`에 보존했다.
+
+검사 전 덮일 build 산출물 646파일을 원본과 동일하게 보존했다. 새 XML·Checkstyle·로그·변경 전 소스·보호 hash는 `/tmp/w10-failure-snapshot-20261126-s5tfj6im/`에 있다. 새 전체 회귀·실제 DB 장애 실험은 수행하지 않았다. 기존 성공 run은 실패 경로 보완 전 코드의 기록으로 유지한다.
+
+## 4. 공통 미확인 범위
 
 - W8 공유 Redis 장애 opt-in 8건은 미실행이며 통과 수에 포함하지 않는다.
 - 같은 코드의 전체 check 반복 안정성과 회수되지 않는 Spring context의 원인은 확인하지 않았다. heap 1g·forkEvery 30은 메모리 누적을 제한한 대응이며 원인 제거를 뜻하지 않는다.
 - 로컬 통제 사고·관련 회귀 결과를 운영 배포·실계정·운영 규모의 지표 수집·부하·다중 인스턴스·모든 장애 검증으로 확대하지 않는다.
-- 최신 코드 전체 결과는 2절의 11월 26일 실행이다. 그 뒤 코드가 바뀌면 이 결과를 그 코드의 근거로 쓰지 않는다.
+- 전체 회귀 결과는 2절의 코드 기준에 한한다. 이후 실패 상태 보존 보완은 3절의 관련 검사 범위이며, 실제 DB 장애·디스크 고장·프로세스 강제 종료 시 전체 증거 보존을 보장하지 않는다.

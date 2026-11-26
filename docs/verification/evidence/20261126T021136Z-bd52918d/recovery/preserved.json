@@ -1,0 +1,44 @@
+{
+  "point" : [ {
+    "balance" : "10000",
+    "created_at" : "2026-11-26T02:12:03.752353",
+    "deleted_at" : "null",
+    "id" : "1",
+    "updated_at" : "2026-11-26T02:12:03.821163",
+    "user_id" : "1"
+  } ],
+  "pointHistory" : [ {
+    "after_balance" : "10000",
+    "before_balance" : "0",
+    "changed_amount" : "10000",
+    "created_at" : "2026-11-26T02:12:03.816672",
+    "deleted_at" : "null",
+    "id" : "1",
+    "order_id" : "null",
+    "point_id" : "1",
+    "updated_at" : "2026-11-26T02:12:03.816672",
+    "cause" : "CHARGE"
+  } ],
+  "coupon" : [ {
+    "benefit_value" : "5000",
+    "campaign_id" : "1",
+    "created_at" : "2026-11-26T02:12:03.835709",
+    "deleted_at" : "null",
+    "id" : "1",
+    "updated_at" : "2026-11-26T02:12:03.835709",
+    "user_id" : "1",
+    "benefit_type" : "FIXED_AMOUNT"
+  } ],
+  "couponCampaign" : [ {
+    "benefit_value" : "5000",
+    "created_at" : "2026-11-26T02:12:03.830637",
+    "deleted_at" : "null",
+    "id" : "1",
+    "issued_count" : "1",
+    "total_quota" : "1",
+    "updated_at" : "2026-11-26T02:12:03.830637",
+    "benefit_type" : "FIXED_AMOUNT",
+    "status" : "ACTIVE",
+    "name" : "테스트 캠페인"
+  } ]
+}

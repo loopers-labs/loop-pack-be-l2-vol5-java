@@ -12,7 +12,8 @@
 |---|---|
 |주 증거 run|`20261126T021136Z-bd52918d` — 단일 `./gradlew check --continue --rerun-tasks --no-build-cache`(2026-11-26 10:57:35~11:14:14 KST, 종료코드 0) 안의 `:apps:commerce-api:checkoutIncidentTest` 1건 통과|
 |실행 코드 기준|run `metadata.json`: HEAD `c3fb22c` + tracked diff 74,062바이트(SHA-256 `dce9cf3d4699f32278c01b665a7391fd477fc831a951412dafdb2b8975c6411a`) + untracked `CheckoutIncidentObservationTest.java`(`f259da1adbf58520dd9187cd6c2ebbfe2e34d6a301188324c88eea2c72469e1e`). 실행 전 별도 기록 및 실행 뒤 코드 사본과 일치|
-|원문·사본|원문 `apps/commerce-api/build/checkout-incident-runs/20261126T021136Z-bd52918d/` 55파일. 사본 `/tmp/w10-final-regression-20261126-5f5wcZeE/after/run/20261126T021136Z-bd52918d/`, 자식 로그 `after/children/`, 검사 결과 `after/apps/`, 전체 출력 `check.log`·시각/종료코드 `check-timing.txt`|
+|제출 원문|[실행별 원문과 hash 목록](evidence/20261126T021136Z-bd52918d/manifest.json). 원문55파일은 `docs/verification/evidence/20261126T021136Z-bd52918d/`에 원래 구조·바이트 그대로 두고 manifest1개를 추가했다. 자식 로그·전체 검사 XML/로그는 로컬 `/tmp/w10-final-regression-20261126-5f5wcZeE/`에 별도 보존하며 필요한 로그 발췌는 본문에 담았다.|
+|커밋 연결|실행 시 변경된 코드3파일이 커밋 `31db770`의 파일과 바이트 단위로 같음을 확인했다. 이후 실패 상태 보존 보완은 6절로 구분한다. metadata의 실행 당시 HEAD/diff/untracked 기록은 그대로 보존했다.|
 |시각 구분|실제 시작 `2026-11-26T02:11:36.502880Z`. 최초 confirmedAt만 합성 시각 `2026-11-23T01:00:00Z`를 사용. 실행 날짜를 과거로 바꾼 것이 아님|
 
 ### 1.1 환경·입력과 진행 방법
@@ -28,7 +29,7 @@
 |업무 시각|최초 confirmedAt만 `2026-11-23T01:00:00Z`로 고정. 집계 주는 `[2026-11-23, 2026-11-30)`. 증거·PG·로그 시각은 실제 UTC이며 고정 업무 시각과 구분|
 |실제 검증 경로|주문·confirm·본인 reconcile·callback·랭킹은 실제 HTTP, 상태 확인은 실제 DB. 전달은 실제 Outbox→Kafka→streamer, 집계는 새 snapshot의 실제 batch 실행|
 
-출처: `run/baseline/roster.json`, `run/baseline/preserved-before.json`, `run/resources/001-kafka.json`·`004-api.json`, `run/metadata.json`. 이하 `run/`은 §1의 새 run 사본, `children/`는 같은 보존 위치의 `after/children/`를 뜻한다. 검사 결과는 `after/apps/`에 있다. 입력·순서·기대값은 기준 설계 §2·§8을 따르며, 아래는 그 설계에 대한 실제 관찰이다.
+출처: `run/baseline/roster.json`, `run/baseline/preserved-before.json`, `run/resources/001-kafka.json`·`004-api.json`, `run/metadata.json`. 이하 `run/`은 §1의 제출 원문 디렉터리, `children/`는 로컬 보존 위치의 `after/children/`를 뜻한다. 전체 검사 결과는 같은 로컬 위치의 `after/apps/`에 있다. 입력·순서·기대값은 기준 설계 §2·§8을 따르며, 아래는 그 설계에 대한 실제 관찰이다.
 
 ## 2. 사고 실행 결과와 입증 범위
 
@@ -109,6 +110,8 @@ PG journal에서도 주문 11의 CREATE는 sequence 35·응답 상태 200·`fail
 
 진단·fault 봉인을 마친 뒤 U11·U12·U13의 기존 본인 reconcile API를 호출했다. 복구 중 새 결제 생성·DB 상태 강제 수정·새 plan 등록은 없었다.
 
+주입은 CREATE 한 번에 소비되는 plan3개를 U3에만 등록했다. 각 대상의 유일한 CREATE가 SUCCESS+CLOSED_EARLY로 끝났음을 journal과 대조하고, 복구 시작에는 진행 요청·콜백·gate가 0임을 검사했다. 복구는 조회만 수행하고 신규 plan 등록·CREATE가 없어 이 실행에서 응답 유실 주입을 다시 적용하지 않았다. 남은 plan 수를 조회하는 공개 API가 있다고 주장하지 않는다.
+
 |대조 항목|사고 시점|복구·반복 적용 뒤|해석|
 |---|---|---|---|
 |같은 F10 내부 결과|CONFIRMED 7 / UNKNOWN 3|CONFIRMED 10 / UNKNOWN 0|U3이 같은 집합 안에서 복구|
@@ -163,11 +166,15 @@ ORDER_ACTIVITY_HANDLED_AND_ACK_RETURNED topic=checkout-incident-test-1126111136-
 
 fault 원문 14파일과 사전 예상의 SHA-256을 `2026-11-26T02:12:11.799588Z`에 봉인했다. 문서 작성 시 사본의 `fault-seal.json` 목록을 다시 계산해 14개 모두 일치함을 확인했다. 14파일에는 health/Prometheus의 본문·상태/시각 4파일이 포함된다. hash는 바이트 변경 여부를 확인하는 수단이며 주문·상태·효과의 정확성은 위 대조와 assertion으로 별도 확인했다.
 
+사람은 실행 전 테스트의 대상·허용 조치·중단 조건을 확인하고 실행 범위를 승인했다. 고정 예상과 자동 판정은 그 범위 안에서 증거를 비교하는 구현이며 사람 확인을 대체하는 승인 장치가 아니다. 실제 운영에서 상태를 바꾸는 조치는 런북의 대상/중단 조건을 사람이 확인한 뒤 수행한다.
+
 이번 최종 실행에는 중간 실패가 없었다. 과거 중간 실패 기록은 이전 run들과 함께 보존했으며 성공 원문으로 바꾸지 않았다. 예를 들어 `apps/commerce-api/build/checkout-incident-runs/20261123T112400Z-0940a840/failures/001-baseline.json`은 예약 변경량 assertion 실패 기록이다. 이것을 최신 실행의 실패로 합산하지 않는다.
 
 `run/resources/007-cleanup.json`에는 `releaseCompleted=true`, `kept=[]`, streamer/batch 자식·PG 종료가 기록됐다. 이 실행 소유 자원을 정리한 결과이며 공유 인프라 전체의 운영 상태를 보증하는 기록은 아니다.
 
-최신 원문과 사본, 과거 실행을 각각 보존했다. 보고서의 표는 같은 실행 파일의 필드 대조이며, 원문 로그/응답 발췌와 재서식 JSON을 구분했다. 이 문서는 제출할 사고 증거의 설명과 핵심 발췌를 담고, 전체 원문 55파일의 Git 포함 여부는 아직 확정하지 않았다.
+최신 원문55파일과 과거 실행을 각각 보존했다. 제출 원문55개는 원본·별도 보존 사본과 바이트가 같고, manifest의 bytes·SHA-256으로 다시 확인할 수 있다. 보고서의 표는 같은 실행 파일의 필드 대조이며 원문 로그/응답 발췌와 재서식 JSON을 구분했다. 이 보고서와 실행별 원문55파일·manifest1개를 사고 증거로 함께 제출한다.
+
+실패 시 상태 증거 보존은 이 실행 이후 보완했으며, 변경 내용과 관련 검사 결과는 6절에 구분한다. 기존 run의 metadata·파일 집합·봉인은 보완 후 결과로 바꾸지 않았다.
 
 ## 3. 요구별 검증 범위(설계 §10)
 
@@ -179,13 +186,13 @@ fault 원문 14파일과 사전 예상의 SHA-256을 `2026-11-26T02:12:11.799588
 |I2 UNKNOWN 지표|실제 MySQL·Actuator + 예외 경계 대역|`PaymentMetricsIntegrationTest` 6, `PaymentMetricsConfigTest` 6. NaN은 대역 검증이며 실제 DB 장애 아님|
 |I3 PG·TX 진단 로그|실제 HTTP·MySQL + 제어 단위|`PgHttpGatewayDiagnosticsTest` 5, `DiagnosticLogTest` 3, `PaymentTxDiagnosticsIntegrationTest` 5, `PaymentTxDiagnosticsTest` 5. STATUS_UNKNOWN·등록 실패는 제어 단위|
 |I4 정상/장애 단계|AUTO 실제 연결|위 §2|
-|I5 진단 판정|AUTO 실제 증거 + 합성 단위|`fault/diagnosis.json`, `IncidentDiagnosisTest` 10. 사람 판단 분리 부분은 OBSERVED 제외로 없음|
+|I5 진단 판정|AUTO 실제 증거 + 합성 단위|`fault/diagnosis.json`, `IncidentDiagnosisTest` 10. 승인된 테스트 범위/중단 조건과 고정 예상에 따라 판정하며, 사람 확인을 자동 판정이 대신했다고 주장하지 않음|
 |I6 복구·소유권·반복|AUTO 실제 API·DB·PG|위 §2|
 |I7 포인트·쿠폰 불변|AUTO 행 값 비교|`*/preserved.json`|
 |I8 전달·소비·랭킹|AUTO 실제 Kafka·streamer·batch·API|`*/deliveries.json`, `recovery/ranking.json`, 자식 로그|
 |I9 직접 관찰|**제외**(2026-11-23 사용자 결정)|OBSERVED 코드 없음|
 |I10 진행 helper|AUTO 기록만 단위 검증|`IncidentCheckpointTest` 3. OBSERVED 명령·한도 검증은 기능과 함께 삭제|
-|I11 증거·실패·정리|단위 + AUTO 정상 정리|`IncidentEvidenceWriterTest` 7, `CheckoutIncidentLifecycleTest` 4, `CheckoutIncidentRowsTest` 4, `CheckoutIncidentHttpLimitTest` 1. 준비 직후 실패·실제 정리 실패의 강제 재현은 없음|
+|I11 증거·실패·정리|단위 + AUTO 정상 정리|`IncidentEvidenceWriterTest` 7, `CheckoutIncidentLifecycleTest` 4, `CheckoutIncidentRowsTest` 4, `CheckoutIncidentHttpLimitTest` 1. 준비 직후 실패·실제 정리 실패의 강제 재현은 없음. 실패 상태 보존 보완과 관련 검사는 6절|
 |I12 누적 회귀|단일 `check` 1회|`docs/verification/week10-verification.md` 2절(11월 26일)|
 
 ## 4. 사고 검증의 미실행·한계
@@ -202,3 +209,13 @@ fault 원문 14파일과 사전 예상의 SHA-256을 `2026-11-26T02:12:11.799588
 - 실행 결과: 위 실패 경로 검사는 11월 26일 최신 전체 회귀에도 포함됐다. 전체 실행·수량·Checkstyle 결과는 `docs/verification/week10-verification.md` 2절에 정리했다.
 - 보존: 검사 전 일반 test XML/HTML·Checkstyle·JaCoCo는 `/tmp/w10-observation-check-20261125-6r1mkpy4/before/`에 복사했다. 새 로그 `checks.log`, 결과/XML·Checkstyle·변경 코드 사본 `after/`, 원본/사본 SHA-256 일치 manifest는 같은 로컬 디렉터리에 있다. 기존 제출 후보 사본과 run metadata는 수정하지 않았다.
 - 한계: 보완 당시에는 선택 검사만 실행했고, 이후 11월 26일 전체 회귀와 연결 검증을 마쳤다(§1~3). 새 Grafana 관찰은 하지 않았다. 디스크 완전 고장이나 프로세스 강제 종료를 재현한 검증도 아니다.
+
+## 6. 실패 시 상태 증거 보존 보완 (2026-11-26)
+
+실패 예외·메시지만 기록하던 경로에 정리 전 상태 수집을 추가했다. `failures/<순번>-<단계>.json`은 기존 실패 요약으로 유지하고, 같은 순번의 하위 디렉터리에 주문/결제·예약·재고·Outbox·PG 거래/수신 횟수/journal·진단 로그·명단을 독립적으로 저장한다. 각 파일은 수집 시각과 COLLECTED/value 또는 UNAVAILABLE/failureClass를 기록한다. 로그 수집기 시작 전은 UNAVAILABLE로, 시작 후 실제 이벤트가 없는 경우만 COLLECTED/빈 목록으로 구분한다. 실패 수집은 검증 assertion·복구 요청·DB 변경을 하지 않는다.
+
+일부 수집이나 저장이 실패해도 다른 수집을 계속하고 최초 오류에 추가 오류를 suppressed로 남긴다. 기존 fault 봉인과 과거 실패 파일은 바꾸지 않는다. 실패 수집 전용 DB 연결·읽기 각 1초와 쿼리 1초를 적용하며, 정상 조회 설정은 유지한다. 순차 조회이므로 전체 수집이 하나의 원자 snapshot이거나 총 1초 안에 끝난다는 뜻은 아니다.
+
+신규 `CheckoutIncidentFailureSnapshotTest` 9건으로 정리 전 수집, DB/PG 수집 실패의 독립성, 저장 충돌 시 최초 오류·정리 유지, 동일 예외 재전달, 봉인/과거 파일 불변, 준비 미완료·PG 미준비, DB 한도 분리를 검증했다. 시나리오의 실패 수집 메서드·writer와 기존 runThenRelease 경계에 임시 파일·대역을 연결한 검사다. DB 수집 SQL은 엔티티 컬럼과 정적으로 대조했으며 실제 MySQL에서 실행하지 않았다. 실제 DB 장애나 새 전체 사고 실행의 검증이 아니다. 구체적인 명령·검사 결과는 `docs/verification/week10-verification.md` 3절을 따른다.
+
+DB 접속 불가·테이블 미준비·저장 공간 장애·프로세스 강제 종료 등에서는 일부 또는 전체 상태를 남기지 못할 수 있다. 수집 불가와 저장 실패를 정상 빈 결과나 성공으로 처리하지 않는다.
