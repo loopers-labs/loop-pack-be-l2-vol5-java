@@ -196,7 +196,9 @@ public final class RefundCase {
     }
 
     // 사람이 PG로 확인되지 않는 결론을 적는다(계획 5절, PL P7). 사람 담당 중이고 돈이 끝나지 않았을 때만 받는다.
-    // 청구 없음은 확인 중일 때만 받는다. PG가 돈이 나갔다고 한 뒤(청구 확인·환불 요청함·결과 모름)의 청구 없음은 돈 칸과 모순이다.
+    // 청구 확인의 청구 없음은 받는다. 사람 담당이 된 청구 확인은 대부분 불일치·복수·뒤집힘이라 PG가 말한 청구가 우리 주문 것이
+    // 아닐 수 있고 최종 판단은 사람이 한다(담당 사유는 남아 맥락을 보존한다). 환불 요청함·결과 모름은 우리가 취소를 보냈을 수 있는 돈이라
+    // 청구 없음이 아니다.
     public void resolveByPerson(PersonResult result, String closedBy, Instant now) {
         if (isConcluded()) {
             throw new RuleViolationException("돈의 상태가 이미 끝난 환불 확인 대상입니다: " + moneyStatus);
@@ -204,8 +206,9 @@ public final class RefundCase {
         if (!isPersonOpen()) {
             throw new RuleViolationException("사람 담당 중인 환불 확인 대상이 아닙니다.");
         }
-        if (result == PersonResult.NO_CHARGE && moneyStatus != MoneyStatus.CHECKING) {
-            throw new RuleViolationException("청구가 확인된 환불 확인 대상은 청구 없음으로 기록할 수 없습니다: " + moneyStatus);
+        if (result == PersonResult.NO_CHARGE
+            && (moneyStatus == MoneyStatus.REFUND_REQUESTED || moneyStatus == MoneyStatus.REFUND_UNKNOWN)) {
+            throw new RuleViolationException("환불을 요청한 뒤인 환불 확인 대상은 청구 없음으로 기록할 수 없습니다: " + moneyStatus);
         }
         if (result == PersonResult.REFUNDED) {
             refundActor = RefundActor.PERSON;

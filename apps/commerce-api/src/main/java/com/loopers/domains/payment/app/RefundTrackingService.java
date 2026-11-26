@@ -134,6 +134,7 @@ public class RefundTrackingService {
 
     // 환불 요청함으로 바꾸면 취소 명령을 돌려준다. 호출부는 이 트랜잭션이 commit된 뒤에만 취소를 보낸다.
     // 조회 동안 돈의 상태나 담당이 바뀌었으면(다른 인스턴스·합류·이관) 읽어 둔 판단으로 반영하지 않는다.
+    // 조회 동안 이관 기한이 지났으면 담당을 먼저 사람에게 넘긴 뒤 결과를 반영한다. 그래야 기한 경계에서 사람 담당 건에 취소가 나가지 않는다.
     private PaymentCancelCommand applyLookup(RefundCase snapshot, PaymentTransactionsLookup lookup) {
         Optional<RefundCase> found = paymentRefundCaseRepository.findByOrderIdForUpdate(snapshot.getOrderId());
         if (found.isEmpty() || found.get().getMoneyStatus() != snapshot.getMoneyStatus()
@@ -142,6 +143,9 @@ public class RefundTrackingService {
         }
         RefundCase refundCase = found.get();
         Instant now = clock.instant();
+        if (refundCase.isHandoffDue(now)) {
+            assignPerson(refundCase, RefundCase.HANDOFF_DEADLINE, now);
+        }
         PaymentCancelCommand cancelCommand = null;
         switch (lookup) {
             case PaymentTransactionsLookup.NotCalled notCalled ->
