@@ -4,6 +4,7 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.loopers.E2eApiTestApplication;
@@ -39,6 +40,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -80,7 +82,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.fail;
 
 // 10주차 2단계 사고 연결 테스트. 같은 DB·같은 TestPgServer 거래를 이어 한 사고를 재현한다:
-// 정상 기준선 → 응답 유실 3건 → 증거 보존 → 가설 판정 → 본인 reconcile 복구 → 반복·보호 → 구매 활동·주간 랭킹.
+// 정상 기준선 → 응답 유실 3건 → 증거 보존 → 가설 판정 → 본인 reconcile 복구 → 반복·보호 → 구매 활동·주간 랭킹 → 집합별 숫자 요약.
 // 단계 사이에 DB·PG 거래를 초기화하지 않고, 경계마다 DB·PG·actuator를 새로 조회해 같은 주문 집합으로 불변 조건을 맞춘다.
 // 고객 API·callback·랭킹은 RANDOM_PORT 실제 HTTP, health·prometheus는 management 포트 원문이다. 대역은 PG(TestPgServer, 실제 HTTP)와
 // 테스트 clock뿐이고, streamer·batch는 같은 JVM의 별도 컨텍스트다. 테스트 프로필은 재조회·만료·relay·gauge 스케줄러가 꺼져 있어
@@ -110,6 +112,15 @@ class CheckoutIncidentE2ETest {
     private static final int LOST = 3;
     private static final int STOCK = 30;
     private static final long PRICE = 1000;
+    // 주문 생성·확정 API는 포인트·쿠폰을 받지 않는다(포인트 미차감, 쿠폰은 발급만). 그래서 두 사용자가 0이 아닌 잔액·쿠폰을 가진 채
+    // 사고를 겪게 해, 복구·반복·후속이 이 값을 다시 차감·반환하지 않는지 fault 시점 값과 비교한다.
+    private static final long NORMAL_USER_POINTS = 5_000;
+    private static final long FAULT_USER_POINTS = 10_000;
+    private static final long COUPON_DISCOUNT = 3_000;
+    private static final String COUPON_CAMPAIGN = "사고 E2E 쿠폰";
+    private static final LocalDateTime SEEDED_AT = LocalDateTime.parse("2026-10-01T00:00:00");
+    private static final List<String> FAULT_SET_STAGES = List.of("FAULT", "RECOVERY", "REPEAT", "FOLLOWUP");
+    private static final List<String> NORMAL_SET_STAGES = List.of("BASELINE", "FAULT", "RECOVERY", "REPEAT", "FOLLOWUP");
     private static final List<String> UNRESOLVED_STATUSES = List.of("send_started", "pending", "unknown", "needs_review");
     private static final String SERVICE_LOGGER = OrderApplicationService.class.getName();
     private static final String ADAPTER_LOGGER = TestPgPaymentGateway.class.getName();
@@ -149,9 +160,11 @@ class CheckoutIncidentE2ETest {
     private int logCursor;
     private String currentStage = "START";
     private double confirmedAtStart;
-    private Map<Long, JsonNode> pointsAtStart;
-    private Map<Long, JsonNode> couponsAtStart;
+    private Map<String, Object> assetsAtFault;
     private Map<Long, String> confirmedAtAfterRecovery;
+    // 집합 이름 → 단계 → 확정·UNKNOWN·PG 성공·create 수. summary.json의 원본이다.
+    private final Map<String, Map<String, Map<String, Long>>> setCountsByStage =
+        new LinkedHashMap<String, Map<String, Map<String, Long>>>();
 
     private record TrackedOrder(String set, long orderId, long userId, String attemptKey, String providerOrderId) {
         boolean lost() {
@@ -196,7 +209,8 @@ class CheckoutIncidentE2ETest {
 
     @Test
     @DisplayName("응답 유실 3건 사고는 health UP인데 unknown gauge 3으로 보이고, 경계 기록으로 응답 유실만 채택되며, "
-        + "본인 reconcile이 create 추가 없이 같은 주문을 한 번씩 확정해 구매 활동 20건·주간 랭킹 점수 20으로 이어진다")
+        + "본인 reconcile이 create 추가 없이 같은 주문을 한 번씩 확정해(장애 집합 7·3·10 → 10·0·10) 포인트·쿠폰·재고는 fault 시점 그대로이고 "
+        + "구매 활동 20건·주간 랭킹 점수 20으로 이어진다")
     void checkoutIncidentLifecycle() throws Exception {
         attachLogCapture();
         Throwable primary = null;
@@ -217,6 +231,8 @@ class CheckoutIncidentE2ETest {
             repeatAndProtect();
             currentStage = "FOLLOWUP";
             followUp();
+            currentStage = "SUMMARY";
+            summarize();
 
             currentStage = "EVIDENCE_CHECK";
             assertThat(evidence.sha256("fault")).as("복구·후속 뒤에도 fault.json이 S3 때와 같다").isEqualTo(faultSha256);
@@ -260,7 +276,7 @@ class CheckoutIncidentE2ETest {
         return oneLine;
     }
 
-    // 준비: 사용자 1(정상 10)·2(장애 10)·3(타인), 공개 상품 1개 재고 30. 포인트·쿠폰·outcome counter 시작값을 기록한다.
+    // 준비: 사용자 1(정상 10)·2(장애 10)·3(타인), 공개 상품 1개 재고 30, 포인트 충전(1·2)·쿠폰 발급(2), outcome counter 시작값.
     private void prepare() throws Exception {
         ConsumeObservation.CONSUMED.clear();
         evidence = IncidentEvidence.open();
@@ -272,8 +288,6 @@ class CheckoutIncidentE2ETest {
         long brandId = brandApplicationService.create("사고 브랜드").id();
         productId = productApplicationService.create(brandId, "사고 상품", PRICE, STOCK).id();
         assertThat(availableStock()).isEqualTo(STOCK);
-        pointsAtStart = Map.of(NORMAL_USER, points(NORMAL_USER), FAULT_USER, points(FAULT_USER));
-        couponsAtStart = Map.of(NORMAL_USER, coupons(NORMAL_USER), FAULT_USER, coupons(FAULT_USER));
         confirmedAtStart = confirmedCounter(scrape(managementPort));
 
         String url = environment.getRequiredProperty("datasource.mysql-jpa.main.jdbc-url");
@@ -316,6 +330,7 @@ class CheckoutIncidentE2ETest {
         assertUnresolved(prometheus, Map.of("send_started", 0.0, "pending", 0.0, "unknown", 0.0, "needs_review", 0.0));
         assertThat(confirmedCounter(prometheus) - confirmedAtStart).as("outcome confirmed 증가").isEqualTo(ORDERS_PER_SET);
 
+        recordSetCounts("BASELINE");
         evidence.write("baseline", stage("BASELINE", prometheus, Map.of()));
     }
 
@@ -362,7 +377,20 @@ class CheckoutIncidentE2ETest {
         assertUnresolved(prometheus, Map.of("send_started", 0.0, "pending", 0.0, "unknown", (double) LOST, "needs_review", 0.0));
         assertThat(confirmedCounter(prometheus) - confirmedAtStart).isEqualTo(ORDERS_PER_SET + ORDERS_PER_SET - LOST);
 
-        evidence.write("fault", stage("FAULT", prometheus, Map.of()));
+        // 비교 기준이 0이면 다시 차감·반환해도 잡지 못하므로, fault 시점 값이 준비한 잔액·쿠폰·잡힌 수량인지 먼저 확인한다.
+        assetsAtFault = assets();
+        assertThat(assetsAtFault).as("fault 시점 포인트·잡힌 재고")
+            .containsEntry("pointBalance.user" + NORMAL_USER, NORMAL_USER_POINTS)
+            .containsEntry("pointBalance.user" + FAULT_USER, FAULT_USER_POINTS)
+            .containsEntry("availableStock", STOCK - 2 * ORDERS_PER_SET)
+            .containsEntry("heldQuantity", 2L * ORDERS_PER_SET);
+        JsonNode faultUserCoupons = (JsonNode) assetsAtFault.get("coupons.user" + FAULT_USER);
+        assertThat(faultUserCoupons).as("fault 시점 사용자 2 쿠폰").hasSize(1);
+        assertThat(faultUserCoupons.get(0).path("discountAmount").asLong()).isEqualTo(COUPON_DISCOUNT);
+        assertThat(pendingQuantity()).as("fault 시점 결제 대기 예약 수량").isEqualTo(LOST);
+
+        recordSetCounts("FAULT");
+        evidence.write("fault", stage("FAULT", prometheus, Map.of("assets", assetsAtFault, "pendingQuantity", pendingQuantity())));
     }
 
     // S3 증거 보존: 복구 전 fault.json의 hash를 기록하고, 파일을 다시 읽어 3건의 ID·상태·create 수·PG 상태를 단언한다.
@@ -447,11 +475,11 @@ class CheckoutIncidentE2ETest {
             judgment.put("observed", observed);
             List<Map<String, Object>> hypotheses = List.of(
                 hypothesis("H1", "응답 유실: PG는 성공했지만 create 응답을 받지 못했다",
-                    "create Unknown WARN(HttpTimeoutException) 1, 반영 ERROR 0, PG 조회 SUCCESS·금액 일치", h1),
+                    "create Unknown WARN(HttpTimeoutException) 1, 반영 ERROR 0, PG 조회 SUCCESS·금액 일치", h1, List.of()),
                 hypothesis("H2", "내부 반영 실패: PG 결과를 받거나 조회했지만 우리 DB 반영이 실패했다",
-                    "create Accepted INFO 또는 조회 Verified INFO가 있고 반영 ERROR가 있다", h2),
+                    "create Accepted INFO 또는 조회 Verified INFO가 있고 반영 ERROR가 있다", h2, List.of()),
                 hypothesis("H3", "PG 실패·미발송: 돈이 움직이지 않았다",
-                    "PG 거래가 없거나 FAILED, 또는 create NotSent WARN", h3));
+                    "PG 거래가 없거나 FAILED, 또는 create NotSent WARN", h3, List.of()));
             for (Map<String, Object> hypothesis : hypotheses) {
                 String bucket = "ADOPTED".equals(hypothesis.get("verdict")) ? "adopted" : "rejected";
                 verdict.get(bucket).computeIfAbsent((String) hypothesis.get("id"), id -> new ArrayList<Long>())
@@ -474,6 +502,22 @@ class CheckoutIncidentE2ETest {
         extra.put("verdict", verdict);
         extra.put("judgments", judgments);
         evidence.write("diagnosis", stage("DIAGNOSIS", scrape(managementPort), extra));
+
+        // 채택한 가설도 기각한 가설도 보지 못한 증거를 함께 남긴다. 파일을 다시 읽어 확인한다.
+        JsonNode written = evidence.read("diagnosis").path("judgments");
+        assertThat(written).as("판정 주문 수").hasSize(LOST);
+        for (JsonNode judgment : written) {
+            List<String> ids = new ArrayList<String>();
+            for (JsonNode hypothesis : judgment.path("hypotheses")) {
+                ids.add(hypothesis.path("id").asText());
+                JsonNode missing = hypothesis.path("missingEvidence");
+                assertThat(missing.isArray()).as("missingEvidence 배열 order=%s %s", judgment.path("orderId"), ids.getLast())
+                    .isTrue();
+                assertThat(missing).as("missingEvidence order=%s %s", judgment.path("orderId"), ids.getLast()).isNotEmpty()
+                    .allSatisfy(line -> assertThat(line.asText()).isNotBlank());
+            }
+            assertThat(ids).containsExactly("H1", "H2", "H3");
+        }
     }
 
     // S5 RECOVERY: 유실 지정을 풀고 없음을 확인한 뒤, 사용자 2가 같은 3건에 본인 reconcile HTTP를 보낸다.
@@ -503,7 +547,7 @@ class CheckoutIncidentE2ETest {
         assertThat(tracked).allSatisfy(order -> assertThat(server.createCalls(order.providerOrderId())).isEqualTo(1));
         assertThat(server.transactions()).hasSize(2 * ORDERS_PER_SET);
         assertThat(availableStock()).as("재고 추가 차감 없음").isEqualTo(STOCK - 2 * ORDERS_PER_SET);
-        assertPointsAndCouponsUnchanged();
+        Map<String, Object> assetsAfterRecovery = assertAssetsAsAtFault("RECOVERY");
         assertThat(tracked).allSatisfy(order -> assertThat(outboxRows(order.orderId())).as("Outbox order=%d", order.orderId())
             .isEqualTo(1));
         assertThat(jdbc.queryForObject("select count(*) from order_outbox", Long.class)).isEqualTo(2L * ORDERS_PER_SET);
@@ -541,8 +585,10 @@ class CheckoutIncidentE2ETest {
         Map<String, Object> extra = new LinkedHashMap<String, Object>();
         extra.put("faultSha256", faultSha256);
         extra.put("createCallsBeforeRecovery", createsBefore);
-        extra.put("pointsAtStart", pointsAtStart);
-        extra.put("couponsAtStart", couponsAtStart);
+        extra.put("assetsAtFault", assetsAtFault);
+        extra.put("assets", assetsAfterRecovery);
+        extra.put("pendingQuantity", pendingQuantity());
+        recordSetCounts("RECOVERY");
         evidence.write("recovery", stage("RECOVERY", prometheus, extra));
     }
 
@@ -575,10 +621,14 @@ class CheckoutIncidentE2ETest {
         assertThat(confirmedCounter(prometheus)).as("outcome confirmed 변화 없음").isEqualTo(confirmedBefore);
         assertUnresolved(prometheus, Map.of("send_started", 0.0, "pending", 0.0, "unknown", 0.0, "needs_review", 0.0));
         assertThat(confirmedAtOfAll()).isEqualTo(confirmedAtAfterRecovery);
+        Map<String, Object> assetsAfterRepeat = assertAssetsAsAtFault("REPEAT");
 
         Map<String, Object> extra = new LinkedHashMap<String, Object>();
         extra.put("otherUserReconcile", Map.of("orderId", firstLost.orderId(), "userId", OTHER_USER, "httpStatus", other.status(),
             "createCallsDelta", server.createCalls() - createsBeforeOther));
+        extra.put("assetsAtFault", assetsAtFault);
+        extra.put("assets", assetsAfterRepeat);
+        recordSetCounts("REPEAT");
         evidence.write("repeat", stage("REPEAT", prometheus, extra));
     }
 
@@ -622,8 +672,11 @@ class CheckoutIncidentE2ETest {
         assertThat(jdbc.queryForList("select snapshot_id from ranking_publication where period_start = ?", String.class, WEEK))
             .containsExactly(snapshotId);
         assertThat(confirmedAtOfAll()).as("confirmedAt은 최초 확정 값 그대로다").isEqualTo(confirmedAtAfterRecovery);
+        Map<String, Object> assetsAfterFollowup = assertAssetsAsAtFault("FOLLOWUP");
 
         Map<String, Object> extra = new LinkedHashMap<String, Object>();
+        extra.put("assetsAtFault", assetsAtFault);
+        extra.put("assets", assetsAfterFollowup);
         extra.put("activityRows", jdbc.queryForList("select order_id, product_id, quantity from product_purchase_activity"
             + " order by order_id"));
         extra.put("deliveries", deliveries.stream()
@@ -632,7 +685,90 @@ class CheckoutIncidentE2ETest {
         extra.put("rankingSnapshotId", snapshotId);
         extra.put("rankingBeforeLaunchRaw", notPublished.body());
         extra.put("rankingRaw", ranking.body());
+        recordSetCounts("FOLLOWUP");
         evidence.write("followup", stage("FOLLOWUP", scrape(managementPort), extra));
+    }
+
+    // S8 요약: 단계마다 모은 집합별 숫자를 summary.json 하나로 남기고, 파일을 다시 읽어 체크리스트 숫자와 맞춘다.
+    // 장애 집합(사용자 2의 10건)은 FAULT 확정 7·UNKNOWN 3·PG 성공 10 → RECOVERY 10·0·10이고 FAULT 뒤 create 증가는 0이다.
+    // 기준 집합(사용자 1의 10건)은 따로 두며 모든 단계에서 10·0·10이다.
+    private void summarize() throws Exception {
+        Map<String, Object> sets = new LinkedHashMap<String, Object>();
+        sets.put("fault-set", setSummary(FAULT_USER, faultSet(), "fault-set"));
+        sets.put("normal", setSummary(NORMAL_USER, set("normal"), "normal"));
+        Map<String, Object> content = new LinkedHashMap<String, Object>();
+        content.put("runId", evidence.runId());
+        content.put("stage", "SUMMARY");
+        content.put("countDefinition", Map.of(
+            "confirmed", "orders.status = CONFIRMED",
+            "unknown", "payment_records.provider_status = UNKNOWN",
+            "pgSuccess", "test-pg 거래 중 status = SUCCESS (집합 주문의 providerOrderId 기준)",
+            "createCalls", "test-pg가 받은 create 호출 수 합계 (집합 주문의 providerOrderId 기준)"));
+        content.put("sets", sets);
+        evidence.write("summary", content);
+
+        JsonNode summary = evidence.read("summary");
+        assertThat(stageCounts(summary, "fault-set", "FAULT")).as("장애 집합 FAULT").isEqualTo(counts(7, LOST, 10, 10));
+        for (String stage : List.of("RECOVERY", "REPEAT", "FOLLOWUP")) {
+            assertThat(stageCounts(summary, "fault-set", stage)).as("장애 집합 %s", stage).isEqualTo(counts(10, 0, 10, 10));
+            assertThat(summary.at("/sets/fault-set/createCallsIncreaseAfterFault/" + stage).isNumber())
+                .as("장애 집합 %s create 증가 기록", stage).isTrue();
+            assertThat(summary.at("/sets/fault-set/createCallsIncreaseAfterFault/" + stage).asLong())
+                .as("장애 집합 %s create 증가", stage).isZero();
+        }
+        for (String stage : NORMAL_SET_STAGES) {
+            assertThat(stageCounts(summary, "normal", stage)).as("기준 집합 %s", stage).isEqualTo(counts(10, 0, 10, 10));
+        }
+    }
+
+    private Map<String, Object> setSummary(long userId, List<TrackedOrder> orders, String setName) {
+        Map<String, Map<String, Long>> byStage = setCountsByStage.getOrDefault(setName, Map.of());
+        Map<String, Object> summary = new LinkedHashMap<String, Object>();
+        summary.put("userId", userId);
+        summary.put("orderIds", orders.stream().map(TrackedOrder::orderId).toList());
+        summary.put("byStage", byStage);
+        Map<String, Long> fault = byStage.get("FAULT");
+        if (setName.equals("fault-set") && fault != null) {
+            Map<String, Long> increase = new LinkedHashMap<String, Long>();
+            for (String stage : FAULT_SET_STAGES.subList(1, FAULT_SET_STAGES.size())) {
+                Map<String, Long> counts = byStage.get(stage);
+                if (counts != null) {
+                    increase.put(stage, counts.get("createCalls") - fault.get("createCalls"));
+                }
+            }
+            summary.put("createCallsIncreaseAfterFault", increase);
+        }
+        return summary;
+    }
+
+    private void recordSetCounts(String stage) {
+    }
+
+    private Map<String, Long> setCounts(List<TrackedOrder> orders) {
+        long confirmed = orders.stream().filter(order -> "CONFIRMED".equals(orderRow(order.orderId()).get("status"))).count();
+        long unknown = orders.stream().filter(order -> "UNKNOWN".equals(orderRow(order.orderId()).get("provider_status"))).count();
+        long pgSuccess = orders.stream()
+            .mapToLong(order -> pgTransactions(order).stream().filter(transaction -> "SUCCESS".equals(transaction.status())).count())
+            .sum();
+        long createCalls = orders.stream().mapToLong(order -> server.createCalls(order.providerOrderId())).sum();
+        return counts(confirmed, unknown, pgSuccess, createCalls);
+    }
+
+    private static Map<String, Long> counts(long confirmed, long unknown, long pgSuccess, long createCalls) {
+        Map<String, Long> counts = new LinkedHashMap<String, Long>();
+        counts.put("confirmed", confirmed);
+        counts.put("unknown", unknown);
+        counts.put("pgSuccess", pgSuccess);
+        counts.put("createCalls", createCalls);
+        return counts;
+    }
+
+    private Map<String, Long> stageCounts(JsonNode summary, String setName, String stage) {
+        JsonNode node = summary.path("sets").path(setName).path("byStage").path(stage);
+        if (node.isMissingNode()) {
+            return null;
+        }
+        return objectMapper.convertValue(node, new TypeReference<Map<String, Long>>() { });
     }
 
     // 자기가 켠 것만 푼다: 남은 응답 유실 지정, 로그 appender·레벨, streamer·batch 컨텍스트. 거래·증거는 지우지 않는다.
@@ -774,11 +910,51 @@ class CheckoutIncidentE2ETest {
         return json(result).path("data");
     }
 
-    private void assertPointsAndCouponsUnchanged() throws Exception {
+    private void chargePoints(long userId, long amount) throws Exception {
+        HttpResult charged = send("POST", "/api/v1/points/charge", userId, "{\"amount\":" + amount + "}");
+        assertThat(charged.status()).as("포인트 충전 user=%d", userId).isEqualTo(200);
+        assertThat(json(charged).at("/data/balance").asLong()).isEqualTo(amount);
+    }
+
+    // 캠페인 관리 API가 없어(8주차 29절) 캠페인·수용 설정 행은 JDBC로 넣고, 발급은 고객 API로 한다.
+    private void issueCoupon(long userId) throws Exception {
+        jdbc.update("insert into coupon_admission_settings(id, capacity, open, updated_at) values (1, 10, true, ?)"
+            + " on duplicate key update capacity = values(capacity), open = values(open), closed_reason = null, closed_at = null",
+            SEEDED_AT);
+        jdbc.update("insert into coupon_campaign(name, active, total_quota, issued_count, discount_amount, created_at)"
+            + " values (?, true, 10, 0, ?, ?)", COUPON_CAMPAIGN, COUPON_DISCOUNT, SEEDED_AT);
+        long campaignId = jdbc.queryForObject("select id from coupon_campaign where name = ?", Long.class, COUPON_CAMPAIGN);
+        HttpResult issued = send("POST", "/api/v1/coupon-campaigns/" + campaignId + "/issues", userId, null);
+        assertThat(issued.status()).as("쿠폰 발급 user=%d", userId).isEqualTo(201);
+    }
+
+    // 포인트 잔액·쿠폰 목록·재고. 재고는 가용 수량과 잡힌 수량(결제 대기 예약 + 확정)으로 본다.
+    // 복구는 예약을 확정으로 옮길 뿐이라 둘 다 fault 시점과 같아야 한다. 다시 차감하면 가용이 줄고, 반환하면 늘어난다.
+    private Map<String, Object> assets() throws Exception {
+        Map<String, Object> assets = new LinkedHashMap<String, Object>();
         for (long userId : List.of(NORMAL_USER, FAULT_USER)) {
-            assertThat(points(userId)).as("포인트 user=%d", userId).isEqualTo(pointsAtStart.get(userId));
-            assertThat(coupons(userId)).as("쿠폰 user=%d", userId).isEqualTo(couponsAtStart.get(userId));
+            assets.put("pointBalance.user" + userId, points(userId).path("balance").asLong());
+            assets.put("coupons.user" + userId, coupons(userId));
         }
+        assets.put("availableStock", availableStock());
+        assets.put("heldQuantity", pendingQuantity() + orderedQuantity("CONFIRMED"));
+        return assets;
+    }
+
+    private Map<String, Object> assertAssetsAsAtFault(String stage) throws Exception {
+        Map<String, Object> current = assets();
+        assertThat(current).as("%s 포인트·쿠폰·재고가 fault 시점과 같다", stage).isEqualTo(assetsAtFault);
+        assertThat(pendingQuantity()).as("%s 결제 대기 예약 수량", stage).isZero();
+        return current;
+    }
+
+    private long pendingQuantity() {
+        return orderedQuantity("PAYMENT_PENDING");
+    }
+
+    private long orderedQuantity(String status) {
+        return jdbc.queryForObject("select coalesce(sum(i.quantity), 0) from order_items i join orders o on o.id = i.order_id"
+            + " where o.status = ? and i.product_id = ?", Long.class, status, productId);
     }
 
     private HttpResult health() throws Exception {
@@ -948,12 +1124,14 @@ class CheckoutIncidentE2ETest {
         return Arrays.stream(arguments).map(String::valueOf).toList();
     }
 
-    private static Map<String, Object> hypothesis(String id, String statement, String expectedEvidence, boolean holds) {
+    private static Map<String, Object> hypothesis(String id, String statement, String expectedEvidence, boolean holds,
+        List<String> missingEvidence) {
         Map<String, Object> hypothesis = new LinkedHashMap<String, Object>();
         hypothesis.put("id", id);
         hypothesis.put("statement", statement);
         hypothesis.put("expectedEvidence", expectedEvidence);
         hypothesis.put("verdict", holds ? "ADOPTED" : "REJECTED");
+        hypothesis.put("missingEvidence", missingEvidence);
         return hypothesis;
     }
 
