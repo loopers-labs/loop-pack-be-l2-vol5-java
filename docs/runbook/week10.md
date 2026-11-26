@@ -55,6 +55,8 @@ local·dev 전용. 셸에 `COMMERCE_ADMIN_USERNAME`·`COMMERCE_ADMIN_PASSWORD`�
 - 503이거나 `SKIPPED`·`STOPPED(LOOKUP_FAILED)`가 많으면 PG가 아직 안 된다. 기다린다. 남은 건은 2분 만료와 환불 추적이 이어받는다.
 - 해소: 결과 모름 20건 미만 또는 유입 비율 0.2% 이하. 비율은 30분 창이라 해소 뒤에도 한동안 높게 보인다. Slack resolved는 최대 5분 늦다. Prometheus·대시보드로 먼저 확인한다.
 - 금지: 공통 금지. 특히 confirm·결제를 다시 보내지 않는다.
+- **멈출 때:** 일괄 확정이 503(조회 회로 OPEN)이거나 결과에 `SKIPPED`(연속 실패 3건으로 중단)·`STOPPED`가 많다 / 조치 뒤 같은 주문의 create 줄(`result=Accepted`·`Unknown`)이 새로 생긴다(create 증가 — 즉시 멈추고 에스컬레이션 대상 [미정]) / 원인이 H1(결과 모름 WARN + 반영 ERROR 없음)이 아니다 — 반영 ERROR가 있으면 내부 반영 실패라 일괄 확정을 되풀이하지 않고 에스컬레이션.
+- **다시 들어갈 때:** 회로 CLOSED 확인(회로 지표는 없다. 열림 대기 30s[임시]가 지난 뒤 한 건 목록 일괄 확정이 503·`LOOKUP_NOT_CALLED` 없이 끝나는지로 본다) → PG 조회 1건 수동 성공(한 건 목록이 `RESOLVED`) → Diagnosis 3으로 목록 다시 고정 → 같은 명령 재실행. 일괄 확정은 PG 조회만 하고(create 없음) 이미 끝난 주문은 `ALREADY_CLOSED`로 건너뛰므로 같은 목록을 다시 보내도 결제가 다시 만들어지지 않는다.
 
 ## PaymentAbandonedPiling
 
@@ -75,6 +77,8 @@ local·dev 전용. 셸에 `COMMERCE_ADMIN_USERNAME`·`COMMERCE_ADMIN_PASSWORD`�
 - PG가 2일[임시] 동안 결론을 못 주면 담당이 사람으로 넘어온다(PaymentRefundNeedsPerson).
 - 해소: 10분 만료 증가가 5건 아래.
 - 주의: 이 경로는 리허설에서 아직 확인하지 않았다(부록 A).
+- **멈출 때:** 일괄 확정이 503(회로 OPEN)이거나 `SKIPPED`(연속 실패 3건)·`STOPPED`가 나온다 / 조치 뒤 create 줄이 새로 생긴다(create 증가) / 원인이 H1(응답 유실)이 아니다(반영 ERROR가 있음) — 일괄 확정을 멈추고 에스컬레이션.
+- **다시 들어갈 때:** 회로 CLOSED 확인(회로 지표는 없다. 열림 대기 30s[임시]가 지난 뒤 한 건 목록 일괄 확정이 503·`LOOKUP_NOT_CALLED` 없이 끝나는지로 본다) → PG 조회 1건 수동 성공 → 아직 결제 대기인 건으로 목록 다시 고정(만료된 주문은 넣지 않는다) → 같은 명령 재실행. 일괄 확정은 PG 조회만 하고(create 없음) 이미 끝난 주문은 `ALREADY_CLOSED`로 건너뛰므로 같은 목록을 다시 보내도 결제가 다시 만들어지지 않는다.
 
 ## PaymentNeedsReview
 
@@ -93,6 +97,8 @@ local·dev 전용. 셸에 `COMMERCE_ADMIN_USERNAME`·`COMMERCE_ADMIN_PASSWORD`�
 - `TRANSACTION_MISMATCH`·`DUPLICATE_TRANSACTIONS` 등: 일괄 확정은 `STOPPED`로 멈춘다(정상). PG 콘솔에서 이 주문의 실제 거래를 확인하고 에스컬레이션 대상 [미정]에게 넘긴다.
 - 해소: 사람 확인 결제 0건.
 - 금지: 공통 금지. 상태를 DB에서 바꾸지 않는다.
+- **멈출 때:** 일괄 확정이 503(회로 OPEN)이거나 `SKIPPED`(연속 실패 3건)이다 / `STOPPED`(`TRANSACTION_MISMATCH`·`DUPLICATE_TRANSACTIONS` 등) — 자동으로 풀리지 않으니 같은 주문을 다시 보내지 않고 사람에게 넘긴다 / create 줄이 새로 생긴다(create 증가).
+- **다시 들어갈 때:** 회로 CLOSED 확인(회로 지표는 없다. 열림 대기 30s[임시]가 지난 뒤 한 건 목록 일괄 확정이 503·`LOOKUP_NOT_CALLED` 없이 끝나는지로 본다) → PG 조회 1건 수동 성공 → `status=NEEDS_REVIEW` 목록 다시 고정(`LOOKUP_LIMIT_EXHAUSTED` 건만) → 같은 명령 재실행. 일괄 확정은 PG 조회만 하고(create 없음) 이미 끝난 주문은 `ALREADY_CLOSED`로 건너뛰므로 같은 목록을 다시 보내도 결제가 다시 만들어지지 않는다.
 
 ## PaymentDeclineSurge
 
@@ -111,6 +117,8 @@ local·dev 전용. 셸에 `COMMERCE_ADMIN_USERNAME`·`COMMERCE_ADMIN_PASSWORD`�
 - 우리 쪽 조치는 없다. PG·카드사 공지와 상태를 확인하고 PG사에 문의한다.
 - 해소: 비율 30% 이하 또는 10분 10건 미만.
 - 금지: 거절 주문을 대신 다시 결제하지 않는다.
+- **멈출 때:** 우리 쪽 조치가 없는 알림이다. 거절 주문을 다시 결제하려는 시도가 보이면(같은 주문의 create 줄 증가) 멈춘다. PaymentPgUnreachable이 함께 울리면 원인이 거절이 아니므로 그 절로 옮긴다.
+- **다시 들어갈 때:** PG·카드사가 정상이라고 확인한 뒤 새 결제가 성공하는지(종결 결과 패널에서 confirmed 증가) 본다. 다시 보낼 명령은 없다. 거절은 돈이 움직이지 않은 종결이라 기다려도 중복이 생기지 않는다.
 
 ## PaymentPgUnreachable
 
@@ -128,6 +136,8 @@ PG 미발송 종결 · warning · 패널 "종결 결과별 증가(10분)"
 - 에스컬레이션 대상 [미정]에게 알린다(PG·네트워크 문제). 회복되면 새 결제는 정상으로 돌아온다.
 - 해소: 10분 미발송 5건 미만.
 - 금지: 실패한 주문의 결제를 다시 보내지 않는다.
+- **멈출 때:** 우리 쪽 조치가 없는 알림이다. 실패한 주문을 다시 보내려는 시도가 보이면(create 줄 증가) 멈춘다. 원인이 PG 연결이 아니라 우리 설정(PG 주소)이면 현장에서 바꾸지 않고 에스컬레이션.
+- **다시 들어갈 때:** PG·네트워크 회복 확인 → 새 결제 1건이 `not_sent` 없이 끝나는지 패널로 본다. 다시 보낼 명령은 없다. 미발송은 돈이 움직이지 않은 종결이라 다시 시도할 대상이 없다.
 
 ## PaymentApiLatencyP99High
 
@@ -146,6 +156,8 @@ PG 미발송 종결 · warning · 패널 "종결 결과별 증가(10분)"
 - 앱·DB 전체 느림이면 에스컬레이션 대상 [미정]에게 넘긴다.
 - 해소: p99 1s 이하 또는 5분 100건 미만.
 - 금지: timeout·임계값을 현장에서 바꾸지 않는다.
+- **멈출 때:** PaymentUnresolvedPiling이 함께 울리면 그 절의 조건으로 옮긴다. 앱·DB 전체 느림(p50도 상승)이면 이 runbook으로 조치하지 않고 에스컬레이션.
+- **다시 들어갈 때:** p99가 1s 아래로 내려온 것을 패널로 확인한다. 다시 보낼 명령은 없다. 결과 모름이 남았으면 PaymentUnresolvedPiling의 "다시 들어갈 때"를 따른다(일괄 확정은 조회만 해 안전).
 
 ## 환불 확인 대상 읽는 법
 
@@ -219,13 +231,16 @@ PG 미발송 종결 · warning · 패널 "종결 결과별 증가(10분)"
    - 돈이 `REFUND_REQUESTED`면 환불 요청이 나갔다. 다음 조회가 결과를 기록한다.
    - 그 밖이면 사람 담당 그대로다. `lastCheckOutcome`으로 Diagnosis 3의 표를 다시 본다.
    - 409 = 담당 AUTO, 담당 이미 닫힘, 돈 이미 끝남. 대상은 그대로다. 없는 주문 404.
-   - 500(잠금 획득 실패면 503)이면 목록(`?refundOwner=PERSON`)에서 그 건의 `lastCheckOutcome=APPLY_FAILED`·`lastCheckCause`를 확인한다(PaymentRefundApplyFailed).
+   - 500이면 반영이 실패한 것이다. 목록(`?refundOwner=PERSON`)에서 그 건의 `lastCheckOutcome=APPLY_FAILED`·`lastCheckCause`를 확인한다(PaymentRefundApplyFailed).
+   - 503(`rejected=BUSY`)이면 다른 처리가 그 건을 잡고 있어 첫 잠금을 못 얻은 것이다. 회차가 돌지 않아 원인 기록이 없다. 잠시 뒤 다시 누른다. 드물게 반영 단계의 두 번째 잠금에서 실패하면 503·`rejected=BUSY`인데 목록에는 `APPLY_FAILED`가 남는다(같은 시각이면 잠금 경합으로 읽는다).
    - 누를 때마다 INFO 한 줄이 남는다: `지금 처리를 눌렀습니다. orderId=…, admin=<누른 관리자>, outcome=<lastCheckOutcome>`. 반영 실패면 `outcome=APPLY_FAILED`, 409·404 거절이면 `rejected=CONCLUDED|NOT_PERSON|NOT_FOUND`, 잠금을 못 얻은 503이면 `rejected=BUSY`다(잠시 뒤 다시 누른다). 누가 언제 눌렀는지는 이 줄로 본다(`scripts/ops/rehearsal.sh loki 101`).
 3. `MISMATCH`·`CANCEL_REJECTED`처럼 PG 콘솔 판단이 필요하면: PG 콘솔에서 실제 승인·취소를 확인한다. 콘솔에서 수동 환불했으면 다음 조회(30m 상한)를 기다린다. 시스템이 환불됨으로 닫는다.
 4. PG 조회가 안 되는데 콘솔·정산으로 결론을 확인했을 때만 사람 기록을 남긴다(환불 확인 대상 읽는 법의 표).
 - 사람 담당은 자동으로 돌아가지 않는다. 되돌리기 기능은 없다. 지금 처리나 사람 기록으로 끝낸다.
 - 해소: 사람 담당 중 0건.
 - 금지: 공통 금지. 환불 요청은 지금 처리로만 보낸다. 같은 돈을 PG 콘솔 수동 환불과 지금 처리로 둘 다 환불하지 않는다(중복 환불 위험). 둘 중 하나만 한다.
+- **멈출 때:** 지금 처리 결과가 `PG_UNREACHABLE`(회로 OPEN·PG 불통)이다 / `APPLY_FAILED`가 반복된다(우리 반영 실패 — PaymentRefundApplyFailed로 옮기고 고칠 때까지 누르지 않는다) / `MISMATCH`·`CANCEL_REJECTED`(PG 콘솔 판단 필요) / 503(`rejected=BUSY`)이 이어진다 / PG 콘솔 수동 환불을 했다(지금 처리를 함께 하지 않는다).
+- **다시 들어갈 때:** PG 회복 확인(조회 회로 열림 대기 30s[임시] 경과) → 한 건 지금 처리가 `PG_UNREACHABLE`·`APPLY_FAILED` 없이 끝남(PG 조회 1건 수동 성공) → `?refundOwner=PERSON` 목록 다시 고정 → 같은 명령 재실행. 지금 처리는 돈이 `REFUND_REQUESTED`·`REFUND_UNKNOWN`이면 조회만 하고 끝난 건은 409로 거절하므로 다시 눌러도 환불이 두 번 나가지 않는다(예외: `CANCEL_REJECTED` 뒤는 PG가 효과 없음을 명시한 경우라 다시 요청한다).
 
 ## PaymentRefundApplyFailed
 
@@ -245,6 +260,8 @@ PG 미발송 종결 · warning · 패널 "종결 결과별 증가(10분)"
 - 고친 뒤: 자동 담당 건은 다음 회차가 다시 조회한다. 사람 담당 건은 지금 처리(PaymentRefundNeedsPerson Mitigation 1).
 - 해소: 15분 창에 새 `apply_failed`가 없다(마지막 실패 뒤 약 15분).
 - 금지: 공통 금지. 특히 DB에서 돈의 상태를 직접 고치지 않는다.
+- **멈출 때:** 원인을 고치기 전이다(같은 `lastCheckCause`로 `APPLY_FAILED`가 반복) — 지금 처리를 누르지 않는다 / 패널의 `apply_failed`가 계속 는다.
+- **다시 들어갈 때:** 원인 수정 확인 → 한 건 지금 처리가 `APPLY_FAILED` 없이 끝남 → `lastCheckOutcome=APPLY_FAILED` 목록 다시 고정 → 같은 명령 재실행(자동 담당 건은 다음 회차에 맡긴다). 지금 처리는 돈이 `REFUND_REQUESTED`·`REFUND_UNKNOWN`이면 조회만 하고 끝난 건은 409로 거절하므로 다시 눌러도 환불이 두 번 나가지 않는다. 반영 실패는 TX가 되돌려져 돈의 상태가 그대로라 다시 해도 이중 반영이 없다.
 
 ## PaymentRefundRequestStuck
 
@@ -263,6 +280,8 @@ PG 미발송 종결 · warning · 패널 "종결 결과별 증가(10분)"
 - 급하면 PG 콘솔에서 취소 여부만 확인한다.
 - 해소: 가장 오래된 요청이 600초 아래이거나 요청함 0건.
 - 금지: 환불 요청을 다시 보내지 않는다(주문당 한 번).
+- **멈출 때:** 조회 회로 OPEN·PG 불통 신호(Loki 조회 WARN, PaymentUnresolvedPiling 동시)가 있으면 기다린다 / 환불 요청을 다시 보내려는 생각이 들면 멈춘다(주문당 한 번).
+- **다시 들어갈 때:** PG 회복 확인 → 가장 오래된 요청 경과가 줄어드는지 패널로 본다 → 사람 담당 건만 지금 처리. 지금 처리는 돈이 `REFUND_REQUESTED`·`REFUND_UNKNOWN`이면 조회만 하고 끝난 건은 409로 거절하므로 다시 눌러도 환불이 두 번 나가지 않는다.
 
 ## PaymentRefundUnknown
 
@@ -281,6 +300,8 @@ PG 미발송 종결 · warning · 패널 "종결 결과별 증가(10분)"
 - 급하면 PG 콘솔에서 취소 여부를 확인한다.
 - 해소: 환불 결과 모름 0건.
 - 금지: 환불 요청을 다시 보내지 않는다(중복 환불 위험).
+- **멈출 때:** 조회 회로 OPEN·PG 불통이면 기다린다 / 환불 요청을 다시 보내려는 생각이 들면 멈춘다(중복 환불).
+- **다시 들어갈 때:** PG 회복 확인 → `REFUND_UNKNOWN` 건수가 주는지 본다 → 사람 담당 건만 지금 처리(조회만 한다). 지금 처리는 돈이 `REFUND_REQUESTED`·`REFUND_UNKNOWN`이면 조회만 하고 끝난 건은 409로 거절하므로 다시 눌러도 환불이 두 번 나가지 않는다.
 
 ## PaymentRefundPiling
 
@@ -300,6 +321,8 @@ PG 미발송 종결 · warning · 패널 "종결 결과별 증가(10분)"
 - 남는 건은 PaymentRefundNeedsPerson 조치 순서로 나눠 처리한다.
 - 해소: 새 이관이 멈추거나 사람 담당 중이 10건 아래. 남은 건은 PaymentRefundNeedsPerson으로 계속 보인다.
 - 금지: 공통 금지.
+- **멈출 때:** 원인이 PG 쪽(`pg_unreachable`·`pg_error`, 회로 OPEN)이면 사람 처리를 멈추고 PG 회복을 기다린다 / `apply_failed`가 반복되면 PaymentRefundApplyFailed로 옮긴다.
+- **다시 들어갈 때:** PG 회복 확인 → 한 건 지금 처리 성공 → `?refundOwner=PERSON` 목록 다시 고정(시스템이 닫은 건은 빠진다) → PaymentRefundNeedsPerson 순서로 재개. 지금 처리는 돈이 `REFUND_REQUESTED`·`REFUND_UNKNOWN`이면 조회만 하고 끝난 건은 409로 거절하므로 다시 눌러도 환불이 두 번 나가지 않는다.
 
 ## GuideServerDown
 
@@ -317,6 +340,8 @@ PG 미발송 종결 · warning · 패널 "종결 결과별 증가(10분)"
 - `docker compose -f docker/monitoring-compose.yml restart guide`. 반복되면 에스컬레이션 대상 [미정]에게 넘긴다.
 - 그동안 critical은 원본 알림과 이 runbook으로 대응한다.
 - 금지: 환경 변수(`ANTHROPIC_API_KEY` 등)를 출력·공유하지 않는다.
+- **멈출 때:** restart 뒤에도 바로 다시 죽는다(반복) — 더 재시작하지 않고 에스컬레이션.
+- **다시 들어갈 때:** `docker compose -f docker/monitoring-compose.yml ps guide`가 정상이고 다음 critical에 `[가이드]` 메시지가 붙는지 본다. 재시작은 알림 원본 경로에 영향이 없어 되풀이해도 안전하다.
 
 ## critical 가이드 메시지 읽는 법
 

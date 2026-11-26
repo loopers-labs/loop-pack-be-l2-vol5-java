@@ -3,6 +3,8 @@
 이 문서는 10주차 결제 사고 대응의 결정을 적는다. 1~7절은 1단계(관측과 테스트 PG fixture 사고 제어), 8절은 사고 연결 테스트, 9절은 4단계 4a 운영 도구, 10절은 4b 운영 도구 확장, 11절은 5단계 늦은 성공 자동 환불, 12절은 검증 범위·남은 위험이다.
 나머지 설계(1~29절)는 `docs/week8/commerce-coupon.md`를 따른다.
 
+> 이 문서의 검증은 로컬·테스트 환경 검증이며 운영 배포·운영 완료가 아니다(12절).
+
 - **[사용자 결정]**: 사용자가 정한 것(결정 기록 week10). 바꾸려면 승인이 필요하다.
 - **[참모 지시]**: 참모 지시문·고정 규칙이다. 바꾸려면 참모 확인이 필요하다.
 - **[구현 판단]**: 사용자 결정 범위 안에서 AI(PL·DEVELOPER)가 정한 내부 선택이다. 근거와 함께 적고 뒤집을 수 있다.
@@ -14,6 +16,16 @@
 - **응답 유실:** create 결과 모름 WARN 한 줄(`result=Unknown`, reason에 timeout 예외 이름) + 그 뒤 반영 줄 없음. 주문은 결제 대기·`UNKNOWN`으로 남는다.
 - **내부 반영 실패:** 조회 판정 INFO(`result=Verified`, `providerStatus=SUCCESS`) + 반영 실패 ERROR(`causeType`=예외 종류). 주문은 결제 대기로 남는다.
 - 진단에 쓰는 줄은 모두 INFO 이상이다. DEBUG를 켜지 않아도 가를 수 있다.
+
+**가설별 예상 / 실제 / 부족한 증거** — 사고 E2E(8절)가 유실 주문마다 `diagnosis.json`의 `judgments[].hypotheses[]`에 같은 세 칸(`expectedEvidence`·`verdict`·`missingEvidence`)을 남기고, `missingEvidence`가 비어 있지 않음을 단언한다. 부족한 증거 문장은 테스트 문장 그대로다.
+
+| 가설 | 예상(이 가설이면 보일 것) | 실제(사고 E2E, 유실 주문마다) | 부족한 증거(보지 못한 것) |
+| --- | --- | --- | --- |
+| H1 응답 유실: PG는 성공했지만 create 응답을 받지 못했다 | create Unknown WARN(HttpTimeoutException) 1, 반영 ERROR 0, PG 조회 SUCCESS·금액 일치 | 채택. 세 조건 모두 맞음 | PG가 요청을 받고 응답을 보냈다는 것은 test-pg 내부 상태(createCalls·거래 SUCCESS)로만 봤다. 실제 PG 로그는 없다 / 응답이 어디서 끊겼는지 네트워크 계층(패킷·프록시·LB 로그)은 보지 않았다. 근거는 우리 쪽 HttpTimeoutException뿐이다 |
+| H2 내부 반영 실패: PG 결과를 받거나 조회했지만 우리 DB 반영이 실패했다 | create Accepted INFO 또는 조회 Verified INFO가 있고 반영 ERROR가 있다 | 기각. 반영 ERROR 0 | "반영 ERROR 0"은 MDC orderId로 거른 캡처 로그에 ERROR가 없다는 부재 판단이다. 로그 유실·MDC 누락이면 구분할 수 없다 / DB 쪽 오류 기록(MySQL error log·rollback 통계)은 보지 않았다 |
+| H3 PG 실패·미발송: 돈이 움직이지 않았다 | PG 거래가 없거나 FAILED, 또는 create NotSent WARN | 기각. PG 조회 SUCCESS·금액 일치, NotSent WARN 0 | 돈이 움직였다는 근거는 PG 조회 SUCCESS·금액 일치뿐이다. PG 정산 파일·카드사 승인 내역 대조는 없다 / "NotSent WARN 0"도 캡처 로그 기준 부재 판단이다 |
+
+- 실제 칸은 `CheckoutIncidentE2ETest`의 단언(H1 참, H2·H3 거짓)이다. 최종 HEAD로 다시 뽑은 evidence 경로는 12-1에 적는다.
 
 ## 2. 로그 레벨과 경계 로그
 
@@ -836,6 +848,8 @@ REFUNDED일 때만 값이 있다. **우리가 본 경로**로 정한다.
 
 무엇을 증명했고 무엇을 증명하지 못했는지 한곳에 모은다. 테스트 통과는 아래 표의 범위만 뜻한다.
 
+> 로컬·테스트 환경 검증이며 운영 배포·운영 완료가 아니다.
+
 ### 12-1. 증명한 것
 
 **테스트**
@@ -869,6 +883,7 @@ REFUNDED일 때만 값이 있다. **우리가 본 경로**로 정한다.
 | 회 | 기록 | 범위 | 결과 |
 | --- | --- | --- | --- |
 | 1 | `docs/week10/rehearsal.md`(2026-11-25, 로컬 1회) | 응답 유실 → 알림 → 가이드 → 대시보드 → Loki → 관리자 목록 → 일괄 확정 → 알림 해제 | 성공. 막힌 지점 B1·B3·B4 수정, B2·B5 기록 |
+| 6단계 1회차(중단된 사전 실행) | `docs/week10/evidence/20261126T113318Z-6d788078/` | 응답 유실 → 알림 → 일괄 확정(중간에 중단) | 중단. 측정값만 남김: 사고→알림 1m52s, 일괄 확정 4건, createCalls 7→7(증가 0). 제출 근거는 2회차로 한다 |
 | 2 | `[리허설 재실행: evidence 경로]` | — | — |
 
 ### 12-2. 증명하지 못한 것
@@ -881,7 +896,9 @@ REFUNDED일 때만 값이 있다. **우리가 본 경로**로 정한다.
 | 정산 파일 대사 | PG 정산 파일과 우리 기록을 맞춰 보지 않는다. 사람 기록(11-17)은 관리자의 말을 믿는다 | 범위 밖(11-9·11-18) |
 | 취소 멱등 키 | 취소 요청에 멱등 키가 없다(11-6). 한 번만은 상태(`REFUND_REQUESTED` commit 뒤 1회)로만 보장한다. 거절 뒤 지금 처리를 다시 누르면 다시 보낸다(11-19, PG가 효과 없음을 명시한 경우만) | 결과 모름이면 다시 보내지 않고 조회 |
 | 대량 장애 때 사람 담당 조회가 밀림 | `findDue`가 AUTO를 먼저 채우고 회차 상한 20은 AUTO·PERSON 합계다(11-15). AUTO 대상이 계속 20건 이상이면 PERSON 건 조회가 밀려 PG 사실로 담당을 자동 종료하는 것이 늦어진다 **[참모 19:41: 처리량 상한 20 유지가 우선]** | 사람은 지금 처리(11-19)로 한 건씩 당길 수 있다 |
-| 지금 처리 반영 실패의 로그 | 반영이 실패하면 응답은 500(잠금 실패 503)이다. 누름 INFO(`outcome=APPLY_FAILED`)는 남지만 causeType ERROR 줄은 남지 않는다(일반 advice) | 목록의 `lastCheckOutcome=APPLY_FAILED`·`lastCheckCause`로 확인(runbook) |
+| 지금 처리 반영 실패의 로그 | 반영이 실패하면 응답은 500이다(첫 잠금 획득 실패는 503·`rejected=BUSY`이고 원인 기록이 없다. 다음 행). 누름 INFO(`outcome=APPLY_FAILED`)는 남지만 causeType ERROR 줄은 남지 않는다(일반 advice) | 목록의 `lastCheckOutcome=APPLY_FAILED`·`lastCheckCause`로 확인(runbook) |
+| 지금 처리 두 번째 잠금 실패 시 기록과 누름 로그가 엇갈림 | 지금 처리는 잠금을 두 번 잡는다. 첫 잠금 실패(503)는 회차가 돌지 않아 원인 기록이 없고 누름 로그는 `rejected=BUSY`다. 반영 TX의 두 번째 잠금에서 실패하면 원인 기록(`last_check_outcome`)은 `APPLY_FAILED`인데 누름 로그는 `rejected=BUSY`다. 한 사건이 두 이름으로 남는다 **[w10s5c-P5 추가, 드문 경로라 동작은 둔다]** | runbook: 503이면 잠시 뒤 다시 누른다. 목록의 `APPLY_FAILED`가 같은 시각 BUSY 누름과 겹치면 잠금 경합으로 읽는다 |
+| 주문의 포인트·쿠폰 실제 사용 | 주문이 포인트·쿠폰을 실제로 쓰는 경로(차감·쿠폰 사용 상태)는 주문 API에 없어(week8 23절) 증명 범위 밖이다 | E2E는 0이 아닌 잔액(5,000·10,000)·발급 쿠폰을 가진 채 사고를 겪고, 복구·반복·후속이 다시 차감·반환하지 않음(fault 시점 잔액·쿠폰 목록·가용 재고·잡힌 수량과 같음)까지 본다 **[참모 확인 중 w10s6-1]** |
 | 테이블 없는 DB의 v3 이전 SQL | `migrate-payment-refund-cases-v3.sql`을 `payment_refund_cases`가 없는 DB에서 돌려 보지 않았다 | v2 뒤에 실행 |
 | 다중 인스턴스 | 잠금·한 번만 규칙은 테스트 DB의 동시성 테스트로만 봤다. 여러 인스턴스 배포는 하지 않았다 | 행 잠금으로 직렬화 |
 | runbook 에스컬레이션 대상 역할 이름 | **[미정]** 팀 정의 사항이다. runbook은 "에스컬레이션 대상 [미정]"으로만 적었다 | 팀이 정하면 runbook만 고친다 |
@@ -895,7 +912,7 @@ REFUNDED일 때만 값이 있다. **우리가 본 경로**로 정한다.
 | 1단계 | `payment_records.provider_order_id` 인덱스 없음. callback 조회가 전체 탐색일 수 있다(6절) |
 | 1단계 | 만료 INFO는 commit 전에 남긴다. 만료 TX가 rollback되면 INFO만 남을 수 있다(4-2) |
 | 1b | 잠금 전 스냅샷과 잠금 뒤 재조회 사이 경합이면 Verified인데 MDC에 거래 키가 없을 수 있다(남의 키는 붙지 않음, 추론) |
-| 2단계 | E2E의 포인트·쿠폰 불변은 0과 0 비교라 판별력이 약하다 |
+| 2단계 | ~~E2E의 포인트·쿠폰 불변은 0과 0 비교라 판별력이 약하다~~ → 고쳐짐(w10s6 C2, 42ee823): 0이 아닌 잔액·발급 쿠폰을 fault 시점 값과 비교한다. 변이(복구 경로 포인트 추가 차감)가 RECOVERY에서 검출됨. 남은 범위는 위 "주문의 포인트·쿠폰 실제 사용" 행 |
 | 4a | `unknown_entered`의 PENDING→UNKNOWN 경로 테스트가 없다(9-8) |
 | 4a | 일괄 확정의 시작 전 회로 검사는 목록 안 종결 주문의 PG까지 본다. 종결 주문만 막힌 PG에 걸려도 전체 503이다 |
 | 4a | pacer 대기가 interrupt되면 요청 전체가 예외로 끝나 부분 결과를 잃는다 |
@@ -948,3 +965,13 @@ REFUNDED일 때만 값이 있다. **우리가 본 경로**로 정한다.
 | 1s·3s | `app.yml:76·77` | PG 연결·읽기 timeout | yml `payment.providers.test-pg.*` | 8주차 21절 | 일치 |
 
 - 리허설 전용 값(10-7, `docker/prometheus/rules/rehearsal/`)은 운영 값이 아니라 표에서 뺐다.
+
+### 12-4. 정리 범위
+
+검증이 만든 자원만 정리한다. 평소 쓰는 자원은 건드리지 않는다. 로컬·테스트 환경 검증이며 운영 배포·운영 완료가 아니다.
+
+| 실행 | 정리한 것 | 건드리지 않은 것 |
+| --- | --- | --- |
+| 사고 E2E·e2eTest | Testcontainers가 띄운 MySQL·Redis·Kafka 컨테이너(테스트 종료 때 자동 정리) | 평소 `docker` compose 프로젝트 컨테이너·볼륨(`docker_mysql-8-data` 등), 다른 프로젝트 컨테이너 |
+| 리허설 1회(`docs/week10/rehearsal.md`)·6단계 1회차(중단) | 리허설 compose 프로젝트 `w10r-*`만 `scripts/ops/rehearsal.sh down`(`docker compose down -v`, 스크립트는 `w10r-infra`·`w10r-mon`만 내린다), 리허설로 띄운 test-pg·앱 프로세스(직접 종료, 스크립트 밖) | 위와 같음 |
+| 리허설 2회차 | `[리허설 2회차 결과]` | `[리허설 2회차 결과]` |
