@@ -17,7 +17,9 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.actuate.observability.AutoConfigureObservability;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.web.server.LocalManagementPort;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.boot.test.web.client.TestRestTemplate;
@@ -27,6 +29,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -34,7 +37,14 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest(
+    webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+    properties = {
+        "management.server.port=0",
+        "payment.unresolved-metrics.enabled=true",
+        "payment.unresolved-metrics.interval=200ms"
+    })
+@AutoConfigureObservability(tracing = false)
 @ExtendWith(OutputCaptureExtension.class)
 class CheckoutIncidentTest {
 
@@ -54,6 +64,9 @@ class CheckoutIncidentTest {
     private final PaymentRepository paymentRepository;
     private final JdbcTemplate jdbcTemplate;
     private final DatabaseCleanUp databaseCleanUp;
+
+    @LocalManagementPort
+    private int managementPort;
 
     private Long coat;
 
@@ -100,6 +113,8 @@ class CheckoutIncidentTest {
         assertThat(PG.transactionCount()).isEqualTo(10);
         assertThat(PG.createCount()).isEqualTo(10);
         assertThat(productService.getStock(coat)).isEqualTo(Quantity.of(STOCK - 10));
+        assertThat(health()).isEqualTo("UP");
+        assertThat(unresolvedUnknownSettlesAt(0)).isEqualTo(0);
 
         int faultStart = output.getOut().length();
         List<Long> fault = placeOrders(10);
@@ -134,6 +149,8 @@ class CheckoutIncidentTest {
         assertThat(PG.createCount()).isEqualTo(20);
         assertThat(productService.getStock(coat)).isEqualTo(Quantity.of(STOCK - 20));
 
+        assertThat(health()).isEqualTo("UP");
+        assertThat(unresolvedUnknownSettlesAt(3)).isEqualTo(3);
         String faultLog = output.getOut().substring(faultStart);
         assertThat(timedOut).allSatisfy(orderId -> assertThat(linesWith(faultLog, providerOrderIdOf(orderId)))
             .singleElement().asString().contains("cause=timeout"));
@@ -159,6 +176,9 @@ class CheckoutIncidentTest {
         assertThat(PG.transactionCount()).isEqualTo(20);
         assertThat(PG.createCount()).isEqualTo(20);
         assertThat(productService.getStock(coat)).isEqualTo(Quantity.of(STOCK - 20));
+
+        assertThat(health()).isEqualTo("UP");
+        assertThat(unresolvedUnknownSettlesAt(0)).isEqualTo(0);
 
         fault.forEach(this::reconcile);
 
@@ -233,6 +253,46 @@ class CheckoutIncidentTest {
                 testRestTemplate.exchange(ORDERS + "/" + orderId, HttpMethod.GET, new HttpEntity<>(null, headers()), ORDER)
                     .getBody().data().status()))
             .toList();
+    }
+
+    private String health() {
+        Map<?, ?> body = testRestTemplate.getForObject(management("/actuator/health"), Map.class);
+        return String.valueOf(body.get("status"));
+    }
+
+    private int unresolvedUnknownSettlesAt(int expected) {
+        long deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
+        int observed = unresolvedUnknown();
+        while (observed != expected && System.nanoTime() < deadline) {
+            pause(Duration.ofMillis(100));
+            observed = unresolvedUnknown();
+        }
+        return observed;
+    }
+
+    private int unresolvedUnknown() {
+        String scrape = testRestTemplate.getForObject(management("/actuator/prometheus"), String.class);
+        return scrape.lines()
+            .filter(line -> line.startsWith("payment_unresolved{"))
+            .filter(line -> line.contains("status=\"unknown\""))
+            .map(line -> line.substring(line.lastIndexOf(' ') + 1))
+            .map(Double::parseDouble)
+            .map(Double::intValue)
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("Prometheus 응답에 payment_unresolved{status=\"unknown\"} 이 없다: "
+                + scrape.substring(0, Math.min(scrape.length(), 300))));
+    }
+
+    private String management(String path) {
+        return "http://127.0.0.1:" + managementPort + path;
+    }
+
+    private static void pause(Duration wait) {
+        try {
+            Thread.sleep(wait);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     private String providerOrderIdOf(Long orderId) {
