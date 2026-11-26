@@ -199,7 +199,7 @@ rg -F '<대상 APPLY의 observationId>' '<commerce-api 진단 로그 파일>'
 
 대상 시각 구간에서 같은 providerOrderId의 CREATE START와 같은 callId의 RESULT가 각각 1개인지 확인한다. 같은 주문의 `TX_METHOD_ENTER` 중 `operation=APPLY_OBSERVATION`·`source=CREATE`인 행이 정확히 1개이고 RESULT 다음에 나오는지 확인한 뒤 그 observationId로 INPUT·DECISION·TX_COMPLETION을 연결한다. 다른 source의 반영도 함께 있거나 대응이 누락/복수이면 원인 미확정으로 중단한다. `PAYMENT_CONTEXT`만 보고 observationId를 선택하지 않는다.
 
-재현의 PG 측 경계·CREATE 수신 횟수는 [제출 원문](../verification/evidence/20261126T021136Z-bd52918d/manifest.json)의 `fault/pg-state.json`·`recovery/pg-state.json`에서 확인한다. journal의 createdTransactionKey·CLOSED_EARLY, counts.createReceived, activeRequests·activeCallbackJobs를 대조한다. 이 값은 테스트 fixture의 기록이며 PG 거래 조회 API가 반환하는 필드는 아니다. 다른 환경에서는 대상 주문과 수신 시도를 식별할 수 있는 PG 측 요청 기록이 필요하다. 거래 생성 성공 로그 줄 수만으로 모든 CREATE 수신 횟수를 대신 세지 않는다. 출처가 없으면 원인/추가 호출 여부를 확인했다고 기록하지 않는다.
+재현의 PG 측 경계·CREATE 수신 횟수는 [제출 원문](../verification/evidence/20261126T090053Z-558297c0/manifest.json)의 `fault/pg-state.json`·`recovery/pg-state.json`에서 확인한다. journal의 createdTransactionKey·CLOSED_EARLY, counts.createReceived, activeRequests·activeCallbackJobs를 대조한다. 이 값은 테스트 fixture의 기록이며 PG 거래 조회 API가 반환하는 필드는 아니다. 다른 환경에서는 대상 주문과 수신 시도를 식별할 수 있는 PG 측 요청 기록이 필요하다. 거래 생성 성공 로그 줄 수만으로 모든 CREATE 수신 횟수를 대신 세지 않는다. 출처가 없으면 원인/추가 호출 여부를 확인했다고 기록하지 않는다.
 
 실제 운영 환경에서 이 수동 절차를 실행 검증한 것은 아니며, 제어된 사고 실행의 증거와 기존 API/DB 계약을 기준으로 작성했다.
 

@@ -1,24 +1,23 @@
 # 결제 사고 진단·동일 주문 복구 검증 보고서 (W10)
 
-계약의 원본은 [결제 사고 관측·복구 설계](../system-design/features/checkout-incident.md)와 [PG fixture W10 절](../system-design/features/pg-simulator/fixture-contract.md#w10-success-저장-후-생성-응답-유실)이다. 이 보고서는 health가 UP인 동안 PG 성공 응답 유실로 UNKNOWN이 된 주문을 진단하고, 새 결제 없이 같은 주문을 복구한 실제 증거와 검증 범위를 설명한다. 통제된 연결 테스트의 실행 결과이며 실제 운영 사고를 처리한 기록은 아니다. 핵심 수치와 필요한 원문 발췌를 본문에 담아 로컬 증거 폴더를 열지 않아도 판단 근거를 읽을 수 있게 했다. 따라 하는 절차는 W10 runbook(`docs/runbook/week10.md`)에 있다.
+계약의 원본은 [결제 사고 관측·복구 설계](../system-design/features/checkout-incident.md)와 [PG fixture W10 절](../system-design/features/pg-simulator/fixture-contract.md#w10-success-저장-후-생성-응답-유실)이다. 이 보고서는 health가 UP인 동안 PG 성공 응답 유실로 UNKNOWN이 된 주문을 진단하고, 새 결제 없이 같은 주문을 복구한 실제 증거와 검증 범위를 설명한다. 통제된 연결 테스트의 실행 결과이며 실제 운영 사고를 처리한 기록은 아니다. 핵심 수치와 필요한 원문 발췌를 본문에 담아 원문 폴더를 열지 않아도 판단 근거를 읽을 수 있게 했다. 따라 하는 절차는 W10 runbook(`docs/runbook/week10.md`)에 있다.
 
-주 증거는 **2026-11-26 최종 회귀에서 실행한 `20261126T021136Z-bd52918d`**다. 11월 25일 관측 원문 보존 보완을 포함한 코드의 실제 결과이며, 아래 표·응답·로그는 모두 이 실행을 기준으로 한다. 11월 23일 과거 원문은 별도로 보존하고 최신 값으로 덮어쓰지 않았다.
+주 증거는 **2026-11-26 최종 커밋 `afdb04c` 기준 전체 회귀에서 실행한 `20261126T090053Z-558297c0`**다. 관측 원문 보존·실패 상태 보존 보완을 포함한 최종 코드의 실제 결과이며, 아래 표·응답·로그는 모두 이 실행을 기준으로 한다. 이전 실행(`20261126T081623Z-ba1d92e6`·`20261126T021136Z-bd52918d`, 11월 23일 실행 등)의 원문은 로컬에 별도로 보존하고 최신 값으로 덮어쓰지 않았다.
 
-기능별 검증 범위·남은 위험과 누적/보완 검사 결과는 `docs/verification/week10-verification.md`로 분리했다.
+기능별 검증 범위·남은 위험과 누적 회귀 결과는 `docs/verification/week10-verification.md`로 분리했다.
 
 ## 1. 기준 실행
 
 |항목|값|
 |---|---|
-|주 증거 run|`20261126T021136Z-bd52918d` — 단일 `./gradlew check --continue --rerun-tasks --no-build-cache`(2026-11-26 10:57:35~11:14:14 KST, 종료코드 0) 안의 `:apps:commerce-api:checkoutIncidentTest` 1건 통과|
-|실행 코드 기준|run `metadata.json`: HEAD `c3fb22c` + tracked diff 74,062바이트(SHA-256 `dce9cf3d4699f32278c01b665a7391fd477fc831a951412dafdb2b8975c6411a`) + untracked `CheckoutIncidentObservationTest.java`(`f259da1adbf58520dd9187cd6c2ebbfe2e34d6a301188324c88eea2c72469e1e`). 실행 전 별도 기록 및 실행 뒤 코드 사본과 일치|
-|제출 원문|[실행별 원문과 hash 목록](evidence/20261126T021136Z-bd52918d/manifest.json). 원문55파일은 `docs/verification/evidence/20261126T021136Z-bd52918d/`에 원래 구조·바이트 그대로 두고 manifest1개를 추가했다. 자식 로그·전체 검사 XML/로그는 로컬 `/tmp/w10-final-regression-20261126-5f5wcZeE/`에 별도 보존하며 필요한 로그 발췌는 본문에 담았다.|
-|커밋 연결|실행 시 변경된 코드3파일이 커밋 `31db770`의 파일과 바이트 단위로 같음을 확인했다. 이후 실패 상태 보존 보완은 6절로 구분한다. metadata의 실행 당시 HEAD/diff/untracked 기록은 그대로 보존했다.|
-|시각 구분|실제 시작 `2026-11-26T02:11:36.502880Z`. 최초 confirmedAt만 합성 시각 `2026-11-23T01:00:00Z`를 사용. 실행 날짜를 과거로 바꾼 것이 아님|
+|주 증거 run|`20261126T090053Z-558297c0` — 단일 `./gradlew check --continue --rerun-tasks --no-build-cache`(2026-11-26 17:47:27~18:03:04 KST, 종료코드 0) 안의 `:apps:commerce-api:checkoutIncidentTest` 1건 통과(35.8초).|
+|실행 코드 기준|run `metadata.json`: HEAD `afdb04c1680a9aee8d73cc0f5afd0b0b516802e8`, tracked diff 0바이트, untracked 코드 없음. 커밋된 코드 그대로 실행했다|
+|제출 원문|[실행별 원문과 hash 목록](evidence/20261126T090053Z-558297c0/manifest.json). 원문55파일은 `docs/verification/evidence/20261126T090053Z-558297c0/`에 원래 구조·바이트 그대로 두고 manifest1개를 추가했다. 원본 build·별도 보존 사본과 hash가 같다. 자식 로그·전체 검사 XML/로그는 로컬 `/tmp/w10-final-afdb04c-regression-20261126-pb7xi005/`에 별도 보존하며 필요한 로그 발췌는 본문에 담았다.|
+|시각 구분|실제 시작 `2026-11-26T09:00:53.961700Z`. 최초 confirmedAt만 합성 시각 `2026-11-23T01:00:00Z`를 사용. 실행 날짜를 과거로 바꾼 것이 아님|
 
 ### 1.1 환경·입력과 진행 방법
 
-전용 MySQL·Redis 테스트 컨테이너와 새 로컬 PG fixture를 사용했다. API는 loopback 업무 port 62101·management port 62109에서 실행했고, 실제 Kafka에 실행별 topic/group을 생성해 streamer와 batch를 별도 JVM으로 실행했다. 단계 사이 DB·PG를 초기화하지 않았다. 자동 Outbox relay는 끄고 기존 relay의 실제 전송 경로를 테스트가 주문별로 호출해 진행 시점을 통제했다. PG의 자동 callback 전송은 없으며 복구 후 반복 적용 검사에서만 명시적으로 보냈다.
+전용 MySQL·Redis 테스트 컨테이너와 새 로컬 PG fixture를 사용했다. API는 loopback 업무 port 55594·management port 55604에서 실행했고, 실제 Kafka에 실행별 topic/group을 생성해 streamer와 batch를 별도 JVM으로 실행했다. 단계 사이 DB·PG를 초기화하지 않았다. 자동 Outbox relay는 끄고 기존 relay의 실제 전송 경로를 테스트가 주문별로 호출해 진행 시점을 통제했다. PG의 자동 callback 전송은 없으며 복구 후 반복 적용 검사에서만 명시적으로 보냈다.
 
 |입력|실제 준비 값·목적|
 |---|---|
@@ -29,7 +28,7 @@
 |업무 시각|최초 confirmedAt만 `2026-11-23T01:00:00Z`로 고정. 집계 주는 `[2026-11-23, 2026-11-30)`. 증거·PG·로그 시각은 실제 UTC이며 고정 업무 시각과 구분|
 |실제 검증 경로|주문·confirm·본인 reconcile·callback·랭킹은 실제 HTTP, 상태 확인은 실제 DB. 전달은 실제 Outbox→Kafka→streamer, 집계는 새 snapshot의 실제 batch 실행|
 
-출처: `run/baseline/roster.json`, `run/baseline/preserved-before.json`, `run/resources/001-kafka.json`·`004-api.json`, `run/metadata.json`. 이하 `run/`은 §1의 제출 원문 디렉터리, `children/`는 로컬 보존 위치의 `after/children/`를 뜻한다. 전체 검사 결과는 같은 로컬 위치의 `after/apps/`에 있다. 입력·순서·기대값은 기준 설계 §2·§8을 따르며, 아래는 그 설계에 대한 실제 관찰이다.
+출처: `run/baseline/roster.json`, `run/baseline/preserved-before.json`, `run/resources/001-kafka.json`·`004-api.json`, `run/metadata.json`. 이하 `run/`은 §1의 제출 원문 디렉터리, `children/`는 로컬 보존 위치 `/tmp/w10-final-afdb04c-regression-20261126-pb7xi005/`의 `after/children/`를 뜻한다. 전체 검사 결과는 같은 로컬 위치의 `after/apps/`에 있다. 입력·순서·기대값은 기준 설계 §2·§8을 따르며, 아래는 그 설계에 대한 실제 관찰이다.
 
 ## 2. 사고 실행 결과와 입증 범위
 
@@ -54,9 +53,9 @@
 
 |단계|health 수신 시각(UTC)|Prometheus 수신 시각(UTC)|HTTP·health|Prometheus 원문 표본|
 |---|---|---|---|---|
-|정상|`2026-11-26T02:12:08.913242Z`|`2026-11-26T02:12:08.952832Z`|200/200·UP|`commerce_payment_unknown{application="commerce-api"} 0.0`|
-|사고|`2026-11-26T02:12:11.535481Z`|`2026-11-26T02:12:11.553764Z`|200/200·UP|`commerce_payment_unknown{application="commerce-api"} 3.0`|
-|복구|`2026-11-26T02:12:16.561710Z`|`2026-11-26T02:12:16.579564Z`|200/200·UP|`commerce_payment_unknown{application="commerce-api"} 0.0`|
+|정상|`2026-11-26T09:01:18.852202Z`|`2026-11-26T09:01:18.885260Z`|200/200·UP|`commerce_payment_unknown{application="commerce-api"} 0.0`|
+|사고|`2026-11-26T09:01:21.365292Z`|`2026-11-26T09:01:21.382257Z`|200/200·UP|`commerce_payment_unknown{application="commerce-api"} 3.0`|
+|복구|`2026-11-26T09:01:25.422738Z`|`2026-11-26T09:01:25.436661Z`|200/200·UP|`commerce_payment_unknown{application="commerce-api"} 0.0`|
 
 출처: 각 단계의 `health-response.txt`·`prometheus-response.txt`와 `health-response.json`·`prometheus-response.json`. 각 JSON에 HTTP 상태·수신 시각·본문 존재 여부가 저장됐고, 기존 결합 원문 `direct-observation.txt`도 함께 보존됐다.
 
@@ -68,9 +67,9 @@
 
 |orderId|providerOrderId|confirm 전 고정 attemptKey|사고 시 PG SUCCESS 거래 키 = 복구 후 내부 거래 키|
 |---|---|---|---|
-|11|`LP-ORD-0000000011`|`db9cb5ce-52ac-38b4-9c66-04734bbc83c9`|`7059b804-567f-4ba9-8889-b34de91cd25e`|
-|12|`LP-ORD-0000000012`|`27a70364-0795-3a42-b2dc-e7817251a485`|`caa46b03-a14f-4c84-8208-6d6ae17657d1`|
-|13|`LP-ORD-0000000013`|`cbf205d0-7a33-3b44-9e5e-a9286c7fef55`|`8cef712e-40f6-4bb5-8319-838e241e54ff`|
+|11|`LP-ORD-0000000011`|`db9cb5ce-52ac-38b4-9c66-04734bbc83c9`|`ed85427d-f822-47b2-b7ac-0a0af0d13366`|
+|12|`LP-ORD-0000000012`|`27a70364-0795-3a42-b2dc-e7817251a485`|`a62f8cb8-7fdd-482b-a0ce-5d0a5582a282`|
+|13|`LP-ORD-0000000013`|`cbf205d0-7a33-3b44-9e5e-a9286c7fef55`|`4a473ff9-e807-4e0e-9670-6d734de8a3ee`|
 
 사고 시점에는 세 주문의 내부 `transactionKey`가 모두 null·결제 UNKNOWN·주문 PAYMENT_PENDING이었고, PG에는 위 SUCCESS 거래가 존재했다. 복구 후 같은 orderId·attemptKey가 유지되면서 내부 transactionKey가 위 거래에 연결되고 CONFIRMED/SUCCESS로 바뀌었다. 장애 집합 전체 ID도 11~20으로 유지됐다.
 
@@ -81,20 +80,21 @@
 PG 진단 조회는 commerce reconcile 대신 PG의 기존 계정·주문 조회 HTTP 경로를 사용했다. 내부 결과를 적용하지 않는 읽기이며, 조회 전후 DB의 UNKNOWN·예약·Outbox가 같은지도 검사했다. 세 대상 모두 HTTP 200·단일 SUCCESS 거래·금액 4,000원이었고, 주문 11의 실제 응답 본문은 다음과 같다.
 
 ```json
-[{"transactionKey":"7059b804-567f-4ba9-8889-b34de91cd25e","orderId":"LP-ORD-0000000011","amount":4000,"status":"SUCCESS"}]
+[{"transactionKey":"ed85427d-f822-47b2-b7ac-0a0af0d13366","orderId":"LP-ORD-0000000011","amount":4000,"status":"SUCCESS"}]
 ```
 
 출처: `run/fault/u-lookups.json`. 아래는 `run/fault/diagnostic-log.txt`에서 주문 11의 생성 호출과 반영 TX에 해당하는 행만 원문 그대로 발췌한 것이다.
 
 ```text
-PAYMENT_PG_START {"event":"PAYMENT_PG_START","at":"2026-11-26T02:12:09.449440Z","callId":"44f7f0e4-a0f2-47dc-bfb8-e6ceb5d4f73a","operation":"CREATE","providerOrderId":"LP-ORD-0000000011"}
-PAYMENT_PG_RESULT {"event":"PAYMENT_PG_RESULT","at":"2026-11-26T02:12:09.453621Z","callId":"44f7f0e4-a0f2-47dc-bfb8-e6ceb5d4f73a","operation":"CREATE","classification":"Unavailable","source":"CREATE","reason":"TRANSPORT_UNAVAILABLE"}
-PAYMENT_APPLY_INPUT {"event":"PAYMENT_APPLY_INPUT","at":"2026-11-26T02:12:09.458404Z","observationId":"f4d37db8-aeba-474a-9e40-cb20cc499730","classification":"Unavailable","source":"CREATE"}
-PAYMENT_APPLY_DECISION {"event":"PAYMENT_APPLY_DECISION","at":"2026-11-26T02:12:09.458446Z","observationId":"f4d37db8-aeba-474a-9e40-cb20cc499730","effect":"UNAVAILABLE","conflictCode":null,"paymentStatus":"UNKNOWN"}
-TX_COMPLETION {"event":"TX_COMPLETION","at":"2026-11-26T02:12:09.461034Z","observationId":"f4d37db8-aeba-474a-9e40-cb20cc499730","operation":"APPLY_OBSERVATION","orderId":11,"paymentId":18,"source":"CREATE","outcome":"COMMITTED"}
+PAYMENT_PG_START {"event":"PAYMENT_PG_START","at":"2026-11-26T09:01:19.305586Z","callId":"221b1adf-04f4-41cc-af06-64b1246a4377","operation":"CREATE","providerOrderId":"LP-ORD-0000000011"}
+PAYMENT_PG_RESULT {"event":"PAYMENT_PG_RESULT","at":"2026-11-26T09:01:19.308213Z","callId":"221b1adf-04f4-41cc-af06-64b1246a4377","operation":"CREATE","classification":"Unavailable","source":"CREATE","reason":"TRANSPORT_UNAVAILABLE"}
+TX_METHOD_ENTER {"event":"TX_METHOD_ENTER","at":"2026-11-26T09:01:19.308636Z","observationId":"7cc089ef-4b1b-40d5-b003-b180b0f5dba5","operation":"APPLY_OBSERVATION","orderId":11,"paymentId":18,"source":"CREATE"}
+PAYMENT_APPLY_INPUT {"event":"PAYMENT_APPLY_INPUT","at":"2026-11-26T09:01:19.310983Z","observationId":"7cc089ef-4b1b-40d5-b003-b180b0f5dba5","classification":"Unavailable","source":"CREATE"}
+PAYMENT_APPLY_DECISION {"event":"PAYMENT_APPLY_DECISION","at":"2026-11-26T09:01:19.311009Z","observationId":"7cc089ef-4b1b-40d5-b003-b180b0f5dba5","effect":"UNAVAILABLE","conflictCode":null,"paymentStatus":"UNKNOWN"}
+TX_COMPLETION {"event":"TX_COMPLETION","at":"2026-11-26T09:01:19.313064Z","observationId":"7cc089ef-4b1b-40d5-b003-b180b0f5dba5","operation":"APPLY_OBSERVATION","orderId":11,"paymentId":18,"source":"CREATE","outcome":"COMMITTED"}
 ```
 
-같은 callId가 PG 시작·결과를 연결하고, 같은 observationId가 내부 입력·판정·실제 TX 종료를 연결한다. 두 UUID는 서로 다른 값이다. 원문의 PAYMENT_CONTEXT와 orderId/providerOrderId 대응, 해당 구간 CREATE·APPLY 각각 1개와 RESULT→APPLY 순서로 두 경계를 잇는다. 실제 분산 trace 전파를 구현한 것은 아니다.
+같은 callId가 PG 시작·결과를 연결하고, 같은 observationId가 반영 TX 진입·내부 입력·판정·실제 TX 종료를 연결한다. 두 UUID는 서로 다른 값이다. 두 경계는 주문 11의 CREATE START 1개, `TX_METHOD_ENTER`의 `operation=APPLY_OBSERVATION`·`source=CREATE` 1개, RESULT→APPLY 순서로 잇는다(원문에서 TX 진입 직후의 PAYMENT_CONTEXT 1행은 발췌에서 생략). 실제 분산 trace 전파를 구현한 것은 아니다.
 
 PG journal에서도 주문 11의 CREATE는 sequence 35·응답 상태 200·`failure=CLOSED_EARLY`·위 거래 키로 남았다. 생성 응답 본문을 끝까지 보내지 못했지만 거래가 이미 존재한다는 경계 관측이다. 200은 fixture가 보내려 한 HTTP 상태이며 commerce가 성공 응답 전체를 받았다는 뜻은 아니다. 주입 plan 이름만으로 원인을 확정하지 않고 이 관측을 로그·권위 조회·DB와 대조했다.
 
@@ -123,7 +123,7 @@ PG journal에서도 주문 11의 CREATE는 sequence 35·응답 상태 200·`fail
 
 출처: 각 단계의 `summary.json`, `orders.json`, `preserved.json`, `plan-ledger.json`, `pg-state.json`. 활동·예약은 총합뿐 아니라 orderId/productId/수량별 목록 전체를 비교했다. 예약 changed_quantity는 크기 2/1이며 `before_quantity-after_quantity`도 2/1로 감소 방향을 확인했다.
 
-포인트는 잔액 10,000·CHARGE 이력 1개(0→10,000), 쿠폰은 id 1/userId 1/campaignId 1·FIXED_AMOUNT 5,000·발급시각 `2026-11-26T02:12:03.835709`, campaign issuedCount 1을 포함한 저장 값 전체가 준비 직후·정상·사고·복구의 네 기록에서 같았다. 단순히 빈 테이블이 계속 비어 있음을 비교한 결과가 아니다.
+포인트는 잔액 10,000·CHARGE 이력 1개(0→10,000), 쿠폰은 id 1/userId 1/campaignId 1·FIXED_AMOUNT 5,000·발급시각 `2026-11-26T09:01:14.115386`, campaign issuedCount 1을 포함한 저장 값 전체가 준비 직후·정상·사고·복구의 네 기록에서 같았다. 단순히 빈 테이블이 계속 비어 있음을 비교한 결과가 아니다.
 
 각 U에 reconcile 1회 추가와 callback 2회씩(총 6회)을 보내 기대한 ACK를 확인한 뒤에도 위 효과는 늘지 않았다. 다른 사용자 2의 주문 조회·reconcile은 404 ORDER_NOT_FOUND였고 PG 호출·저장 효과 증가가 없음을 AUTO assertion으로 확인했다. 이 HTTP 응답 전체는 별도 원문 파일로 보존하지 않았으므로 근거를 assertion 코드와 해당 AUTO XML의 통과 범위로 한정한다.
 
@@ -134,12 +134,12 @@ PG journal에서도 주문 11의 CREATE는 sequence 35·응답 상태 200·`fail
 U11의 같은 Outbox 사실을 실제 Kafka에 한 번 더 보냈을 때 consumer는 다음을 기록했다. 아래는 streamer 로그에서 시각·logger 접두어만 생략한 사건 문자열이다.
 
 ```text
-ORDER_ACTIVITY_HANDLED_AND_ACK_RETURNED topic=checkout-incident-test-1126111136-307b8a9c-1 partition=0 offset=10 eventId=order-confirmed:11 result=ALREADY_PROCESSED
+ORDER_ACTIVITY_HANDLED_AND_ACK_RETURNED topic=checkout-incident-test-1126180054-0fca6ae5-1 partition=0 offset=10 eventId=order-confirmed:11 result=ALREADY_PROCESSED
 ```
 
-출처: `children/streamer-1126111136-307b8a9c.log`, `run/recovery/deliveries.json`. 중복 재발행 뒤에도 DB 활동은 40행·수량 A40/B20이었다.
+출처: `children/streamer-1126180054-0fca6ae5.log`, `run/recovery/deliveries.json`. 중복 재발행 뒤에도 DB 활동은 40행·수량 A40/B20이었다.
 
-배치는 같은 주의 새 snapshot을 만들었고, `children/batch-new-2026-11-23-459105542600791.log`에도 instanceId 1·executionId 1·COMPLETED·PUBLISHED가 기록됐다. DB와 공개 랭킹 API를 대조해 저장한 결과는 다음과 같다(원문 JSON 값을 재배치·들여쓰기).
+배치는 같은 주의 새 snapshot을 만들었고, `children/batch-new-2026-11-23-483655206712291.log`에도 instanceId 1·executionId 1·COMPLETED·PUBLISHED가 기록됐다. DB와 공개 랭킹 API를 대조해 저장한 결과는 다음과 같다(원문 JSON 값을 재배치·들여쓰기).
 
 ```json
 {
@@ -164,21 +164,21 @@ ORDER_ACTIVITY_HANDLED_AND_ACK_RETURNED topic=checkout-incident-test-1126111136-
 
 ### 2.6 증거 보존·정리와 출처 확인
 
-fault 원문 14파일과 사전 예상의 SHA-256을 `2026-11-26T02:12:11.799588Z`에 봉인했다. 문서 작성 시 사본의 `fault-seal.json` 목록을 다시 계산해 14개 모두 일치함을 확인했다. 14파일에는 health/Prometheus의 본문·상태/시각 4파일이 포함된다. hash는 바이트 변경 여부를 확인하는 수단이며 주문·상태·효과의 정확성은 위 대조와 assertion으로 별도 확인했다.
+fault 원문 14파일과 사전 예상의 SHA-256을 `2026-11-26T09:01:21.611189Z`에 봉인했다. 문서 작성 시 사본의 `fault-seal.json` 목록을 다시 계산해 14개 모두 일치함을 확인했다. 14파일에는 health/Prometheus의 본문·상태/시각 4파일이 포함된다. hash는 바이트 변경 여부를 확인하는 수단이며 주문·상태·효과의 정확성은 위 대조와 assertion으로 별도 확인했다.
 
 사람은 실행 전 테스트의 대상·허용 조치·중단 조건을 확인하고 실행 범위를 승인했다. 고정 예상과 자동 판정은 그 범위 안에서 증거를 비교하는 구현이며 사람 확인을 대체하는 승인 장치가 아니다. 실제 운영에서 상태를 바꾸는 조치는 런북의 대상/중단 조건을 사람이 확인한 뒤 수행한다.
 
-이번 최종 실행에는 중간 실패가 없었다. 과거 중간 실패 기록은 이전 run들과 함께 보존했으며 성공 원문으로 바꾸지 않았다. 예를 들어 `apps/commerce-api/build/checkout-incident-runs/20261123T112400Z-0940a840/failures/001-baseline.json`은 예약 변경량 assertion 실패 기록이다. 이것을 최신 실행의 실패로 합산하지 않는다.
+이번 최종 실행에는 중간 실패가 없었다. 과거 실행의 중간 실패 기록은 로컬에 그대로 보존했으며 성공 원문으로 바꾸거나 최신 실행의 실패로 합산하지 않는다.
 
 `run/resources/007-cleanup.json`에는 `releaseCompleted=true`, `kept=[]`, streamer/batch 자식·PG 종료가 기록됐다. 이 실행 소유 자원을 정리한 결과이며 공유 인프라 전체의 운영 상태를 보증하는 기록은 아니다.
 
-최신 원문55파일과 과거 실행을 각각 보존했다. 제출 원문55개는 원본·별도 보존 사본과 바이트가 같고, manifest의 bytes·SHA-256으로 다시 확인할 수 있다. 보고서의 표는 같은 실행 파일의 필드 대조이며 원문 로그/응답 발췌와 재서식 JSON을 구분했다. 이 보고서와 실행별 원문55파일·manifest1개를 사고 증거로 함께 제출한다.
+최신 원문55파일과 과거 실행을 각각 보존했다. 이전 제출 후보였던 `20261126T021136Z-bd52918d`·`20261126T081623Z-ba1d92e6` 사본은 제출 묶음에서 빼고 로컬에 그대로 보존했다. 제출 원문55개는 원본·별도 보존 사본과 바이트가 같고, manifest의 bytes·SHA-256으로 다시 확인할 수 있다. 보고서의 표는 같은 실행 파일의 필드 대조이며 원문 로그/응답 발췌와 재서식 JSON을 구분했다. 이 보고서와 실행별 원문55파일·manifest1개를 사고 증거로 함께 제출한다.
 
-실패 시 상태 증거 보존은 이 실행 이후 보완했으며, 변경 내용과 관련 검사 결과는 6절에 구분한다. 기존 run의 metadata·파일 집합·봉인은 보완 후 결과로 바꾸지 않았다.
+이 실행은 실패 경로 증거 보존(5절)까지 포함한 커밋에서 수행했다. 정상 완료된 실행이므로 실패 수집 경로 자체는 이 run에서 동작하지 않았다.
 
 ## 3. 요구별 검증 범위(설계 §10)
 
-아래 표는 11월 26일 최종 회귀와 새 사고 실행 기준이다. 관측 원문 보존 보완의 실패 경로는 §5에서 구분한다.
+아래 표는 최종 회귀와 새 사고 실행 기준이다. 실패 경로의 증거 보존은 5절에서 따로 설명한다.
 
 |ID|검증 방식|근거|
 |---|---|---|
@@ -192,8 +192,8 @@ fault 원문 14파일과 사전 예상의 SHA-256을 `2026-11-26T02:12:11.799588
 |I8 전달·소비·랭킹|AUTO 실제 Kafka·streamer·batch·API|`*/deliveries.json`, `recovery/ranking.json`, 자식 로그|
 |I9 직접 관찰|**제외**(2026-11-23 사용자 결정)|OBSERVED 코드 없음|
 |I10 진행 helper|AUTO 기록만 단위 검증|`IncidentCheckpointTest` 3. OBSERVED 명령·한도 검증은 기능과 함께 삭제|
-|I11 증거·실패·정리|단위 + AUTO 정상 정리|`IncidentEvidenceWriterTest` 7, `CheckoutIncidentLifecycleTest` 4, `CheckoutIncidentRowsTest` 4, `CheckoutIncidentHttpLimitTest` 1. 준비 직후 실패·실제 정리 실패의 강제 재현은 없음. 실패 상태 보존 보완과 관련 검사는 6절|
-|I12 누적 회귀|단일 `check` 1회|`docs/verification/week10-verification.md` 2절(11월 26일)|
+|I11 증거·실패·정리|단위 + AUTO 정상 정리|`IncidentEvidenceWriterTest` 7, `CheckoutIncidentLifecycleTest` 4, `CheckoutIncidentRowsTest` 4, `CheckoutIncidentHttpLimitTest` 1, `CheckoutIncidentObservationTest` 9, `CheckoutIncidentFailureSnapshotTest` 9. 준비 직후 실패·실제 정리 실패의 강제 재현은 없음. 실패 경로 보존은 5절|
+|I12 누적 회귀|단일 `check` 1회|`docs/verification/week10-verification.md` 2절|
 
 ## 4. 사고 검증의 미실행·한계
 
@@ -201,21 +201,10 @@ fault 원문 14파일과 사전 예상의 SHA-256을 `2026-11-26T02:12:11.799588
 - AUTO는 테스트 소유 자원의 1개 시나리오다. 운영 배포·실계정·운영 규모의 지표 수집 및 업무 부하·다중 인스턴스는 검증하지 않았다. 모든 장애 유형을 검증한 결과가 아니다.
 - 진단 판정의 호출 연결은 주문 ID·유일성·로그 순서에 기대며, 같은 주문의 동시 CREATE가 있으면 미확정이 된다.
 
-## 5. 직접 관측 실패 원문 보존 보완 (2026-11-25)
+## 5. 실패 경로의 증거 보존
 
-- 기준: HEAD `c3fb22c` + 기존 문서/주석 변경 + `CheckoutIncidentScenario` 보완과 신규 `CheckoutIncidentObservationTest`. 이번 보완은 테스트 코드이며 제품 결제 판정·기대값·기존 assertion은 변경하지 않았다.
-- 변경: 각 health/Prometheus 응답을 받은 직후, assertion 전에 단계 디렉터리에 `<endpoint>-response.txt` 본문과 `<endpoint>-response.json`의 HTTP 상태·수신 시각·본문 존재 여부를 CREATE_NEW로 저장한다. 정상 경로의 기존 `direct-observation.txt`도 유지한다. 새 통신 실패로 받지 못한 응답을 합성하지 않는다.
-- 신규 검증 9건: 정상 응답, health DOWN/HTTP 503, Prometheus HTTP 503/NaN/표본 누락/기대값 불일치, 기존 원문과 충돌하는 저장 실패, health 수신 후 Prometheus 통신 실패. 실제 시나리오의 observer에 `MockRestServiceServer` 응답 대역을 연결하고 임시 디렉터리 파일과 예외·다음 요청 미진행을 확인했다. 실제 Actuator·DB 장애 실험은 아니다.
-- 실행 결과: 위 실패 경로 검사는 11월 26일 최신 전체 회귀에도 포함됐다. 전체 실행·수량·Checkstyle 결과는 `docs/verification/week10-verification.md` 2절에 정리했다.
-- 보존: 검사 전 일반 test XML/HTML·Checkstyle·JaCoCo는 `/tmp/w10-observation-check-20261125-6r1mkpy4/before/`에 복사했다. 새 로그 `checks.log`, 결과/XML·Checkstyle·변경 코드 사본 `after/`, 원본/사본 SHA-256 일치 manifest는 같은 로컬 디렉터리에 있다. 기존 제출 후보 사본과 run metadata는 수정하지 않았다.
-- 한계: 보완 당시에는 선택 검사만 실행했고, 이후 11월 26일 전체 회귀와 연결 검증을 마쳤다(§1~3). 새 Grafana 관찰은 하지 않았다. 디스크 완전 고장이나 프로세스 강제 종료를 재현한 검증도 아니다.
+단계 assertion이나 직접 관측이 실패해도 그 시점의 원문과 상태를 남기도록 했다. 성공 원문으로 바꾸거나 받지 못한 값을 합성하지 않는다.
 
-## 6. 실패 시 상태 증거 보존 보완 (2026-11-26)
-
-실패 예외·메시지만 기록하던 경로에 정리 전 상태 수집을 추가했다. `failures/<순번>-<단계>.json`은 기존 실패 요약으로 유지하고, 같은 순번의 하위 디렉터리에 주문/결제·예약·재고·Outbox·PG 거래/수신 횟수/journal·진단 로그·명단을 독립적으로 저장한다. 각 파일은 수집 시각과 COLLECTED/value 또는 UNAVAILABLE/failureClass를 기록한다. 로그 수집기 시작 전은 UNAVAILABLE로, 시작 후 실제 이벤트가 없는 경우만 COLLECTED/빈 목록으로 구분한다. 실패 수집은 검증 assertion·복구 요청·DB 변경을 하지 않는다.
-
-일부 수집이나 저장이 실패해도 다른 수집을 계속하고 최초 오류에 추가 오류를 suppressed로 남긴다. 기존 fault 봉인과 과거 실패 파일은 바꾸지 않는다. 실패 수집 전용 DB 연결·읽기 각 1초와 쿼리 1초를 적용하며, 정상 조회 설정은 유지한다. 순차 조회이므로 전체 수집이 하나의 원자 snapshot이거나 총 1초 안에 끝난다는 뜻은 아니다.
-
-신규 `CheckoutIncidentFailureSnapshotTest` 9건으로 정리 전 수집, DB/PG 수집 실패의 독립성, 저장 충돌 시 최초 오류·정리 유지, 동일 예외 재전달, 봉인/과거 파일 불변, 준비 미완료·PG 미준비, DB 한도 분리를 검증했다. 시나리오의 실패 수집 메서드·writer와 기존 runThenRelease 경계에 임시 파일·대역을 연결한 검사다. DB 수집 SQL은 엔티티 컬럼과 정적으로 대조했으며 실제 MySQL에서 실행하지 않았다. 실제 DB 장애나 새 전체 사고 실행의 검증이 아니다. 구체적인 명령·검사 결과는 `docs/verification/week10-verification.md` 3절을 따른다.
-
-DB 접속 불가·테이블 미준비·저장 공간 장애·프로세스 강제 종료 등에서는 일부 또는 전체 상태를 남기지 못할 수 있다. 수집 불가와 저장 실패를 정상 빈 결과나 성공으로 처리하지 않는다.
+- **직접 관측 응답:** health·Prometheus 응답을 받은 직후 assertion 전에 단계 디렉터리에 `<endpoint>-response.txt` 본문과 `<endpoint>-response.json`(HTTP 상태·수신 시각·본문 존재 여부)을 CREATE_NEW로 저장한다. `CheckoutIncidentObservationTest` 9건이 health DOWN/HTTP 503, Prometheus HTTP 503·NaN·표본 누락·기대값 불일치, 저장 충돌, health 수신 후 Prometheus 통신 실패를 `MockRestServiceServer` 대역으로 확인한다.
+- **실패 시 상태:** 정리 전에 주문/결제·예약·재고·Outbox·PG 거래/수신 횟수/journal·진단 로그·명단을 `failures/<순번>-<단계>/` 아래 수집원별 파일로 저장한다. 각 파일은 수집 시각과 COLLECTED/value 또는 UNAVAILABLE/failureClass를 기록하며, 로그 수집기 시작 전은 UNAVAILABLE, 시작 후 이벤트가 없는 경우만 COLLECTED/빈 목록이다. 한 수집·저장의 실패가 다른 수집과 정리를 막지 않고 최초 오류에 suppressed로 남는다. fault 봉인과 과거 실패 파일은 바꾸지 않는다. 실패 수집 전용 DB 연결·읽기·쿼리에 각 1초 한도를 두고 정상 조회 설정은 유지한다. `CheckoutIncidentFailureSnapshotTest` 9건이 이를 임시 파일·대역으로 확인한다.
+- **한계:** 두 테스트 묶음은 2절 최종 회귀에 포함돼 통과했지만 실제 Actuator·DB 장애 실험은 아니다. 실패 수집 SQL은 엔티티 컬럼과 정적으로 대조했고 실제 MySQL에서 실행하지 않았다. 순차 조회라 원자 snapshot이 아니며, DB 접속 불가·저장 공간 장애·프로세스 강제 종료 때는 일부 또는 전체 상태를 남기지 못할 수 있다. 수집 불가와 저장 실패를 정상 빈 결과나 성공으로 처리하지 않는다.

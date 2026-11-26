@@ -1,7 +1,0 @@
-{
-  "relayEnabled" : false,
-  "managementPort" : 62109,
-  "managementPortRequested" : 0,
-  "callbackUrl" : "http://127.0.0.1:62101/api/v1/payments/callback",
-  "port" : 62101
-}

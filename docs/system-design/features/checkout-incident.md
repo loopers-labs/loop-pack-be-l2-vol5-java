@@ -370,7 +370,7 @@ RECOVERY:
 
 `sealFault()`는 필수파일/내용 assertion 성공 후 fault의 SHA-256목록과 코드 진단원문·예상 파일 hash를 봉인한다. accepted 진행 기록은 봉인 fault 파일과 별도로 저장한다. `verifyFaultUnchanged()`는복구 뒤기존파일바이트hash를비교한다. 파일존재/hash일치만으로상태/효과를통과시키지않는다. 실패 원문은별도순번/시각파일에append방식으로추가하며기존파일에덮어쓰지않는다. 증거파일쓰기실패면특히복구 전진행을중단한다. 오류기록도실패하면원래오류를가리지않고suppressed/별도실패로알린다.
 
-build는 ignore 대상이므로 원문 보존과 Git 제출을 구분한다. 과거 `20261123T124038Z-670e178c`의 사본은 로컬 `docs/week10/verification/evidence/`에 보존한다. 사용자 결정으로 최신 실행 `20261126T021136Z-bd52918d`의 원문55파일을 `docs/verification/evidence/<runId>/`에 바이트 그대로 복사하고 원본·보존 사본과 대조했다. 실행별 manifest1개에 원본 경로·상대경로·bytes·SHA-256과 실행 코드의 커밋 연결을 기록하며 metadata·fault 봉인은 고치지 않는다. 로컬 HANDOFF·프롬프트·전체 검사 XML/자식 로그를 함께 일괄 제출하지 않는다. 최종 stage/commit은 별도 사용자 지시에 따른다.
+build는 ignore 대상이므로 원문 보존과 Git 제출을 구분한다. 과거 `20261123T124038Z-670e178c`·`20261126T021136Z-bd52918d`·`20261126T081623Z-ba1d92e6`의 사본은 로컬 `docs/week10/verification/evidence/`에 보존한다. 사용자 결정으로 최종 커밋 기준 전체 회귀의 실행 `20261126T090053Z-558297c0` 원문55파일을 `docs/verification/evidence/<runId>/`에 바이트 그대로 복사하고 원본·보존 사본과 대조했다. 실행별 manifest1개에 원본 경로·상대경로·bytes·SHA-256과 실행 코드의 커밋 연결을 기록하며 metadata·fault 봉인은 고치지 않는다. 로컬 HANDOFF·프롬프트·전체 검사 XML/자식 로그를 함께 일괄 제출하지 않는다. 최종 stage/commit은 별도 사용자 지시에 따른다.
 
 ### 9.2 제한 시간과 정리
 

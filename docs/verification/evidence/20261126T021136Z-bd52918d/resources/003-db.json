@@ -1,4 +1,0 @@
-{
-  "owner" : "testcontainers-mysql",
-  "jdbcUrl" : "jdbc:mysql://localhost:62035/loopers"
-}
