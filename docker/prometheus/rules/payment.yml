@@ -13,6 +13,8 @@
 #   commerce_payment_refund_requested_oldest_age_seconds 환불 요청함 중 가장 오래된 경과 초 gauge(없으면 0). max로 본다.
 #   commerce_payment_refund_outcome_total{result,actor} 돈의 상태가 환불됨·청구 없음으로 끝난 수(commit 뒤).
 #   commerce_payment_refund_person_assigned_total{reason} 담당이 사람으로 바뀐 수(commit 뒤, 사유 5값).
+#   commerce_payment_refund_check_total{outcome}   환불 추적 확인(회차·지금 처리) 결과별 수(5c, 소문자 9값:
+#     pg_unreachable·pg_error·apply_failed·mismatch·pending·empty·cancel_unknown·cancel_rejected·ok).
 # label에는 orderId·userId를 넣지 않는다. 집계 결과는 alertname·severity만 남는다.
 # 수치는 모두 [임시]다. 운영하며 조정하고, 바꾸면 payment_test.yml도 함께 바꾼다.
 groups:
@@ -175,6 +177,21 @@ groups:
         annotations:
           summary: 사람 담당으로 넘어가는 환불 대상이 계속 늘어 10건 이상 쌓였습니다. 자동 환불이 결론을 내지 못하고 있습니다.
           runbook_url: https://github.com/loopers-labs/loop-pack-be-l2-vol5-java/blob/L2J4Dot/docs/runbook/week10.md#paymentrefundpiling
+          dashboard_url: http://localhost:3000/d/commerce-payment-incident
+
+      # [임시] 증가 창 15m, 5m 지속. apply_failed는 PG 조회 결과는 받았는데 우리 반영이 예외로 실패한 것이다(DB·버그, 5c).
+      # PG 장애(pg_unreachable·pg_error)는 PG 회복으로 풀리지만 이것은 우리가 고치기 전까지 같은 건에서 되풀이된다.
+      # 그래서 한 건이라도 새로 늘면 사람에게 알린다. 돈의 상태는 바뀌지 않아 당장 손해는 없으므로 깨우지 않는다(warning).
+      # 5m은 같은 회차의 연쇄 실패를 한 번에 묶어 본다. 이미 쌓인 값이 서 있기만 하면 울리지 않는다(증가로 잰다).
+      - alert: PaymentRefundApplyFailed
+        expr: |
+          sum(increase(commerce_payment_refund_check_total{outcome="apply_failed"}[15m])) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 환불 추적에서 PG 조회 결과를 받았는데 우리 반영이 실패했습니다. PG가 아니라 우리 쪽(DB·버그) 문제입니다.
+          runbook_url: https://github.com/loopers-labs/loop-pack-be-l2-vol5-java/blob/L2J4Dot/docs/runbook/week10.md#paymentrefundapplyfailed
           dashboard_url: http://localhost:3000/d/commerce-payment-incident
 
   # 결제 알림을 받쳐 주는 운영 도구의 생존 감시(10주차 4b).

@@ -103,7 +103,10 @@ class FakeServer:
 
 def prometheus_ok(path, body):
     query = parse_qs(urlparse(path).query)["query"][0]
-    if "commerce_payment_unresolved" in query and "by (status)" in query:
+    if "commerce_payment_refund_check_total" in query and "by (outcome)" in query:
+        result = [{"metric": {"outcome": "pg_unreachable"}, "value": [0, "9.000000000000002"]},
+                  {"metric": {"outcome": "apply_failed"}, "value": [0, "2"]}]
+    elif "commerce_payment_unresolved" in query and "by (status)" in query:
         result = [{"metric": {"status": "unknown"}, "value": [0, "50"]},
                   {"metric": {"status": "needs_review"}, "value": [0, "2"]}]
     elif "commerce_payment_refund_cases" in query and "by (money_status)" in query:
@@ -390,6 +393,19 @@ class GuideTest(GuideTestBase):
         self.assertIn('"refund_person_open": 11', sent)
         self.assertIn("환불 확인 대상 돈의 상태별·사람 담당 중", sent, "어디부터 볼지에 환불 패널 이름을 준다")
         self.assertIn("환불 요청 정체 경과", sent)
+
+    def test_g13_환불_누적_critical에는_막힌_원인_분포를_식별자_없이_근거로_붙인다(self):
+        self.start(api_key="test-key")
+
+        status = self.post_alert(json.dumps(refund_piling_alert()).encode())
+
+        self.assertEqual(200, status)
+        text = self.slack_messages()[0]["text"]
+        self.assertIn("환불 추적 막힌 원인(30분): apply_failed=2, pg_unreachable=9", text)
+        self.assertEqual(1, len(self.llm.requests), "막힌 원인 분포는 유한한 outcome 값과 건수뿐이라 LLM을 부른다")
+        sent = json.loads(self.llm.requests[0]["body"].decode("utf-8"))["messages"][0]["content"]
+        self.assertIn('"refund_check_by_outcome_30m": {"apply_failed": 2.0, "pg_unreachable": 9.0}', sent)
+        self.assertIn("환불 추적 막힌 원인", sent, "어디부터 볼지에 막힌 원인 패널 이름을 준다")
 
     def test_g12_환불_요청_정체가_2일이어도_분으로_보내_숫자_ID_검사에_걸리지_않고_LLM을_부른다(self):
         def prometheus_old_request(path, body):

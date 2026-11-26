@@ -1,5 +1,5 @@
 # payment.yml 규칙 테스트(promtool test rules). 실행: scripts/ops/check-alerting.sh
-# 각 그룹은 계획의 장면 R1~R13 하나다(R9는 10주차 4b 가이드 서버 생존 감시, R10~R13은 5단계 환불 확인 대상). L1~L5는 4b 추가 결제 확정 API p99 지연이다. 수치는 payment.yml의 [임시] 값(X=0.2%, N=20, M=10m, K=5)에 맞췄다.
+# 각 그룹은 계획의 장면 R1~R14 하나다(R9는 10주차 4b 가이드 서버 생존 감시, R10~R13은 5단계 환불 확인 대상, R14는 5c 환불 추적 반영 실패). L1~L5는 4b 추가 결제 확정 API p99 지연이다. 수치는 payment.yml의 [임시] 값(X=0.2%, N=20, M=10m, K=5)에 맞췄다.
 # 시계열은 1분 간격이다. 'a+bxn'은 a에서 시작해 1분마다 b씩 n번 더한다.
 rule_files:
   - payment.yml
@@ -813,4 +813,55 @@ tests:
             exp_annotations: *refund_request_stuck_annotations
       - eval_time: 22m
         alertname: PaymentRefundRequestStuck
+        exp_alerts: []
+
+  # R14 환불 추적 반영 실패(10주차 5c). commerce_payment_refund_check_total{outcome} counter(소문자 9값).
+  # apply_failed는 PG 조회 결과는 받았는데 우리 반영이 예외로 실패한 것이다(DB·버그). PG 문제가 아니라 사람이 알아야 한다.
+  # 6분에 한 건 → 15분 창 증가 > 0이 6분부터 참, for 5m이라 11분부터 울린다. 10분은 for 직전이다.
+  # 창(15m)을 벗어나면(6분 샘플이 창 밖이 되는 20분부터) 풀린다.
+  - name: R14a 환불 추적 반영 실패가 한 건이라도 늘면 5분 뒤 ApplyFailed warning 울림
+    interval: 1m
+    input_series:
+      - series: 'commerce_payment_refund_check_total{outcome="apply_failed"}'
+        values: '0x5 1x40'
+      - series: 'commerce_payment_refund_check_total{outcome="ok"}'
+        values: '0+3x45'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: PaymentRefundApplyFailed
+        exp_alerts: []
+      - eval_time: 11m
+        alertname: PaymentRefundApplyFailed
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: 환불 추적에서 PG 조회 결과를 받았는데 우리 반영이 실패했습니다. PG가 아니라 우리 쪽(DB·버그) 문제입니다.
+              runbook_url: https://github.com/loopers-labs/loop-pack-be-l2-vol5-java/blob/L2J4Dot/docs/runbook/week10.md#paymentrefundapplyfailed
+              dashboard_url: http://localhost:3000/d/commerce-payment-incident
+      - eval_time: 25m
+        alertname: PaymentRefundApplyFailed
+        exp_alerts: []
+
+  # R14 경계: PG 쪽 막힘(pg_unreachable·pg_error)·불일치·결론 없음이 아무리 늘어도 반영 실패가 아니면 울리지 않는다.
+  # 이미 쌓인 apply_failed 값(3)이 서 있기만 하고 새로 늘지 않아도 울리지 않는다.
+  - name: R14b 반영 실패가 새로 늘지 않으면 PG 막힘·불일치가 많아도 ApplyFailed 안 울림
+    interval: 1m
+    input_series:
+      - series: 'commerce_payment_refund_check_total{outcome="apply_failed"}'
+        values: '3x40'
+      - series: 'commerce_payment_refund_check_total{outcome="pg_unreachable"}'
+        values: '0+20x40'
+      - series: 'commerce_payment_refund_check_total{outcome="pg_error"}'
+        values: '0+5x40'
+      - series: 'commerce_payment_refund_check_total{outcome="mismatch"}'
+        values: '0+1x40'
+      - series: 'commerce_payment_refund_check_total{outcome="pending"}'
+        values: '0+2x40'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: PaymentRefundApplyFailed
+        exp_alerts: []
+      - eval_time: 40m
+        alertname: PaymentRefundApplyFailed
         exp_alerts: []

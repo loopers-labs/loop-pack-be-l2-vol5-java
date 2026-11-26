@@ -6,6 +6,7 @@
 #   scripts/ops/admin-curl.sh GET  '/api-admin/v1/payments/unresolved?refundOwner=PERSON'
 #   scripts/ops/admin-curl.sh GET  '/api-admin/v1/payments/unresolved?refundMoneyStatus=REFUND_REQUESTED'
 #   scripts/ops/admin-curl.sh POST /api-admin/v1/payments/refund-cases/101/person-resolution '{"result":"REFUNDED"}'
+#   scripts/ops/admin-curl.sh POST /api-admin/v1/payments/refund-cases/101/process-now   (사람 담당 건 지금 처리, 본문 없음)
 # 계정은 환경 변수 COMMERCE_ADMIN_USERNAME·COMMERCE_ADMIN_PASSWORD에서만 읽고 출력하지 않는다.
 # 주소는 COMMERCE_API_URL(기본 http://localhost:8080)이다.
 # POST·PUT·PATCH·DELETE는 먼저 관리자 GET으로 XSRF-TOKEN 쿠키를 받고, 그 값을 X-XSRF-TOKEN 헤더와 쿠키로 붙여 보낸다.

@@ -35,6 +35,8 @@ QUERIES = {
     "refund_person_open": "max(commerce_payment_refund_person_open)",
     "refund_person_assigned_increase_30m": "sum(increase(commerce_payment_refund_person_assigned_total[30m]))",
     "refund_requested_oldest_age_seconds": "max(commerce_payment_refund_requested_oldest_age_seconds)",
+    # 환불 추적 막힌 원인(5c). outcome은 유한한 소문자 9값이라 LLM에 그대로 보내도 된다. 주문별이 아니라 분포만 묻는다.
+    "refund_check_by_outcome_30m": "sum by (outcome) (increase(commerce_payment_refund_check_total[30m]))",
 }
 # 경계 로그는 logger OrderApplicationService가 남긴다(설계 문서 10주차 2-2). label은 app·level만 있다.
 LOKI_QUERY = '{app="commerce-api", level=~"WARN|ERROR"} |= "OrderApplicationService"'
@@ -209,6 +211,7 @@ def query_prometheus(config, deadline):
         "refund_person_assigned_increase_30m": scalar(results["refund_person_assigned_increase_30m"]),
         # 분으로 줄여 보낸다. 2일(172800초)처럼 6자리 이상 숫자는 숫자 ID로 보여 LLM 전송 확인에 걸린다.
         "refund_requested_oldest_age_minutes": round(scalar(results["refund_requested_oldest_age_seconds"]) / 60),
+        "refund_check_by_outcome_30m": by_label(results["refund_check_by_outcome_30m"], "outcome"),
     }
 
 
@@ -285,7 +288,8 @@ def build_llm_input(overview, evidence, config):
         "boundary_log_kinds": evidence["loki"]["kinds"][:15],
         "where_to_look": {
             "dashboard_panels": ["미확인 결제 상태별", "시작 대비 결과 모름 유입 비율(30분)", "만료 종결 증가(10분)",
-                                 "환불 확인 대상 돈의 상태별·사람 담당 중", "환불 요청 정체 경과", "주문 번호로 경계 로그"],
+                                 "환불 확인 대상 돈의 상태별·사람 담당 중", "환불 요청 정체 경과", "환불 추적 막힌 원인",
+                                 "주문 번호로 경계 로그"],
             "runbook_anchors": [f"{config.runbook_base}#{name.lower()}" for name in overview["alertnames"]],
             "loki_query_examples": [
                 '{app="commerce-api", level="WARN"} |= "result=Unknown"',
@@ -335,6 +339,8 @@ def render_guided(overview, evidence, ai_text, ai_note):
         f"- 사람 담당 중: {p['refund_person_open']:g}",
         f"- 사람 담당 이관 증가(30분): {p['refund_person_assigned_increase_30m']:g}",
         f"- 환불 요청 정체 경과(가장 오래된 건): {p['refund_requested_oldest_age_minutes']}분",
+        "- 환불 추적 막힌 원인(30분): "
+        + (", ".join(f"{k}={v:g}" for k, v in p["refund_check_by_outcome_30m"].items()) or "없음"),
         f"근거(Loki, 최근 30분 경계 로그 WARN·ERROR {evidence['loki']['total']}줄):",
     ]
     lines += [f"- {k['count']}줄 {k['level']} {k['pattern']}" for k in evidence["loki"]["kinds"][:5]] or ["- 없음"]

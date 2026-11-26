@@ -25,6 +25,7 @@ local·dev 전용. 셸에 `COMMERCE_ADMIN_USERNAME`·`COMMERCE_ADMIN_PASSWORD`�
 | 사람 담당 환불 대상 | `scripts/ops/admin-curl.sh GET '/api-admin/v1/payments/unresolved?refundOwner=PERSON'` |
 | 돈의 상태별 환불 대상 | `scripts/ops/admin-curl.sh GET '/api-admin/v1/payments/unresolved?refundMoneyStatus=REFUND_REQUESTED'` |
 | 환불 사람 기록 | `scripts/ops/admin-curl.sh POST /api-admin/v1/payments/refund-cases/101/person-resolution '{"result":"REFUNDED"}'` |
+| 사람 담당 환불 대상 지금 처리 | `scripts/ops/admin-curl.sh POST /api-admin/v1/payments/refund-cases/101/process-now` |
 | 결제 지표 4종(local Prometheus) | `scripts/ops/rehearsal.sh metrics` |
 | 울리는 알림(Prometheus·Alertmanager) | `scripts/ops/rehearsal.sh alerts` |
 | 한 주문의 경계 로그(최근 1시간) | `scripts/ops/rehearsal.sh loki 101` |
@@ -159,7 +160,9 @@ PG 미발송 종결 · warning · 패널 "종결 결과별 증가(10분)"
 | `REFUNDED` 환불됨 / `NO_CHARGE` 청구 없음 | 끝 | 끝 |
 
 - **담당**: 자동(AUTO) 또는 사람(PERSON). 항목에 담당 사유(`owner_reason`), 담당 종료 시각(null = 열림), 환불 주체(SYSTEM·EXTERNAL·PERSON)가 나온다.
-- 담당이 사람이어도 시스템은 돈이 끝날 때까지 PG를 **조회만** 계속한다(간격 상한 30m[임시]). 사람 담당 건에는 취소(환불 요청)를 보내지 않는다.
+- 담당이 사람이어도 시스템은 돈이 끝날 때까지 PG를 **조회만** 계속한다(간격 상한 30m[임시]). 자동 회차는 사람 담당 건에 취소(환불 요청)를 보내지 않는다. 사람이 **지금 처리**를 누를 때만 CHARGED에서 한 번 보낸다(PaymentRefundNeedsPerson).
+- 사람 담당은 자동으로 돌아가지 않는다(AUTO로 되돌리기 없음). 돈이 끝나 담당이 닫힐 때까지 사람 담당이다.
+- 항목의 마지막 확인: `lastCheckAt`(시각), `lastCheckOutcome`(결과, 아래 표), `lastCheckCause`(예외 클래스 이름만, 없으면 null). 자동 회차와 지금 처리가 둘 다 갱신한다. 대시보드 "환불 추적 막힌 원인"은 같은 결과를 소문자(`pg_unreachable` 등)로 센다.
 - 자동 추적 기한(2일[임시])을 넘긴 회차에는 담당이 먼저 사람으로 바뀐다. 그 직후 조회가 성공을 보여도 취소는 나가지 않는다.
 - PG가 취소됨을 주면 환불됨, 확인 중에 실패를 주면 청구 없음으로 시스템이 기록하고 사람 담당을 자동으로 닫는다. 사람이 PG 콘솔에서 환불한 건도 다음 조회에서 이렇게 닫힌다.
 - 청구 확인 이후인데 PG가 실패를 주면 사실이 엇갈린 것이다. 시스템은 그대로 둔다. 사람이 PG 콘솔로 판단한다.
@@ -192,12 +195,53 @@ PG 미발송 종결 · warning · 패널 "종결 결과별 증가(10분)"
 | `REFUND_REJECTED` | 우리 환불 요청을 PG가 효과 없음으로 거절했다(돈 CHARGED) |
 | `RESULT_REVERSED` | 청구 없음·결제 실패로 본 뒤 늦은 성공이 왔다(돈 CHARGED) |
 
+3. 지금 왜 막혔는지는 항목의 `lastCheckOutcome`·`lastCheckCause`로 읽고 다음 행동을 고른다. 전체 분포는 패널 "환불 추적 막힌 원인".
+
+| `lastCheckOutcome` | 뜻 | 다음 행동 |
+| --- | --- | --- |
+| `APPLY_FAILED` | PG 답은 받았는데 **우리 반영이 실패**(DB·버그). 돈의 상태는 그대로 | 경계 로그에서 원인을 본다: `scripts/ops/rehearsal.sh loki 101`의 `causeType`(= `lastCheckCause`). 원인을 고친 뒤 지금 처리. 고치기 전에 누르면 같은 실패가 되풀이된다(PaymentRefundApplyFailed) |
+| `PG_UNREACHABLE` | PG에 닿지 않음(타임아웃·연결·조회 회로 열림) | PG 상태를 확인하고 회복 뒤 지금 처리 |
+| `PG_ERROR` | PG가 오류로 답함 | PG 상태를 확인하고 회복 뒤 지금 처리 |
+| `MISMATCH` | PG 거래가 주문·금액과 안 맞거나 여러 건 | PG 콘솔로 실제 거래를 확인하고 사람 기록. 지금 처리로는 풀리지 않는다 |
+| `PENDING`·`EMPTY` | PG가 아직 결론을 안 줌·거래 없음 | 기다리거나(다음 조회 30m 상한) 지금 처리 |
+| `CANCEL_UNKNOWN` | 환불 요청 응답을 잃음 | 조회만 한다. 지금 처리(조회만 한다)는 괜찮다. 환불을 다시 보내지 않는다 |
+| `CANCEL_REJECTED` | PG가 우리 환불 요청을 거절 | PG 콘솔에서 거절 이유·취소 여부를 확인한다 |
+| `OK` | 마지막 확인은 정상 처리됨 | 돈이 끝났으면 담당이 이미 닫혔다. CHARGED로 남았으면 사람 담당이라 자동 환불을 안 한 것이다. 지금 처리로 환불을 요청한다 |
+
 **Mitigation.**
-1. PG 콘솔에서 이 주문의 실제 승인·취소를 확인한다.
-2. 돈이 나갔고 취소가 없으면: 돈이 CHARGED일 때만 PG 콘솔에서 수동 환불한다. REFUND_REQUESTED·REFUND_UNKNOWN은 우리 취소가 이미 갔을 수 있으니 PG 콘솔의 취소 여부부터 본다. 다음 조회(30m 상한)에서 시스템이 환불됨으로 닫는다. 따로 기록할 필요 없다.
-3. PG 조회가 안 되는데 콘솔·정산으로 결론을 확인했을 때만 사람 기록을 남긴다(위 표).
+1. **지금 처리**(그 자리에서 이 건 하나를 조회·반영하고 결과를 돌려준다):
+   `scripts/ops/admin-curl.sh POST /api-admin/v1/payments/refund-cases/101/process-now`
+   - 돈 CHARGED면 환불 요청을 **한 번** 보낸다. REFUND_REQUESTED·REFUND_UNKNOWN이면 조회만 한다(다시 보내지 않는다). 두 번 눌러도 환불 요청은 한 번이다.
+   - 조회 회로가 열려 있으면 PG를 부르지 않고 `PG_UNREACHABLE`로 답한다. 상태는 그대로다. 몇 분 뒤 다시 누른다.
+2. 결과 읽기: 응답의 돈의 상태·담당·`lastCheckOutcome`·`lastCheckCause`.
+   - 돈이 `REFUNDED`·`NO_CHARGE`면 끝. 담당이 자동으로 닫힌다(닫은 사람 = 누른 관리자).
+   - 돈이 `REFUND_REQUESTED`면 환불 요청이 나갔다. 다음 조회가 결과를 기록한다.
+   - 그 밖이면 사람 담당 그대로다. `lastCheckOutcome`으로 Diagnosis 3의 표를 다시 본다.
+   - 409 = 담당 AUTO, 담당 이미 닫힘, 돈 이미 끝남. 대상은 그대로다. 없는 주문 404.
+3. `MISMATCH`·`CANCEL_REJECTED`처럼 PG 콘솔 판단이 필요하면: PG 콘솔에서 실제 승인·취소를 확인한다. 콘솔에서 수동 환불했으면 다음 조회(30m 상한)를 기다린다. 시스템이 환불됨으로 닫는다.
+4. PG 조회가 안 되는데 콘솔·정산으로 결론을 확인했을 때만 사람 기록을 남긴다(환불 확인 대상 읽는 법의 표).
+- 사람 담당은 자동으로 돌아가지 않는다. 되돌리기 기능은 없다. 지금 처리나 사람 기록으로 끝낸다.
 - 해소: 사람 담당 중 0건.
-- 금지: 공통 금지. 시스템 대신 환불 요청을 API로 다시 보내지 않는다.
+- 금지: 공통 금지. 환불 요청은 지금 처리로만 보낸다. 같은 돈을 PG 콘솔 수동 환불과 지금 처리로 둘 다 환불하지 않는다(중복 환불 위험). 둘 중 하나만 한다.
+
+## PaymentRefundApplyFailed
+
+환불 추적 반영 실패 · warning · 패널 "환불 추적 막힌 원인"
+
+**Meaning.** 환불 추적(자동 회차·지금 처리)에서 PG 조회 결과는 받았는데 우리 반영이 예외로 실패한 건(`apply_failed`)이 최근 15분[임시]에 새로 생겼고 5분 지속됐다. PG 문제가 아니라 우리 쪽(DB·버그) 문제다.
+
+**Impact.** 그 건의 돈의 상태가 바뀌지 않는다. 고칠 때까지 같은 건에서 되풀이된다. 자동 담당 건은 2일 뒤 사람 담당으로 넘어오고, 그동안 고객 환불이 늦어진다.
+
+**Diagnosis.**
+1. 패널 "환불 추적 막힌 원인"에서 `apply_failed`가 언제부터 늘었는지 본다.
+2. 대상: 환불 대상 목록(`?refundOwner=PERSON`, `?refundMoneyStatus=CHECKING` 등)에서 `lastCheckOutcome`이 `APPLY_FAILED`인 항목. `lastCheckCause`는 예외 클래스 이름이다.
+3. 한 주문의 경계 로그: `scripts/ops/rehearsal.sh loki 101`. Grafana Explore: `{app="commerce-api", level="ERROR"} | orderId="101"`. `causeType`으로 DB 연결·잠금·제약 위반·코드 오류를 가른다.
+
+**Mitigation.**
+- DB 장애면 DB 담당에, 코드 오류면 서비스 담당에 넘긴다. 고치기 전에는 지금 처리를 눌러도 같은 실패다.
+- 고친 뒤: 자동 담당 건은 다음 회차가 다시 조회한다. 사람 담당 건은 지금 처리(PaymentRefundNeedsPerson Mitigation 1).
+- 해소: 15분 창에 새 `apply_failed`가 없다(마지막 실패 뒤 약 15분).
+- 금지: 공통 금지. 특히 DB에서 돈의 상태를 직접 고치지 않는다.
 
 ## PaymentRefundRequestStuck
 
@@ -246,6 +290,7 @@ PG 미발송 종결 · warning · 패널 "종결 결과별 증가(10분)"
 **Diagnosis.**
 1. 대상 고정: `scripts/ops/admin-curl.sh GET '/api-admin/v1/payments/unresolved?refundOwner=PERSON'`. 이 목록으로 사람을 나눈다.
 2. 담당 사유 분포를 본다. `HANDOFF_DEADLINE`이 대부분이면 PG 조회 장애가 원인이다. 가이드 메시지의 "사람 담당 이관 증가(30분)"도 본다.
+3. 가이드 메시지·패널의 "환불 추적 막힌 원인"으로 PG 쪽(`pg_unreachable`·`pg_error`)인지 우리 반영(`apply_failed`, PaymentRefundApplyFailed)인지 가른다.
 
 **Mitigation.**
 - PG 장애가 원인이면 PG 회복을 먼저 챙긴다. 회복되면 시스템 조회가 사실을 기록하고 담당을 자동으로 닫는다.
@@ -273,7 +318,7 @@ PG 미발송 종결 · warning · 패널 "종결 결과별 증가(10분)"
 ## critical 가이드 메시지 읽는 법
 
 - critical은 Slack 자리에 두 번 온다. ① Alertmanager 원본 ② 가이드 서버가 근거를 붙인 메시지(`[가이드]`로 시작).
-- 근거: 미확인 상태별 수, 결과 모름 유입 비율(30분), 만료 종결 증가(10분), 환불 대상 돈의 상태별 수, 사람 담당 중 건수, 사람 담당 이관 증가(30분), 환불 요청 정체 경과(분), 최근 30분 경계 로그 WARN·ERROR 종류별 줄 수와 대표 줄(최대 3줄, 카드·비밀값 가림).
+- 근거: 미확인 상태별 수, 결과 모름 유입 비율(30분), 만료 종결 증가(10분), 환불 대상 돈의 상태별 수, 사람 담당 중 건수, 사람 담당 이관 증가(30분), 환불 요청 정체 경과(분), 환불 추적 막힌 원인(결과별 30분 증가), 최근 30분 경계 로그 WARN·ERROR 종류별 줄 수와 대표 줄(최대 3줄, 카드·비밀값 가림).
 - `[가이드 실패: …]`로 시작하면 근거 수집이 실패했거나 제한 시간(10s[임시])을 넘었다. 원본 알림으로 대응한다.
 - "AI 요약"은 집계와 로그 종류만 보고 쓴 것이다. 대상은 관리자 목록으로 고정한다(대표 줄은 최대 3줄이다).
 

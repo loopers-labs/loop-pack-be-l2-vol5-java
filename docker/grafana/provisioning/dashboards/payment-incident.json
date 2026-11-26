@@ -654,6 +654,53 @@
           "refId": "A"
         }
       ]
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "환불 추적 막힌 원인",
+      "description": "환불 추적 확인(자동 회차·지금 처리)의 결과별 30분 증가. 선은 outcome 9값(pg_unreachable·pg_error·apply_failed·mismatch·pending·empty·cancel_unknown·cancel_rejected·ok)이다. pg_unreachable·pg_error는 PG 쪽, apply_failed는 우리 반영 실패(DB·버그), mismatch는 PG 거래 불일치다. 한 주문의 원인은 관리자 목록 항목의 lastCheckOutcome·lastCheckCause로 본다. 빨간 선은 없다(apply_failed는 15분 창 1건으로 warning).\nrunbook: https://github.com/loopers-labs/loop-pack-be-l2-vol5-java/blob/L2J4Dot/docs/runbook/week10.md#paymentrefundneedsperson / runbook: https://github.com/loopers-labs/loop-pack-be-l2-vol5-java/blob/L2J4Dot/docs/runbook/week10.md#paymentrefundapplyfailed",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 50,
+        "w": 24,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (outcome) (increase(commerce_payment_refund_check_total[30m]))",
+          "legendFormat": "{{outcome}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A"
+        }
+      ]
     }
   ],
   "links": [
