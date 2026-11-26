@@ -6,7 +6,7 @@ Commerce 시스템(`commerce-api`, `commerce-streamer`, `commerce-batch`)의 설
 | --- | --- |
 | HLD · 시스템 경계, 도메인 모델, API 요약 | [시스템 개요](system-overview.md), [도메인 모델](domain-model.md), [API 계약](api-contracts.md) |
 | LLD · 기능별 계약, 객체 협력, 트랜잭션과 실패 처리, 외부 연동, 저장·오류 변환 | [유스케이스 설계](#유스케이스), [외부 시스템 연동](#외부-시스템-연동), [영속성과 오류 변환](#영속성과-오류-변환) |
-| 결정·검증 근거 | 각 기능의 결정 기록, [쿠폰 발급 검증 기록](use-cases/coupon-issuance-verification.md), [주문 확정 이벤트 검증](use-cases/order-confirmed-event-verification.md)과 [주간 구매 랭킹 검증 기록](use-cases/weekly-ranking-verification.md) |
+| 결정·검증 근거 | 각 기능의 결정 기록, [쿠폰 발급 검증 기록](use-cases/coupon-issuance-verification.md), [주문 확정 이벤트 검증](use-cases/order-confirmed-event-verification.md), [주간 구매 랭킹 검증 기록](use-cases/weekly-ranking-verification.md)과 [결제 응답 유실 사고 검증 기록](use-cases/payment-response-lost-verification.md) |
 
 ## 시스템 구조와 도메인
 
@@ -73,6 +73,8 @@ Commerce 시스템(`commerce-api`, `commerce-streamer`, `commerce-batch`)의 설
 | [Kafka Broker](../../modules/kafka/docs/broker.md) | broker 주소, topic·partition·복제·보존과 단일 broker 한계 |
 | [구매 활동 Consumer](../../apps/commerce-streamer/docs/purchase-activity-consumer.md) | 계약 해석, DB 멱등성·트랜잭션, listener·ack·복구 |
 | [주문 확정 이벤트 검증](use-cases/order-confirmed-event-verification.md) | 모듈별 테스트 위치, listener 실패·복구, offset 미커밋 재전달, partition·group 실험, 발행 누락 사례 |
+| [결제 응답 유실 사고 대응](use-cases/payment-response-lost.md) | health UP인 응답 유실 사고의 지표·경보·대시보드·경계 로그, 경쟁 가설 판정, 같은 주문 복구와 중단 조건, 결제부터 주간 랭킹까지 잇는 사고 실험 |
+| [결제 응답 유실 사고 검증 기록](use-cases/payment-response-lost-verification.md) | 제출 실행의 단계별 관찰·가설 판정·장애 집합·fault 증거 hash, 실행 결과, 기능별 확인, 확인하지 않은 범위 |
 
 ## 외부 시스템 연동
 
