@@ -55,8 +55,8 @@
 | --- | --- | --- | --- | --- |
 | B1 (발견 → 수정) | 기본 `bootRun`으로 띄우면 JSON 로그가 `apps/commerce-api/logs/`에 쌓여 Loki에 안 들어간다 | `json-file-appender.xml` 기본 경로가 상대 경로 `logs/…`이고, Gradle `bootRun` 작업 디렉터리가 `apps/commerce-api`였다. Alloy는 저장소 `logs/`만 붙인다 | 리허설 중에는 `--logging.file.name` override로 우회 | **수정(PL 결정):** `apps/commerce-api/build.gradle.kts`의 `bootRun`에 `workingDir = rootProject.projectDir`. 앱 설정의 다른 경로는 classpath뿐이다. 확인(23:55): 인프라만 띄우고 override 없이 `./gradlew :apps:commerce-api:bootRun` → 저장소 루트 `logs/commerce-api.json` 생성(JSON 줄 파싱 OK, 시작 로그의 작업 디렉터리 = 저장소 루트), `apps/commerce-api/logs/`는 생기지 않음 |
 | B2 | 저장소 `logs/`가 앱 기동 전부터 있다 | 모니터링 compose의 Alloy 바인드 마운트가 디렉터리를 만든다 | — | "logs/가 있다"를 앱 로그 생성 근거로 쓰면 안 된다(파일로 확인) |
-| B3 | 고객 주문에 필요한 사용자를 만들 API가 없다 | `users` 테이블은 id만 있고 생성 API가 없다 | DB에 `INSERT IGNORE INTO users (id)` | local seed SQL에 사용자 1명 추가 여부 |
-| B4 | 알림·대시보드의 runbook 링크를 눌러도 열리지 않는다 | `runbook_url`·대시보드 링크가 저장소 상대 경로(`docs/runbook/week10.md`)다. Grafana에서 누르면 `localhost:3000/docs/...`(302)로 간다. `generatorURL`도 컨테이너 호스트명이다 | 저장소에서 파일을 직접 열었다 | 저장소 웹 주소(GitHub blob URL)로 바꿀지 |
+| B3 | 고객 주문에 필요한 사용자를 만들 API가 없다 | `users` 테이블은 id만 있고 생성 API가 없다 | DB에 `INSERT IGNORE INTO users (id)` | local seed SQL에 사용자 1명 추가 여부 → **반영(4b 마무리):** `sql/local/seed-users.sql`(id 1, 없을 때만 넣음)을 local `spring.sql.init`에 더했고 `rehearsal.sh seed`의 직접 INSERT를 뺐다 |
+| B4 | 알림·대시보드의 runbook 링크를 눌러도 열리지 않는다 | `runbook_url`·대시보드 링크가 저장소 상대 경로(`docs/runbook/week10.md`)다. Grafana에서 누르면 `localhost:3000/docs/...`(302)로 간다. `generatorURL`도 컨테이너 호스트명이다 | 저장소에서 파일을 직접 열었다 | 저장소 웹 주소(GitHub blob URL)로 바꿀지 → **반영(4b 마무리, PL 결정):** 운영 규칙·대시보드 링크를 원본 저장소 `L2J4Dot` blob URL로. 머지 전에는 열리지 않을 수 있다. 리허설 규칙은 상대 경로 그대로 |
 | B5 | 자동 재조회를 켜 두면 사고가 재현되지 않는다 | test-pg 조회가 정상이라 스케줄러가 몇 초 안에 회복시킨다. test-pg 제어에 조회 실패 지정이 없다 | 스케줄러를 끔(만료도 같이 멈춤) | test-pg 제어에 조회 동작(`LookupBehavior`) 변경 endpoint를 더하면 스케줄러를 켠 채 "재조회가 실패하는" 사고를 재현할 수 있다 |
 
 ## 사람이 어려웠을 점

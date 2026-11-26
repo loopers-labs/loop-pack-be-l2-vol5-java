@@ -262,7 +262,7 @@
 
 - 수집 대상은 api 하나(`host.docker.internal:8081`)다 **[PL 결정 P2]**. 세 앱의 management 포트가 모두 8081이고(공통 `monitoring.yml`), streamer의 `spring.application.name`이 `commerce-api`다. 앱별 정리는 범위 밖이다.
 - runbook(`docs/runbook/week10.md`)에는 규칙별 앵커, 가이드 메시지 읽는 법, 주문 번호로 경계 로그 찾기, AI 질문 예시가 있다(4b). 규칙별 대응 본문은 아직 짧다.
-- `runbook_url`은 저장소 상대 경로, `dashboard_url`은 `http://localhost:3000` 고정이다.
+- `runbook_url`과 대시보드 패널 설명의 runbook 링크는 과제 최종 목적지인 원본 저장소 웹 주소(`https://github.com/loopers-labs/loop-pack-be-l2-vol5-java/blob/L2J4Dot/docs/runbook/week10.md#<앵커>`)다 **[PL 결정, w10s4b B4]**. PR이 머지되기 전에는 열리지 않을 수 있다. 리허설 규칙(`rules/rehearsal/`)은 상대 경로 그대로다. `dashboard_url`은 `http://localhost:3000` 고정이다.
 - 실제 Slack은 연결하지 않았다. Alertmanager는 설정 파일에서 환경 변수를 펼치지 않으므로 운영은 `slack_configs`의 `api_url_file`로 비밀 파일을 읽는 방식이다. 주석만 있고 구현하지 않았다.
 - ~~새 counter 두 개가 실제 앱에서 Prometheus로 수집되는지는 앱을 연결해 확인하지 않았다.~~ → 4b 리허설에서 확인(10-7). `unknown_entered`의 PENDING→UNKNOWN 경로 테스트가 없는 것은 그대로다.
 - ~~래퍼 `admin-curl.sh`는 실제 앱에 붙여 실행하지 않았다.~~ → 4b 리허설에서 실제 앱에 붙여 GET 목록·POST 일괄(XSRF 쿠키 토큰) 모두 성공(10-7).
@@ -344,6 +344,7 @@
 - **[사용자 결정]** 읽기 전용(`--disable-write`, 읽는 도구 범주만 켬), 사용 통계 끔(`--usage-stats=disabled`), 토큰은 Grafana 서비스 계정 **Viewer** 토큰을 환경 변수 `GRAFANA_SERVICE_ACCOUNT_TOKEN`으로만 받는다.
 - 사실: 사용 통계가 기본 켜짐인 것을 알기 전에 더미 토큰으로 `tools/list` 시험 실행을 1회 했다. 종료 때 Grafana Labs로 익명 보고 1건이 나갔을 수 있다(Grafana 주소·토큰 값은 보고 대상 아님). 이후 끔으로 고정했다.
 - runbook "AI에게 이렇게 물어라" 절에 질문 예시를 두었다.
+- **[사용자 결정 w10s4b-4 ①]** loki 도구 범주는 켜지 않는다(prometheus·dashboard·alerting·search·datasource·navigation만). 로그 원문의 내부 식별자를 LLM으로 보내지 않기 위해서다. `--enabled-tools`가 범주 단위라 `query_loki_patterns`만 켤 수 없어 함께 뺐다. AI는 지표·대시보드·알림으로 큰 틀, 주문 번호로 로그 찾기는 사람이 Grafana(Loki)에서 한다.
 
 ### 10-6. test-pg 실행 수단 [사용자 결정 w10s4b-3 ①]
 

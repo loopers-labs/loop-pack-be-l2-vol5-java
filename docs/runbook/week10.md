@@ -2,6 +2,7 @@
 
 알림의 `runbook_url`이 가리키는 자리다. 규칙은 `docker/prometheus/rules/payment.yml`, 대시보드는 Grafana `commerce-payment-incident`다.
 각 절의 대응 본문은 범위 밖이다(다음 단계에서 쓴다).
+알림·대시보드의 링크는 원본 저장소 웹 주소(`loopers-labs/loop-pack-be-l2-vol5-java`, 브랜치 `L2J4Dot`)를 가리킨다. PR이 머지되기 전에는 열리지 않을 수 있으니 그때는 저장소의 이 파일을 직접 연다.
 
 ## 관리자 도구
 
@@ -76,8 +77,9 @@
 
 - 연결: `scripts/ops/mcp-grafana.sh`(공식 `mcp-grafana` v2.3.0 단일 바이너리, 처음 실행 때 받아 SHA-256 확인). 토큰은 Grafana 서비스 계정 **Viewer** 토큰을 환경 변수 `GRAFANA_SERVICE_ACCOUNT_TOKEN`으로만 넣는다. 쓰기 도구와 익명 사용 통계는 끈다.
   - Claude Code 예: `claude mcp add grafana --env GRAFANA_SERVICE_ACCOUNT_TOKEN=<토큰> -- "$PWD/scripts/ops/mcp-grafana.sh"`
-- 원칙: AI에게는 주문 번호 대신 **패턴과 집계**를 묻는다. 개별 주문은 사람이 Loki·관리자 목록에서 찾는다.
+- 켠 도구 범주: 지표(prometheus)·대시보드·알림 규칙·검색·데이터 소스·링크 생성. **Loki(로그) 도구는 켜지 않는다.** 로그 원문에는 주문 번호 같은 내부 식별자가 있어 AI로 보내지 않는다. 도구는 범주 단위로만 켜져 `query_loki_patterns`만 따로 켤 수도 없다.
+- 원칙: AI에게는 **지표·대시보드·알림으로 큰 틀**을 묻는다("무엇이 일어나는 것 같다, 어디부터 보라"). 주문 번호로 로그 찾기는 **사람이** Grafana Explore(Loki)와 관리자 목록에서 한다.
 - 예시 1 (추이): "지난 1시간 `commerce_payment_unresolved`를 status별로, 그리고 결과 모름 유입 비율(`commerce_payment_unknown_entered_total` / `commerce_payment_started_total`, 30분 창)을 5분 간격으로 보여 줘. 언제부터 늘었어?"
-- 예시 2 (종류별 패턴): "Loki에서 지난 30분 `{app=\"commerce-api\", level=~\"WARN|ERROR\"} |= \"OrderApplicationService\"`의 로그 패턴(query_loki_patterns)을 종류별 건수로 묶어 줘. 주문 번호는 빼고 문구 종류만."
-- 예시 3 (가설 비교): "응답 유실(create `result=Unknown`, `HttpTimeoutException`), 내부 반영 실패(`결제 결과 반영 실패`·`PG 호출 후 결과 저장에 실패`), PG 실패(`결제 실패로 종결`) 세 가설 중 지난 30분 경계 로그 건수로 가장 많은 것은? 대시보드 어느 패널부터 보면 돼?"
+- 예시 2 (울린 알림): "지금 울리는 결제 알림과 그 규칙 식, for 시간을 보여 줘. 어느 대시보드 패널과 runbook 앵커부터 보면 돼?"
+- 예시 3 (가설 비교): "응답 유실(create 결과 Unknown), PG 실패, 결제 만료 세 가설 중 지난 30분 지표(유입 비율·결과별 종결 수·확정 API p99)로 가장 그럴듯한 것은? 확인할 대시보드 패널을 짚어 줘."
 - 그다음 사람이: 관리자 목록에서 주문 번호를 얻고 → 위 "주문 번호로 경계 로그 찾기"로 한 주문을 확인하고 → 일괄 확정을 한다.
