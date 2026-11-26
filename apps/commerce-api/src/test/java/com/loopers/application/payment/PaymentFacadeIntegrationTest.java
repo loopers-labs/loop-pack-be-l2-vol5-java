@@ -683,8 +683,7 @@ class PaymentFacadeIntegrationTest {
     class Metrics {
 
         private double count(String name, String... tags) {
-            Counter counter = meterRegistry.find(name).tags(tags).counter();
-            return counter == null ? 0 : counter.count();
+            return meterRegistry.find(name).tags(tags).counters().stream().mapToDouble(Counter::count).sum();
         }
 
         private double gauge(String name, String status) {
@@ -747,6 +746,44 @@ class PaymentFacadeIntegrationTest {
             paymentSweeper.sweepOnce(NOW.plusSeconds(11));
 
             assertThat(count("payment.lookup", "source", "sweeper", "result", "found") - looked).isEqualTo(1);
+        }
+
+        @DisplayName("남은 미확인 결제 수는 DB 를 세지 않고, unknown 으로 들어간 전이에서 unknown 에서 나온 전이를 빼서 얻는다")
+        @Test
+        void unresolvedIsEnteredMinusLeft() {
+            double unknownBefore = unknownNow();
+            double entered = count("payment.observe", "from", "requested", "to", "unknown");
+            double left = count("payment.observe", "from", "unknown", "to", "success");
+            Order order = place(2);
+            PG.dropNextCreateResponse();
+
+            Payment payment = confirm(order.getId(), "attempt-1");
+
+            assertThat(count("payment.observe", "from", "requested", "to", "unknown") - entered).isEqualTo(1);
+            assertThat(unknownNow() - unknownBefore).isEqualTo(1);
+
+            PG.changeStatus(
+                PG.transactionsOf(payment.getProviderOrderId().value()).get(0).transactionKey(), PgFixture.Status.SUCCESS);
+            paymentFacade.reconcile(USER, order.getId(), NOW.plusSeconds(10));
+
+            assertThat(count("payment.observe", "from", "unknown", "to", "success") - left).isEqualTo(1);
+            assertThat(unknownNow() - unknownBefore).isZero();
+        }
+
+        private double unknownNow() {
+            double entered = 0;
+            double left = 0;
+            for (Counter counter : meterRegistry.find("payment.observe").counters()) {
+                String from = counter.getId().getTag("from");
+                String to = counter.getId().getTag("to");
+                if ("unknown".equals(to) && !"unknown".equals(from)) {
+                    entered += counter.count();
+                }
+                if ("unknown".equals(from) && !"unknown".equals(to) && !"noop".equals(to)) {
+                    left += counter.count();
+                }
+            }
+            return entered - left;
         }
 
         @DisplayName("이미 같은 결과를 본 반영은 payment.observe{to=noop} 로 센다")

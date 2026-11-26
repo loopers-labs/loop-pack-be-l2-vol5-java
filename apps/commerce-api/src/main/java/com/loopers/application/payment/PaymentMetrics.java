@@ -30,8 +30,9 @@ public class PaymentMetrics {
     }
 
     void observed(PaymentStatus before, PaymentStatus after) {
+        String from = before.name().toLowerCase(Locale.ROOT);
         String to = before == after ? "noop" : after.name().toLowerCase(Locale.ROOT);
-        meterRegistry.counter("payment.observe", "to", to).increment();
+        meterRegistry.counter("payment.observe", "from", from, "to", to).increment();
     }
 
     void discrepancy(PaymentDiscrepancy.Reason reason) {
