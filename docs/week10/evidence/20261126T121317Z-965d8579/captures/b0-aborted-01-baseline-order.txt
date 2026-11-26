@@ -1,0 +1,2 @@
+orderId=1
+{"meta":{"result":"SUCCESS"},"data":{"id":1,"userId":1,"items":[{"productId":1,"quantity":1,"unitPrice":1000}],"total":1000,"status":"CONFIRMED","paidAmount":1000,"paymentResult":"SUCCESS","paymentMethod":"PG","providerStatus":"SUCCESS"}}

@@ -1,16 +1,88 @@
 version: '3'
+# 포트는 127.0.0.1에만 연다(로컬 확인용). 컨테이너끼리는 기본 네트워크의 서비스 이름으로 통신한다.
+# fake-receiver는 alertmanager만 부르므로 호스트에 포트를 열지 않는다.
 services:
   prometheus:
-    image: prom/prometheus
+    # 규칙 테스트(promtool)와 같은 버전으로 고정한다.
+    image: prom/prometheus:v3.5.0
     ports:
-      - "9090:9090"
+      - "127.0.0.1:9090:9090"
     volumes:
       - ./grafana/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./prometheus/rules:/etc/prometheus/rules:ro
+    depends_on:
+      - alertmanager
+
+  alertmanager:
+    image: prom/alertmanager:v0.28.1
+    ports:
+      - "127.0.0.1:9093:9093"
+    volumes:
+      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+    depends_on:
+      - fake-receiver
+
+  # 로컬 확인용 가짜 webhook 수신기. 받은 알림 본문은 `docker compose logs fake-receiver`로 본다.
+  fake-receiver:
+    image: python:3.12.11-slim
+    volumes:
+      - ./alertmanager/fake-receiver:/app:ro
+    command: ["python", "-u", "/app/receiver.py"]
+
+  # critical 가이드 서버(10주차 4b). Alertmanager critical webhook → 근거 수집 → Slack 자리(fake-receiver /slack).
+  # ANTHROPIC_API_KEY는 셸 환경 변수에서만 받는다. 없으면 LLM 없이 결정적 근거만 보낸다.
+  # 호스트에 포트를 열지 않는다. Prometheus가 guide:8080/metrics를 수집한다.
+  guide:
+    image: python:3.12.11-slim
+    volumes:
+      - ./guide:/app:ro
+    environment:
+      - PYTHONDONTWRITEBYTECODE=1
+      - PROMETHEUS_URL=http://prometheus:9090
+      - LOKI_URL=http://loki:3100
+      - SLACK_URL=http://fake-receiver:8080/slack
+      - GUIDE_TIMEOUT_SECONDS=10
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+    command: ["python", "-u", "/app/guide.py"]
+    depends_on:
+      - fake-receiver
+
+  # 로그 저장소(10주차 4b). 단일 바이너리, 로컬 파일 저장, 보존 [임시] 72h.
+  loki:
+    image: grafana/loki:3.5.3
+    ports:
+      - "127.0.0.1:3100:3100"
+    volumes:
+      - ./loki/loki.yml:/etc/loki/loki.yml:ro
+      - loki-data:/loki
+    command: ["-config.file=/etc/loki/loki.yml"]
+
+  # 앱 JSON 로그 수집(10주차 4b). 앱은 호스트 JVM에서 로그 디렉터리에 쓴다. 읽기 전용으로 붙인다.
+  # 로그 디렉터리는 docker/.env의 COMMERCE_LOG_DIR 하나로 정한다(10주차 7단계, w10s7-P1). 저장소 루트 기준 상대 경로라 ../를 붙인다.
+  # 앱을 띄우는 스크립트도 같은 값으로 LOGGING_FILE_NAME을 넘긴다(scripts/ops/rehearsal.sh).
+  # 읽은 위치(어느 파일 몇 바이트까지)는 named volume alloy-data에 둔다. 재기동해도 같은 줄을 다시 보내지 않는다.
+  # compose 프로젝트 이름이 볼륨 이름 앞에 붙으므로 평소(docker_alloy-data)와 리허설(w10r-mon_alloy-data)은 다른 볼륨이다.
+  alloy:
+    image: grafana/alloy:v1.10.1
+    volumes:
+      - ./alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - ../${COMMERCE_LOG_DIR:-logs}:/var/log/commerce:ro
+      - alloy-data:/var/lib/alloy/data
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy/data
+      - /etc/alloy/config.alloy
+    depends_on:
+      - loki
 
   grafana:
     image: grafana/grafana
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning
     environment:
@@ -20,3 +92,7 @@ services:
 networks:
   default:
     driver: bridge
+
+volumes:
+  loki-data:
+  alloy-data:

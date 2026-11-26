@@ -7,15 +7,19 @@ import ch.qos.logback.core.read.ListAppender;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.loopers.common.domain.Money;
+import com.loopers.domains.payment.app.port.PaymentCancelCommand;
+import com.loopers.domains.payment.app.port.PaymentCancelResult;
 import com.loopers.domains.payment.app.port.PaymentCreateCommand;
 import com.loopers.domains.payment.app.port.PaymentCreateResult;
 import com.loopers.domains.payment.app.port.PaymentTransaction;
 import com.loopers.domains.payment.app.port.PaymentTransactionLookup;
 import com.loopers.domains.payment.app.port.PaymentTransactionStatus;
 import com.loopers.domains.payment.app.port.PaymentTransactionsLookup;
+import com.loopers.domains.payment.out.TestPgServer.CancelBehavior;
 import com.loopers.domains.payment.out.TestPgServer.CreateBehavior;
 import com.loopers.domains.payment.out.TestPgServer.LookupBehavior;
 import com.loopers.domains.payment.out.TestPgServer.RecordedRequest;
+import com.loopers.domains.payment.out.TestPgServer.StoredTransaction;
 import java.io.IOException;
 import java.net.ConnectException;
 import java.net.ServerSocket;
@@ -36,6 +40,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -43,6 +48,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.web.client.ResourceAccessException;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.junit.jupiter.params.provider.Arguments.arguments;
 
 class TestPgPaymentGatewayTest {
@@ -139,6 +145,7 @@ class TestPgPaymentGatewayTest {
             CreateBehavior.ACCEPT_WITH_200,
             CreateBehavior.ACCEPT_BLANK_TRANSACTION_KEY,
             CreateBehavior.ACCEPT_UNKNOWN_STATUS,
+            CreateBehavior.ACCEPT_CANCELED_STATUS,
             CreateBehavior.ACCEPT_AMOUNT_MISMATCH,
             CreateBehavior.ACCEPT_ORDER_ID_MISMATCH,
             CreateBehavior.ACCEPT_AMOUNT_AS_STRING,
@@ -225,6 +232,17 @@ class TestPgPaymentGatewayTest {
             String key = server.transactions().get(0).transactionKey();
             assertThat(result).isEqualTo(new PaymentCreateResult.Accepted(
                 new PaymentTransaction(key, ORDER_ID, new Money(AMOUNT), PaymentTransactionStatus.SUCCESS)));
+        }
+
+        @Test
+        @DisplayName("202 응답의 거래 상태가 CANCELED면 접수 계약 밖이라 결과 모름으로 분류한다")
+        void canceledStatusOnCreateIsUnknown() {
+            server.createBehavior(CreateBehavior.ACCEPT_CANCELED_STATUS);
+
+            PaymentCreateResult result = gateway.create(command());
+
+            assertThat(result).isInstanceOf(PaymentCreateResult.Unknown.class);
+            assertThat(server.createCalls()).isEqualTo(1);
         }
 
         @Test
@@ -373,6 +391,51 @@ class TestPgPaymentGatewayTest {
                 PaymentTransactionsLookup.Coverage.ALL));
         }
 
+        @Test
+        @DisplayName("주문 조회한 거래 상태가 CANCELED면 조회 실패가 아니라 CANCELED 거래로 돌려준다")
+        void reportsCanceledTransactionByOrder() {
+            String key = server.addTransaction(ORDER_ID, AMOUNT, "CANCELED");
+
+            PaymentTransactionsLookup result = gateway.verifyOrder(ORDER_ID, key);
+
+            assertThat(result).isInstanceOf(PaymentTransactionsLookup.Found.class);
+            assertThat(((PaymentTransactionsLookup.Found) result).transactions())
+                .extracting(PaymentTransaction::transactionKey, transaction -> transaction.status().name())
+                .containsExactly(tuple(key, "CANCELED"));
+        }
+
+        @Test
+        @DisplayName("거래 키로 조회한 거래 상태가 CANCELED면 조회 실패가 아니라 CANCELED 거래로 돌려준다")
+        void reportsCanceledTransactionByKey() {
+            String key = server.addTransaction(ORDER_ID, AMOUNT, "CANCELED");
+
+            PaymentTransactionLookup result = gateway.findByTransactionKey(key);
+
+            assertThat(result).isInstanceOf(PaymentTransactionLookup.Found.class);
+            assertThat(((PaymentTransactionLookup.Found) result).transaction().status().name()).isEqualTo("CANCELED");
+        }
+
+        @Test
+        @DisplayName("포트가 모르는 상태 문자열이면 주문 조회 전체를 조회 실패로 돌려준다")
+        void failsLookupForUnknownStatus() {
+            server.addTransaction(ORDER_ID, AMOUNT, "REFUNDING");
+
+            assertThat(gateway.verifyOrder(ORDER_ID, null)).isInstanceOf(PaymentTransactionsLookup.Failed.class);
+        }
+
+        @ParameterizedTest(name = "{0} → {1}")
+        @CsvSource({"ERROR_500, ERROR_RESPONSE", "BROKEN_JSON, ERROR_RESPONSE", "DELAY, UNREACHABLE"})
+        @DisplayName("주문 조회 실패는 PG가 오류·깨진 응답을 준 경우 ERROR_RESPONSE, 응답을 받지 못한 경우 UNREACHABLE로 나눈다")
+        void classifiesLookupFailureKind(LookupBehavior behavior, PaymentTransactionsLookup.FailureKind expected) {
+            server.addTransaction(ORDER_ID, AMOUNT, "SUCCESS");
+            server.lookupBehavior(behavior);
+
+            PaymentTransactionsLookup result = gateway.verifyOrder(ORDER_ID, null);
+
+            assertThat(result).isInstanceOfSatisfying(PaymentTransactionsLookup.Failed.class,
+                failed -> assertThat(failed.kind()).isEqualTo(expected));
+        }
+
         static Stream<Arguments> failures() {
             return Stream.of(
                 arguments("키 조회 500", LookupBehavior.ERROR_500, true),
@@ -408,6 +471,164 @@ class TestPgPaymentGatewayTest {
             } else {
                 assertThat(verified).isInstanceOf(PaymentTransactionsLookup.Failed.class);
             }
+        }
+    }
+
+    // 취소 API는 과정 PG 계약에 없는 가정이다(w10s5-3). 분류 원칙은 create와 같다.
+    @Nested
+    @DisplayName("취소")
+    class Cancel {
+        private static final String SECRET_BODY_MARKER = "PG-SECRET-BODY";
+        private static final Set<CancelBehavior> CANCELED_SCENES = EnumSet.of(CancelBehavior.NORMAL);
+        private static final Set<CancelBehavior> UNKNOWN_SCENES = EnumSet.of(
+            CancelBehavior.OK_WITHOUT_CANCEL,
+            CancelBehavior.OK_AMOUNT_MISMATCH,
+            CancelBehavior.OK_ORDER_ID_MISMATCH,
+            CancelBehavior.OK_KEY_MISMATCH,
+            CancelBehavior.OK_BROKEN_JSON,
+            CancelBehavior.ACCEPT_202,
+            CancelBehavior.REJECT_OTHER_CODE,
+            CancelBehavior.REJECT_WITHOUT_BODY,
+            CancelBehavior.REJECT_AFTER_CANCEL,
+            CancelBehavior.ERROR_500_AFTER_CANCEL,
+            CancelBehavior.ERROR_500_WITHOUT_CANCEL,
+            CancelBehavior.ERROR_500_WITH_SECRET_BODY,
+            CancelBehavior.DELAY_AFTER_CANCEL,
+            CancelBehavior.DROP_CONNECTION_AFTER_CANCEL);
+
+        static Stream<CancelBehavior> unknownScenes() {
+            return UNKNOWN_SCENES.stream();
+        }
+
+        @Test
+        @DisplayName("취소는 POST /api/v1/payments/{transactionKey}/cancel로 X-USER-ID와 JSON 본문(orderId, 숫자 amount)만 보낸다")
+        void sendsCancelRequestByContract() throws IOException {
+            gateway.cancel(new PaymentCancelCommand(ORDER_ID, "TR/1 2", new Money(AMOUNT)));
+
+            assertThat(server.requests()).hasSize(1);
+            RecordedRequest request = server.requests().get(0);
+            assertThat(request.method()).isEqualTo("POST");
+            assertThat(request.rawPath()).isEqualTo("/api/v1/payments/TR%2F1%202/cancel");
+            assertThat(request.header("X-USER-ID")).isEqualTo(USER_ID);
+            assertThat(request.header("Content-Type")).startsWith("application/json");
+            JsonNode body = objectMapper.readTree(request.body());
+            assertThat(body.get("orderId").asText()).isEqualTo(ORDER_ID);
+            assertThat(body.get("amount").isIntegralNumber()).isTrue();
+            assertThat(body.get("amount").asLong()).isEqualTo(AMOUNT);
+            assertThat(body.size()).isEqualTo(2);
+        }
+
+        @Test
+        @DisplayName("200 응답이 요청한 거래 키·주문·금액과 CANCELED 상태를 모두 담으면 취소됨으로 분류하고 그 거래를 돌려준다")
+        void classifiesCanceled() {
+            String key = server.addTransaction(ORDER_ID, AMOUNT, "SUCCESS");
+
+            PaymentCancelResult result = gateway.cancel(cancelCommand(key));
+
+            assertThat(result).isEqualTo(new PaymentCancelResult.Canceled(
+                new PaymentTransaction(key, ORDER_ID, new Money(AMOUNT), PaymentTransactionStatus.CANCELED)));
+        }
+
+        @Test
+        @DisplayName("이미 CANCELED인 거래를 취소하면 같은 200 응답이므로 취소됨으로 분류한다")
+        void classifiesAlreadyCanceledAsCanceled() {
+            String key = server.addTransaction(ORDER_ID, AMOUNT, "CANCELED");
+
+            assertThat(gateway.cancel(cancelCommand(key))).isInstanceOf(PaymentCancelResult.Canceled.class);
+        }
+
+        @ParameterizedTest(name = "요청 주문={0}, 요청 금액={1}")
+        @CsvSource({"LP-ORD-0000000099, 5000", "LP-ORD-0000000042, 5001"})
+        @DisplayName("422 응답이 효과 없음 코드·canceled=false와 요청 값을 그대로 담으면 효과 없는 거절로 분류한다")
+        void classifiesRejectedNoEffect(String requestOrderId, long requestAmount) {
+            String key = server.addTransaction(ORDER_ID, AMOUNT, "SUCCESS");
+
+            PaymentCancelResult result = gateway.cancel(new PaymentCancelCommand(requestOrderId, key, new Money(requestAmount)));
+
+            assertThat(result).isEqualTo(new PaymentCancelResult.RejectedNoEffect(TestPgServer.CANCEL_REJECT_CODE));
+            assertThat(server.transactions()).containsExactly(new StoredTransaction(key, ORDER_ID, AMOUNT, "SUCCESS"));
+        }
+
+        @Test
+        @DisplayName("거래가 없다는 404 응답은 효과 없음 코드가 아니므로 결과 모름으로 분류한다")
+        void notFoundIsUnknown() {
+            assertThat(gateway.cancel(cancelCommand("TR-404"))).isInstanceOf(PaymentCancelResult.Unknown.class);
+            assertThat(server.cancelCalls()).isEqualTo(1);
+        }
+
+        @ParameterizedTest(name = "{0}")
+        @MethodSource("unknownScenes")
+        @DisplayName("취소·거절 계약을 벗어나거나 응답을 끝까지 받지 못하면 결과 모름으로 분류한다")
+        void classifiesUnknown(CancelBehavior behavior) {
+            String key = server.addTransaction(ORDER_ID, AMOUNT, "SUCCESS");
+            server.cancelBehavior(behavior);
+
+            assertThat(gateway.cancel(cancelCommand(key))).isInstanceOf(PaymentCancelResult.Unknown.class);
+        }
+
+        @Test
+        @DisplayName("닫힌 포트로 연결이 거부되면 미발송으로 분류한다")
+        void connectionRefusedIsNotSent() throws IOException {
+            TestPgPaymentGateway closedPortGateway = gatewayFor(URI.create("http://127.0.0.1:" + closedPort()));
+
+            assertThat(closedPortGateway.cancel(cancelCommand("TR-1"))).isInstanceOf(PaymentCancelResult.NotSent.class);
+        }
+
+        @Test
+        @DisplayName("read timeout이면 테스트 PG에서 취소됐어도 결과 모름이며 다시 보내지 않는다")
+        void readTimeoutIsUnknownEvenIfCanceled() {
+            String key = server.addTransaction(ORDER_ID, AMOUNT, "SUCCESS");
+            server.loseCancelResponse(ORDER_ID);
+
+            PaymentCancelResult result = gateway.cancel(cancelCommand(key));
+
+            assertThat(result).isInstanceOf(PaymentCancelResult.Unknown.class);
+            assertThat(server.transactions()).containsExactly(new StoredTransaction(key, ORDER_ID, AMOUNT, "CANCELED"));
+            assertThat(server.cancelCalls()).isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("테스트 PG의 모든 취소 장면이 취소됨·결과 모름 중 정확히 한 칸에 속한다")
+        void everySceneBelongsToExactlyOneResult() {
+            Set<CancelBehavior> classified = EnumSet.noneOf(CancelBehavior.class);
+            classified.addAll(CANCELED_SCENES);
+            classified.addAll(UNKNOWN_SCENES);
+
+            assertThat(classified).isEqualTo(EnumSet.allOf(CancelBehavior.class));
+            assertThat(CANCELED_SCENES.size() + UNKNOWN_SCENES.size()).isEqualTo(CancelBehavior.values().length);
+        }
+
+        @ParameterizedTest(name = "{0}")
+        @EnumSource(CancelBehavior.class)
+        @DisplayName("모든 장면에서 취소를 정확히 한 번만 보내고 create·조회로 세지 않는다")
+        void sendsCancelExactlyOnce(CancelBehavior behavior) {
+            String key = server.addTransaction(ORDER_ID, AMOUNT, "SUCCESS");
+            server.cancelBehavior(behavior);
+
+            gateway.cancel(cancelCommand(key));
+
+            assertThat(server.cancelCalls()).isEqualTo(1);
+            assertThat(server.cancelCalls(ORDER_ID)).isEqualTo(1);
+            assertThat(server.createCalls()).isZero();
+            assertThat(server.lookupCalls()).isZero();
+        }
+
+        @ParameterizedTest(name = "{0}")
+        @EnumSource(CancelBehavior.class)
+        @DisplayName("모든 장면에서 응답 본문을 결과·로그에 남기지 않는다")
+        void hidesResponseBody(CancelBehavior behavior) {
+            String key = server.addTransaction(ORDER_ID, AMOUNT, "SUCCESS");
+            server.cancelBehavior(behavior);
+
+            PaymentCancelResult result = gateway.cancel(cancelCommand(key));
+
+            assertThat(server.cancelCalls()).isEqualTo(1);
+            assertThat(result.toString()).doesNotContain(SECRET_BODY_MARKER).doesNotContain("{");
+            assertThat(loggedText()).doesNotContain(SECRET_BODY_MARKER).doesNotContain("{\"");
+        }
+
+        private PaymentCancelCommand cancelCommand(String key) {
+            return new PaymentCancelCommand(ORDER_ID, key, new Money(AMOUNT));
         }
     }
 

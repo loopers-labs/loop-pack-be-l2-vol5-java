@@ -1,0 +1,9 @@
+apiVersion: 1
+providers:
+  - name: commerce-payment
+    folder: Commerce
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    options:
+      path: /etc/grafana/provisioning/dashboards

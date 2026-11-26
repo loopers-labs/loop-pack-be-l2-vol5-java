@@ -9,4 +9,7 @@ public interface PaymentGateway {
     PaymentCreateResult create(PaymentCreateCommand command);
 
     PaymentTransactionsLookup verifyOrder(String providerOrderId, String storedTransactionKey);
+
+    // 과정 PG 계약에 없는 가정이다(w10s5-3). 멱등 키가 없으므로 한 번만 보내고, 결과를 모르면 다시 보내지 않고 조회한다.
+    PaymentCancelResult cancel(PaymentCancelCommand command);
 }

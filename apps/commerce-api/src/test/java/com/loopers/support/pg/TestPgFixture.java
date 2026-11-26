@@ -2,6 +2,8 @@ package com.loopers.support.pg;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.loopers.domains.order.app.ConfirmCommand;
+import com.loopers.domains.payment.app.port.PaymentCancelCommand;
+import com.loopers.domains.payment.app.port.PaymentCancelResult;
 import com.loopers.domains.payment.app.port.PaymentCreateCommand;
 import com.loopers.domains.payment.app.port.PaymentCreateResult;
 import com.loopers.domains.payment.app.port.PaymentGateway;
@@ -12,6 +14,7 @@ import com.loopers.domains.payment.out.TestPgServer;
 import java.io.IOException;
 import java.net.URI;
 import java.time.Duration;
+import java.util.Set;
 import java.util.UUID;
 
 // 테스트마다 TestPgServer를 새로 띄우고, 실제 HTTP 어댑터(TestPgPaymentGateway)를 그 주소로 만들어 위임한다.
@@ -30,6 +33,7 @@ public class TestPgFixture {
     private volatile TestPgServer server;
     private volatile PaymentGateway delegate;
     private volatile boolean crashBeforeSend;
+    private volatile boolean crashBeforeCancel;
     private volatile String failingLookupOrder;
     private final PaymentGateway gateway = new DelegatingGateway();
 
@@ -56,6 +60,7 @@ public class TestPgFixture {
         }
         delegate = newClient();
         crashBeforeSend = false;
+        crashBeforeCancel = false;
         failingLookupOrder = null;
         return server;
     }
@@ -79,8 +84,42 @@ public class TestPgFixture {
         crashBeforeSend = true;
     }
 
+    // 환불 요청 상태를 commit한 뒤 취소를 보내기 전에 프로세스가 멈춘 상황을 흉내 낸다. 서버에는 취소 요청이 가지 않는다.
+    // 프로세스 중단은 업무 코드가 잡을 수 있는 예외가 아니다. 취소 호출 예외(→ 결과 모름)와 구분되도록 Error로 회차 밖까지 빠져나간다.
+    public void crashBeforeCancel() {
+        crashBeforeCancel = true;
+    }
+
+    public void resumeCancel() {
+        crashBeforeCancel = false;
+    }
+
     public void failLookupFor(String providerOrderId) {
         failingLookupOrder = providerOrderId;
+    }
+
+    public void loseResponseAfterSuccess(String providerOrderId) {
+        server().loseResponseAfterSuccess(providerOrderId);
+    }
+
+    public void clearOrderBehavior(String providerOrderId) {
+        server().clearOrderBehavior(providerOrderId);
+    }
+
+    public int createCalls(String providerOrderId) {
+        return server().createCalls(providerOrderId);
+    }
+
+    public Set<String> duplicateCreateOrderIds() {
+        return server().duplicateCreateOrderIds();
+    }
+
+    public void loseCancelResponse(String providerOrderId) {
+        server().loseCancelResponse(providerOrderId);
+    }
+
+    public int cancelCalls(String providerOrderId) {
+        return server().cancelCalls(providerOrderId);
     }
 
     public void close() throws InterruptedException {
@@ -88,6 +127,7 @@ public class TestPgFixture {
         server = null;
         delegate = null;
         crashBeforeSend = false;
+        crashBeforeCancel = false;
         failingLookupOrder = null;
         if (current != null) {
             current.close();
@@ -126,6 +166,20 @@ public class TestPgFixture {
                 throw new IllegalStateException("주입된 주문별 조회 예외");
             }
             return client().verifyOrder(providerOrderId, storedTransactionKey);
+        }
+
+        @Override
+        public PaymentCancelResult cancel(PaymentCancelCommand command) {
+            if (crashBeforeCancel) {
+                throw new InjectedCrash("주입된 취소 전 중단");
+            }
+            return client().cancel(command);
+        }
+    }
+
+    public static final class InjectedCrash extends Error {
+        InjectedCrash(String message) {
+            super(message);
         }
     }
 }

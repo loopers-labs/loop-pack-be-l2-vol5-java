@@ -1,5 +1,7 @@
 package com.loopers.domains.payment.out;
 
+import com.loopers.domains.payment.app.port.PaymentCancelCommand;
+import com.loopers.domains.payment.app.port.PaymentCancelResult;
 import com.loopers.domains.payment.app.port.PaymentCreateCommand;
 import com.loopers.domains.payment.app.port.PaymentCreateResult;
 import com.loopers.domains.payment.app.port.PaymentGateway;
@@ -33,5 +35,11 @@ public class CircuitBreakingPaymentGateway implements PaymentGateway {
         } catch (CallNotPermittedException e) {
             return new PaymentTransactionsLookup.NotCalled();
         }
+    }
+
+    // 취소는 조회 회로를 거치지 않는다. 회로가 열려도 환불은 나가야 하고, 취소 실패가 조회 회로 표본을 흐리면 안 된다.
+    @Override
+    public PaymentCancelResult cancel(PaymentCancelCommand command) {
+        return paymentGateway.cancel(command);
     }
 }

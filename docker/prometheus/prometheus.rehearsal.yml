@@ -1,0 +1,31 @@
+# 리허설 전용 Prometheus 설정(10주차 4b, 계획 P5). ../grafana/prometheus.yml과 같고 리허설 규칙을 더 로드한다.
+# monitoring-compose.rehearsal.yml이 /etc/prometheus/prometheus.yml 자리에 이 파일을 붙인다.
+global:
+  scrape_interval: 5s
+  evaluation_interval: 15s
+
+rule_files:
+  - /etc/prometheus/rules/payment.yml
+  - /etc/prometheus/rules/rehearsal/payment-rehearsal.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['alertmanager:9093']
+
+scrape_configs:
+  - job_name: 'spring-boot-app'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['host.docker.internal:8081']
+
+  - job_name: 'guide'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['guide:8080']
+
+  # 로그 수집 끊김(CommerceLogIngestionSilent, 7단계). Loki가 받은 줄 수를 본다. compose 내부망으로만 수집하고 포트는 새로 열지 않는다.
+  - job_name: 'loki'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['loki:3100']

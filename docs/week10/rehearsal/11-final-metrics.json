@@ -1,0 +1,4 @@
+{"status":"success","data":{"resultType":"vector","result":[{"metric":{"provider":"test-pg"},"value":[1795618252.711,"7"]}]}}
+{"status":"success","data":{"resultType":"vector","result":[{"metric":{"provider":"test-pg"},"value":[1795618252.718,"4"]}]}}
+{"status":"success","data":{"resultType":"vector","result":[{"metric":{"result":"confirmed"},"value":[1795618252.725,"7"]},{"metric":{"result":"expired"},"value":[1795618252.725,"0"]},{"metric":{"result":"failed"},"value":[1795618252.725,"0"]},{"metric":{"result":"not_sent"},"value":[1795618252.725,"0"]}]}}
+{"status":"success","data":{"resultType":"vector","result":[{"metric":{"status":"needs_review"},"value":[1795618252.731,"0"]},{"metric":{"status":"pending"},"value":[1795618252.731,"0"]},{"metric":{"status":"send_started"},"value":[1795618252.731,"0"]},{"metric":{"status":"unknown"},"value":[1795618252.731,"0"]}]}}

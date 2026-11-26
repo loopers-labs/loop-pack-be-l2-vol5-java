@@ -18,10 +18,6 @@ spring:
     name: commerce-api
   profiles:
     active: local
-  task:
-    scheduling:
-      pool:
-        size: 2 # 결제 조회와 Outbox relay 스케줄러가 서로의 긴 회차에 밀리지 않게 한다
   config:
     import:
       - jpa.yml
@@ -62,6 +58,11 @@ commerce:
       enabled: true
       fixed-delay: PT1S
       send-timeout: 35s # relay가 broker 확인을 기다리는 상한
+  # 미확인 결제 gauge(commerce.payment.unresolved). DB를 이 주기로 조회한다. 주기는 [임시] 수치다.
+  payment:
+    unresolved-metric:
+      enabled: true
+      refresh-interval: 15s
 
 # 설계 21절. PG 우선순위와 연결 설정. 타임아웃은 [임시] 수치이며 측정 후 조정한다.
 payment:
@@ -90,8 +91,19 @@ payment:
     scheduler:
       enabled: true
       fixed-delay: PT1S
+  # 만료 뒤 늦은 성공 환불 추적(10주차 5단계). 주기 30s는 [임시]. 회차 상한 20건·조회 간격 1m→1h·이관 2일은 코드 상수다.
+  refund:
+    scheduler:
+      enabled: true
+      fixed-delay: PT30S
   expiry:
     timeout: 2m # 설계 26절 [임시]. 결제 시작 후 이 시간이 지나도 결과 미확정이면 결제 만료·재고 반환
+  # 관리자 일괄 조회 확정. 모두 [임시] 수치다. 조회 회로 창(20·최소 10)과 비교해 PG를 다시 몰아붙이지 않게 한 번 50건,
+  # PG 조회 사이 200ms(초당 5건), 조회 실패·회로 미호출이 연속 3건이면 나머지를 처리하지 않는다.
+  reconcile-batch:
+    max-orders: 50
+    interval: 200ms
+    consecutive-failure-limit: 3
 
 springdoc:
   use-fqn: true
@@ -105,7 +117,7 @@ spring:
       on-profile: local, test
 
 ---
-# 로컬에서 쿠폰 발급을 해 볼 캠페인을 준비한다(29절). ddl-auto create로 테이블이 생긴 뒤 실행되도록 초기화를 미룬다. test 프로필에는 두지 않는다.
+# 로컬에서 쿠폰 발급을 해 볼 캠페인과 주문을 해 볼 사용자 1명(10주차 리허설 B3)을 준비한다(29절). ddl-auto create로 테이블이 생긴 뒤 실행되도록 초기화를 미룬다. test 프로필에는 두지 않는다.
 spring:
   config:
     activate:
@@ -116,14 +128,29 @@ spring:
       data-locations:
         - classpath:sql/local/seed-coupon-campaign.sql
         - classpath:sql/local/seed-coupon-admission-settings.sql
+        - classpath:sql/local/seed-users.sql
   jpa:
     defer-datasource-initialization: true
+# 관리자 HTTP Basic(local·dev 전용). 계정은 환경 변수로만 받고 기본값을 두지 않는다. 비어 있으면 관리자 API는 모두 거절된다.
+commerce:
+  admin:
+    basic-auth:
+      enabled: true
+      username: ${COMMERCE_ADMIN_USERNAME:}
+      password: ${COMMERCE_ADMIN_PASSWORD:}
 
 ---
 spring:
   config:
     activate:
       on-profile: dev
+# 관리자 HTTP Basic(local·dev 전용). 계정은 환경 변수로만 받고 기본값을 두지 않는다. 비어 있으면 관리자 API는 모두 거절된다.
+commerce:
+  admin:
+    basic-auth:
+      enabled: true
+      username: ${COMMERCE_ADMIN_USERNAME:}
+      password: ${COMMERCE_ADMIN_PASSWORD:}
 
 ---
 spring:
@@ -150,7 +177,16 @@ payment:
   lookup:
     scheduler:
       enabled: false
+  refund:
+    scheduler:
+      enabled: false
+  # 일괄 조회 확정의 PG 조회 간격은 운영 속도 제한이라 테스트에서는 기다리지 않는다.
+  reconcile-batch:
+    interval: 0ms
 commerce:
   outbox:
     relay:
+      enabled: false
+  payment:
+    unresolved-metric:
       enabled: false

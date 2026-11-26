@@ -1,0 +1,236 @@
+# 결제 사고 알림 규칙(10주차 4단계 4a, 4b에서 가이드 서버 생존 감시 그룹 추가, 7단계에서 로그 수집 끊김 추가). 모양은 payment_test.yml(promtool test rules)로 고정한다.
+# 원칙: 사람이 지금 손대야 할 것만 울린다. 자동 재조회로 풀리는 일시 증가는 대시보드에서만 본다.
+#   critical = 자동 회복이 안 먹힘 AND 당장 조치할 만큼 쌓임(사람을 깨운다).
+#   warning  = 한 건이라도 사람 확인이 필요하지만 아침에 봐도 되는 것.
+# 지표:
+#   commerce_payment_unresolved{status}            gauge. 인스턴스마다 같은 DB 값을 내므로 max로 본다.
+#   commerce_payment_started_total{provider}       PG 결제를 새로 시작한 수(commit 뒤).
+#   commerce_payment_unknown_entered_total{provider} 결제 기록이 처음 UNKNOWN이 된 수(commit 뒤, 재보고 제외).
+#   commerce_payment_outcome_total{result}         주문이 결제 종결로 처음 바뀐 수. counter는 sum으로 합한다.
+#   http_server_requests_seconds_bucket{uri,le}    Spring HTTP 응답 시간 히스토그램(percentiles-histogram). uri는 경로 템플릿이라 유한하다.
+#   commerce_payment_refund_cases{money_status}    환불 확인 대상 돈의 상태별 gauge(5b, 소문자 6값). 인스턴스마다 같은 DB 값이라 max로 본다.
+#   commerce_payment_refund_person_open            사람 담당 중(담당 종료 전) 건수 gauge. max로 본다.
+#   commerce_payment_refund_requested_oldest_age_seconds 환불 요청함 중 가장 오래된 경과 초 gauge(없으면 0). max로 본다.
+#   commerce_payment_refund_outcome_total{result,actor} 돈의 상태가 환불됨·청구 없음으로 끝난 수(commit 뒤).
+#   commerce_payment_refund_person_assigned_total{reason} 담당이 사람으로 바뀐 수(commit 뒤, 사유 5값).
+#   commerce_payment_refund_check_total{outcome}   환불 추적 확인(회차·지금 처리) 결과별 수(5c, 소문자 9값:
+#     pg_unreachable·pg_error·apply_failed·mismatch·pending·empty·cancel_unknown·cancel_rejected·ok).
+# label에는 orderId·userId를 넣지 않는다. 집계 결과는 alertname·severity만 남는다.
+# 수치는 모두 [임시]다. 운영하며 조정하고, 바꾸면 payment_test.yml도 함께 바꾼다.
+groups:
+  - name: commerce-payment
+    rules:
+      # [임시] X=0.2%, N=20, M=10m.
+      # - 비율 X: 피크 1만 건 중 50건(0.5%)은 울리고, 평소 결과 모름 유입(수 건/만 건)은 넘지 않게 잡았다.
+      # - 건수 N: 새벽 10건 중 2건처럼 비율만 높고 건수가 적으면 아침 확인으로 충분하다.
+      # - 지속 M: 자동 재조회(최대 12회, 수 분)로 풀리는 일시 증가를 거른다.
+      # 증가는 gauge가 아니라 유입 counter로 잰다. 만료(2분)가 미확인을 빼 가면 PG 장애가 길 때
+      # gauge가 높은 채 평평해져 deriv > 0이 거짓이 되기 때문이다(계획 2-8 수정 1).
+      - alert: PaymentUnresolvedPiling
+        expr: |
+          (
+            sum(increase(commerce_payment_unknown_entered_total[30m]))
+              / clamp_min(sum(increase(commerce_payment_started_total[30m])), 1)
+          ) > 0.002
+          and
+          max(commerce_payment_unresolved{status="unknown"}) >= 20
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: 결과 모름 결제가 새로 계속 생기고 20건 이상 쌓였습니다. 자동 재조회로 풀리지 않고 있습니다.
+          runbook_url: https://github.com/loopers-labs/loop-pack-be-l2-vol5-java/blob/L2J4Dot/docs/runbook/week10.md#paymentunresolvedpiling
+          dashboard_url: http://localhost:3000/d/commerce-payment-incident
+
+      # [임시] K=5건/10분, 10분 지속.
+      # 만료는 돈이 움직였을 수 있는 주문을 우리가 포기한 것이다(5단계 환불과 연결). 10분에 5건이면 우연한 한두 건이 아니다.
+      # 미확인 gauge가 평평하거나 줄어도 그 이유가 만료라면 여기서 잡는다.
+      - alert: PaymentAbandonedPiling
+        expr: |
+          sum(increase(commerce_payment_outcome_total{result="expired"}[10m])) >= 5
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: 결과를 확인하지 못하고 만료로 종결한 결제가 10분에 5건 이상 계속됩니다.
+          runbook_url: https://github.com/loopers-labs/loop-pack-be-l2-vol5-java/blob/L2J4Dot/docs/runbook/week10.md#paymentabandonedpiling
+          dashboard_url: http://localhost:3000/d/commerce-payment-incident
+
+      # [임시] 15m. needs_review는 자동으로 풀리지 않는 사람 확인 상태라 한 건도 남기되, 깨우지는 않는다.
+      - alert: PaymentNeedsReview
+        expr: |
+          max(commerce_payment_unresolved{status="needs_review"}) > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: 사람 확인이 필요한 결제가 15분 넘게 남아 있습니다.
+          runbook_url: https://github.com/loopers-labs/loop-pack-be-l2-vol5-java/blob/L2J4Dot/docs/runbook/week10.md#paymentneedsreview
+          dashboard_url: http://localhost:3000/d/commerce-payment-incident
+
+      # [임시] 종결 중 failed 비율 > 30% AND 10분 10건 이상, 5분 지속.
+      # 카드사·PG 판정 이상(거절 급증)이다. 건수 조건은 소량 시간대의 우연한 거절 몇 건을 거른다.
+      - alert: PaymentDeclineSurge
+        expr: |
+          (
+            sum(increase(commerce_payment_outcome_total{result="failed"}[10m]))
+              / clamp_min(sum(increase(commerce_payment_outcome_total[10m])), 1)
+          ) > 0.3
+          and
+          sum(increase(commerce_payment_outcome_total{result="failed"}[10m])) >= 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 결제 거절(failed) 종결이 급증했습니다. 카드사·PG 판정을 확인하세요.
+          runbook_url: https://github.com/loopers-labs/loop-pack-be-l2-vol5-java/blob/L2J4Dot/docs/runbook/week10.md#paymentdeclinesurge
+          dashboard_url: http://localhost:3000/d/commerce-payment-incident
+
+      # [임시] 10분 5건 이상, 5분 지속. not_sent는 PG에 요청이 닿지 않은 것이라 거절과 원인이 달라 규칙을 나눈다.
+      - alert: PaymentPgUnreachable
+        expr: |
+          sum(increase(commerce_payment_outcome_total{result="not_sent"}[10m])) >= 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: PG에 결제 요청을 보내지 못한 종결(not_sent)이 10분에 5건 이상입니다. PG 연결을 확인하세요.
+          runbook_url: https://github.com/loopers-labs/loop-pack-be-l2-vol5-java/blob/L2J4Dot/docs/runbook/week10.md#paymentpgunreachable
+          dashboard_url: http://localhost:3000/d/commerce-payment-incident
+
+      # 결제 확정 API 응답 시간 꼬리(p99). 대상: 확정, 본인 결과 확인, 관리자 결과 확인(한 주문씩 PG를 부르는 경로).
+      # 관리자 일괄 확정(reconcile-batch)은 최대 50건을 한 요청에서 처리해 원래 길어서 뺀다. 상태 코드는 가리지 않는다(실패 응답도 사용자가 기다린 시간).
+      # [임시] 1s: 정상 확정은 수십 ms다(증거 수집 실행에서 0.045s 버킷 이하). PG read timeout이 3s라 1s를 넘는 꼬리는 PG 지연·응답 유실을 의심할 수준이다.
+      #   p99 > 1s는 "1%를 넘는 요청이 1s 넘게 걸림"이다. 딱 1%면 p99가 빠른 버킷 경계에 걸려 울리지 않는다(payment_test.yml L1b).
+      # [임시] N=100건/5분: p99는 상위 1%라 100건 미만이면 상위 1%가 한 건도 안 돼 p99가 사실상 최대값(느린 한 건)이 된다.
+      #   새벽 저트래픽의 우연한 한 건으로 울리지 않게 건수로 거른다.
+      # [임시] 10m: PG 순간 지연(수 분)은 거르고, 계속되는 꼬리만 아침 확인(warning)으로 남긴다.
+      # 평균·p50이 오르는데 p99가 1s 아래인 전체 느려짐은 이 규칙 대상이 아니다(대시보드 p50 선으로 본다).
+      - alert: PaymentApiLatencyP99High
+        expr: |
+          histogram_quantile(0.99, sum by (le) (rate(http_server_requests_seconds_bucket{uri=~"/api/v1/orders/\\{id\\}/confirm|/api/v1/orders/\\{id\\}/payment/reconcile|/api-admin/v1/orders/\\{id\\}/payment/reconcile"}[5m])))
+            > 1
+          and
+          sum(increase(http_server_requests_seconds_count{uri=~"/api/v1/orders/\\{id\\}/confirm|/api/v1/orders/\\{id\\}/payment/reconcile|/api-admin/v1/orders/\\{id\\}/payment/reconcile"}[5m]))
+            >= 100
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: 결제 확정 API 응답 시간 p99가 1초를 넘은 채 10분 넘게 계속됩니다. PG 지연·응답 유실을 확인하세요.
+          runbook_url: https://github.com/loopers-labs/loop-pack-be-l2-vol5-java/blob/L2J4Dot/docs/runbook/week10.md#paymentapilatencyp99high
+          dashboard_url: http://localhost:3000/d/commerce-payment-incident
+
+      # 환불 확인 대상(10주차 5단계, 5b 두 축 모델). 돈의 상태(money_status)와 담당(자동/사람)을 나눠 본다.
+      # 만료 뒤 늦은 성공은 자동 추적·환불하고, 자동 추적 2일[임시] 안에 결론이 없거나 사실이 엇갈리면 담당만 사람으로 바꾼다.
+      # 사람 담당이어도 시스템은 돈의 상태가 끝날 때까지 조회만 계속하고(취소는 보내지 않음), PG 사실로 끝나면 담당을 자동 종료한다.
+      # 고객 환불 약속은 4일[임시]이라 사람 담당 건은 남은 1일 이상 안에 처리하면 된다. 한 건으로는 깨우지 않는다(warning).
+      # [임시] 15m. 담당 이관 직후 순간 값은 거르고 아침 확인으로 남긴다. 사람이 기록하거나 담당이 자동 종료되면 gauge가 내려가 풀린다.
+      - alert: PaymentRefundNeedsPerson
+        expr: |
+          max(commerce_payment_refund_person_open) > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: 사람 담당 환불 대상이 15분 넘게 남아 있습니다. 환불 약속 기한 안에 확인하고 PG로 확인되지 않는 결론만 기록하세요.
+          runbook_url: https://github.com/loopers-labs/loop-pack-be-l2-vol5-java/blob/L2J4Dot/docs/runbook/week10.md#paymentrefundneedsperson
+          dashboard_url: http://localhost:3000/d/commerce-payment-incident
+
+      # [임시] 600s, 5m. 환불 요청 뒤 결과 조회는 1m 상한(jitter)부터라 정상이면 몇 분 안에 환불됨·결과 모름으로 넘어간다.
+      # 10분 넘게 요청함에 머문 건은 취소 응답·조회가 막힌 것이다. 경과 gauge는 요청함 중 가장 오래된 건만 보므로 건수와 무관하다.
+      - alert: PaymentRefundRequestStuck
+        expr: |
+          max(commerce_payment_refund_requested_oldest_age_seconds) > 600
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 환불을 요청하고 10분 넘게 결과를 받지 못한 대상이 있습니다. PG 취소 응답·조회를 확인하세요.
+          runbook_url: https://github.com/loopers-labs/loop-pack-be-l2-vol5-java/blob/L2J4Dot/docs/runbook/week10.md#paymentrefundrequeststuck
+          dashboard_url: http://localhost:3000/d/commerce-payment-incident
+
+      # [임시] 30m. 환불 결과 모름은 다시 보내지 않고 다음 회차 조회로 푼다. 조회 간격(1m부터 늘어남) 몇 번이면 풀릴 것을
+      # 30분 넘게 못 풀면 PG 취소 조회가 막힌 것이라 아침에 확인한다. 담당과 무관하게 돈의 상태로 센다.
+      - alert: PaymentRefundUnknown
+        expr: |
+          max(commerce_payment_refund_cases{money_status="refund_unknown"}) > 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: 환불 요청 결과를 모르는 대상이 30분 넘게 남아 있습니다. 다음 조회로 풀리지 않고 있습니다.
+          runbook_url: https://github.com/loopers-labs/loop-pack-be-l2-vol5-java/blob/L2J4Dot/docs/runbook/week10.md#paymentrefundunknown
+          dashboard_url: http://localhost:3000/d/commerce-payment-incident
+
+      # [임시] 10건, 증가 창 30m, 10m 지속. 대형 장애 뒤 2일이 지나 이관이 몰리면 사람 몫이 하루 안에 감당할 수준을 넘을 수 있다.
+      # 건수는 사람 담당 중 gauge(사람이 닫으면 내려감), 증가는 담당 이관 counter(사유 합계)로 잰다.
+      # 이미 쌓인 건만 있고 새 이관이 멈췄으면 깨우지 않고 NeedsPerson(warning)으로 남긴다.
+      - alert: PaymentRefundPiling
+        expr: |
+          max(commerce_payment_refund_person_open) >= 10
+          and
+          sum(increase(commerce_payment_refund_person_assigned_total[30m])) > 0
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: 사람 담당으로 넘어가는 환불 대상이 계속 늘어 10건 이상 쌓였습니다. 자동 환불이 결론을 내지 못하고 있습니다.
+          runbook_url: https://github.com/loopers-labs/loop-pack-be-l2-vol5-java/blob/L2J4Dot/docs/runbook/week10.md#paymentrefundpiling
+          dashboard_url: http://localhost:3000/d/commerce-payment-incident
+
+      # [임시] 증가 창 15m, 5m 지속. apply_failed는 PG 조회 결과는 받았는데 우리 반영이 예외로 실패한 것이다(DB·버그, 5c).
+      # PG 장애(pg_unreachable·pg_error)는 PG 회복으로 풀리지만 이것은 우리가 고치기 전까지 같은 건에서 되풀이된다.
+      # 그래서 한 건이라도 새로 늘면 사람에게 알린다. 돈의 상태는 바뀌지 않아 당장 손해는 없으므로 깨우지 않는다(warning).
+      # 5m은 같은 회차의 연쇄 실패를 한 번에 묶어 본다. 이미 쌓인 값이 서 있기만 하면 울리지 않는다(증가로 잰다).
+      - alert: PaymentRefundApplyFailed
+        expr: |
+          sum(increase(commerce_payment_refund_check_total{outcome="apply_failed"}[15m])) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 환불 추적에서 PG 조회 결과를 받았는데 우리 반영이 실패했습니다. PG가 아니라 우리 쪽(DB·버그) 문제입니다.
+          runbook_url: https://github.com/loopers-labs/loop-pack-be-l2-vol5-java/blob/L2J4Dot/docs/runbook/week10.md#paymentrefundapplyfailed
+          dashboard_url: http://localhost:3000/d/commerce-payment-incident
+
+  # 결제 알림을 받쳐 주는 운영 도구의 생존 감시(10주차 4b).
+  - name: commerce-ops
+    rules:
+      # [임시] 5m. 가이드 서버가 죽어도 critical 원본은 Alertmanager가 Slack 자리로 따로 보낸다(continue).
+      # 그래서 깨우지 않고 아침 확인(warning)으로 둔다. 짧은 재시작은 거른다.
+      - alert: GuideServerDown
+        expr: |
+          up{job="guide"} == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: critical 가이드 서버가 5분 넘게 응답하지 않습니다. critical 알림은 근거 없이 원본만 갑니다.
+          runbook_url: https://github.com/loopers-labs/loop-pack-be-l2-vol5-java/blob/L2J4Dot/docs/runbook/week10.md#guideserverdown
+          dashboard_url: http://localhost:3000/d/commerce-payment-incident
+
+      # 로그 수집 끊김(7단계). 사고 진단의 H2 기각("반영 ERROR 0줄")은 로그 부재에 기댄다. 수집이 끊겨도 0줄이라
+      # 수집이 살아 있는지를 따로 본다. 판단에 쓰는 사실은 DB에 있고(APPLY_FAILED anomaly) 로그는 보조다.
+      # 지표: logback_events_total(앱이 낸 로그 이벤트 수, Micrometer 기본), loki_distributor_lines_received_total(Loki가 받은 줄 수,
+      #   Loki /metrics, job="loki"). Loki에는 Alloy가 보낸 앱 로그만 들어온다.
+      # 조건: 앱이 떠 있고(up) 10분 창에 앱 로그 이벤트가 늘었는데 Loki가 받은 줄은 0이다(Loki 지표가 사라져도 0으로 본다).
+      #   앱 로그가 없는 조용한 시간·앱이 내려간 것은 수집 끊김이 아니라 울리지 않는다.
+      # [임시] 창 10m: 정상이면 앱 로그는 수 초 안에 Loki에 들어온다(Alloy sync 5s).
+      # [임시] for 10m: Alloy 재전송으로 자동 복구될 시간이다. loki.write는 실패한 묶음을 backoff(500ms에서 두 배씩, 최대 5m)로
+      #   최대 10회 다시 보내고(Alloy 기본값, 합계 약 8.5분), 읽은 위치를 볼륨에 두어 재기동 뒤 이어 읽는다. 그 안에 풀리면 사람이 할 일이 없다.
+      # warning: 결제·환불 자체는 영향이 없고 진단 근거만 약해진다. 깨우지 않는다(사람이 할 일이 있을 때만).
+      - alert: CommerceLogIngestionSilent
+        expr: |
+          max(up{job="spring-boot-app"}) == 1
+          and on()
+          sum(increase(logback_events_total{job="spring-boot-app"}[10m])) > 0
+          and on()
+          (sum(increase(loki_distributor_lines_received_total{job="loki"}[10m])) or on() vector(0)) == 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: 앱은 로그를 내는데 10분 넘게 Loki에 로그가 한 줄도 들어오지 않습니다. 로그 기반 진단(H2 반영 ERROR 0줄 등)을 믿을 수 없습니다.
+          runbook_url: https://github.com/loopers-labs/loop-pack-be-l2-vol5-java/blob/L2J4Dot/docs/runbook/week10.md#commercelogingestionsilent
+          dashboard_url: http://localhost:3000/d/commerce-payment-incident

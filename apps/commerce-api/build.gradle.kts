@@ -1,3 +1,5 @@
+import org.springframework.boot.gradle.tasks.run.BootRun
+
 plugins {
     checkstyle
 }
@@ -97,4 +99,19 @@ val rankingTablesSql = tasks.register<Sync>("rankingTablesSql") {
 
 dependencies {
     testRuntimeOnly(files(layout.buildDirectory.dir("ranking-tables-sql")).builtBy(rankingTablesSql))
+}
+
+// 10주차 4단계 사람 흐름 리허설: test 소스의 TestPgServer를 앱 local 설정 주소(127.0.0.1:8082)에 띄우고, 제어 endpoint(8083)로
+// 응답 유실 등을 지정한다. test 런타임 classpath로만 실행하며 build·check·bootJar 어느 태스크도 이 태스크에 의존하지 않는다.
+tasks.register<JavaExec>("runTestPg") {
+    description = "리허설용 test-pg(결제 8082, 제어 8083, 127.0.0.1)를 띄운다. 운영 jar에는 들어가지 않는다."
+    group = "rehearsal"
+    classpath = sourceSets.test.get().runtimeClasspath
+    mainClass.set("com.loopers.domains.payment.out.TestPgServerMain")
+}
+
+// local 프로필 JSON 로그 파일의 기본 경로(logs/commerce-api.json)는 작업 디렉터리 기준이다. 모니터링 Alloy가 저장소 루트 logs/를
+// 읽으므로 bootRun도 저장소 루트에서 실행한다(10주차 리허설 B1). 앱 설정의 다른 경로는 classpath라 영향이 없다.
+tasks.named<BootRun>("bootRun") {
+    workingDir = rootProject.projectDir
 }

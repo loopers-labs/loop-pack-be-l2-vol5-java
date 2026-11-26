@@ -17,11 +17,9 @@ public class PaymentAnomalyPersistenceAdapter implements PaymentAnomalyRepositor
 
     @Override
     public void record(long orderId, Kind kind, String summary, Instant now) {
-        // 호출자가 주문 행을 잠근 트랜잭션에 참여한다. 같은 주문의 이상 갱신도 그 잠금으로 직렬화된다.
-        PaymentAnomalyJpaEntity anomaly = paymentAnomalyJpaRepository.findByOrderIdAndKind(orderId, kind.name())
-            .orElseGet(() -> new PaymentAnomalyJpaEntity(orderId, kind.name(), now));
-        anomaly.observe(summary, now);
-        paymentAnomalyJpaRepository.save(anomaly);
+        // 호출자가 주문 행 잠금을 쥔다고 가정하지 않는다. APPLY_FAILED는 반영 트랜잭션이 rollback된 뒤 잠금 없이 기록되므로
+        // 같은 주문의 기록이 겹칠 수 있다. 고유 키 위의 upsert 한 문장으로 기록해 잠금 없이도 원자적이다(w10s7-P3).
+        paymentAnomalyJpaRepository.upsert(orderId, kind.name(), summary, now);
     }
 
     @Override

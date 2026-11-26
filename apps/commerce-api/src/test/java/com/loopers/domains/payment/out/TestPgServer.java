@@ -16,16 +16,22 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 
 public final class TestPgServer implements AutoCloseable {
     static final String PAYMENTS_PATH = "/api/v1/payments";
     static final String REJECT_CODE = "TEST_PG_REJECTED_BEFORE_CREATE";
+    static final String CANCEL_REJECT_CODE = "TEST_PG_CANCEL_REJECTED";
+    private static final String CANCEL_SUFFIX = "/cancel";
+    // 어댑터가 응답 본문을 결과·로그에 옮기지 않는지 확인하는 표식이다.
+    private static final String SECRET_BODY_MARKER = "PG-SECRET-BODY";
 
     public enum CreateBehavior {
         ACCEPT_PENDING,
@@ -34,6 +40,7 @@ public final class TestPgServer implements AutoCloseable {
         ACCEPT_WITH_200,
         ACCEPT_BLANK_TRANSACTION_KEY,
         ACCEPT_UNKNOWN_STATUS,
+        ACCEPT_CANCELED_STATUS,
         ACCEPT_AMOUNT_MISMATCH,
         ACCEPT_ORDER_ID_MISMATCH,
         ACCEPT_AMOUNT_AS_STRING,
@@ -50,6 +57,29 @@ public final class TestPgServer implements AutoCloseable {
         ERROR_500_ECHO_REQUEST,
         DELAY_AFTER_CREATE,
         DROP_CONNECTION_AFTER_CREATE
+    }
+
+    private enum OrderBehavior {
+        LOSE_RESPONSE_AFTER_SUCCESS
+    }
+
+    // 취소 API는 과정 PG 계약에 없는 가정이다(w10s5-3). NORMAL이 그 가정 계약이고 나머지는 계약을 벗어난 장면이다.
+    public enum CancelBehavior {
+        NORMAL,
+        OK_WITHOUT_CANCEL,
+        OK_AMOUNT_MISMATCH,
+        OK_ORDER_ID_MISMATCH,
+        OK_KEY_MISMATCH,
+        OK_BROKEN_JSON,
+        ACCEPT_202,
+        REJECT_OTHER_CODE,
+        REJECT_WITHOUT_BODY,
+        REJECT_AFTER_CANCEL,
+        ERROR_500_AFTER_CANCEL,
+        ERROR_500_WITHOUT_CANCEL,
+        ERROR_500_WITH_SECRET_BODY,
+        DELAY_AFTER_CANCEL,
+        DROP_CONNECTION_AFTER_CANCEL
     }
 
     public enum LookupBehavior {
@@ -81,13 +111,23 @@ public final class TestPgServer implements AutoCloseable {
     private final List<RecordedRequest> requests = new CopyOnWriteArrayList<>();
     private final Map<String, StoredTransaction> transactions = new ConcurrentHashMap<>();
     private final AtomicInteger keySequence = new AtomicInteger();
+    private final Map<String, OrderBehavior> orderBehaviors = new ConcurrentHashMap<>();
+    private final Map<String, AtomicInteger> createCallsByOrder = new ConcurrentHashMap<>();
+    private final Map<String, AtomicInteger> cancelCallsByOrder = new ConcurrentHashMap<>();
+    private final Set<String> lostCancelOrderIds = ConcurrentHashMap.newKeySet();
+    private final Set<String> lookupErrorOrderIds = ConcurrentHashMap.newKeySet();
     private volatile CreateBehavior createBehavior = CreateBehavior.ACCEPT_PENDING;
     private volatile LookupBehavior lookupBehavior = LookupBehavior.NORMAL;
+    private volatile CancelBehavior cancelBehavior = CancelBehavior.NORMAL;
 
     public TestPgServer(String expectedUserId, Duration delay) throws IOException {
+        this(expectedUserId, delay, 0);
+    }
+
+    public TestPgServer(String expectedUserId, Duration delay, int port) throws IOException {
         this.expectedUserId = expectedUserId;
         this.delay = delay;
-        this.server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
+        this.server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), port), 0);
         this.server.createContext(PAYMENTS_PATH, this::handle);
         this.server.setExecutor(executor);
         this.server.start();
@@ -101,8 +141,20 @@ public final class TestPgServer implements AutoCloseable {
         this.createBehavior = behavior;
     }
 
+    public CreateBehavior createBehavior() {
+        return createBehavior;
+    }
+
     public void lookupBehavior(LookupBehavior behavior) {
         this.lookupBehavior = behavior;
+    }
+
+    public LookupBehavior lookupBehavior() {
+        return lookupBehavior;
+    }
+
+    public void cancelBehavior(CancelBehavior behavior) {
+        this.cancelBehavior = behavior;
     }
 
     public String addTransaction(String orderId, long amount, String status) {
@@ -131,11 +183,75 @@ public final class TestPgServer implements AutoCloseable {
     }
 
     public long createCalls() {
-        return requests.stream().filter(request -> request.method().equals("POST")).count();
+        return requests.stream()
+            .filter(request -> request.method().equals("POST") && request.rawPath().equals(PAYMENTS_PATH))
+            .count();
     }
 
     public long lookupCalls() {
         return requests.stream().filter(request -> request.method().equals("GET")).count();
+    }
+
+    public void loseResponseAfterSuccess(String providerOrderId) {
+        orderBehaviors.put(providerOrderId, OrderBehavior.LOSE_RESPONSE_AFTER_SUCCESS);
+    }
+
+    // 주문 번호 조회만 그 주문에 대해 500으로 답한다. 한 요청 안에서 주문마다 조회 결과가 달라야 하는 장면에 쓴다.
+    public void lookupErrorFor(String providerOrderId) {
+        lookupErrorOrderIds.add(providerOrderId);
+    }
+
+    public void clearOrderBehavior(String providerOrderId) {
+        orderBehaviors.remove(providerOrderId);
+    }
+
+    public Set<String> lostResponseOrderIds() {
+        return orderBehaviors.entrySet().stream()
+            .filter(entry -> entry.getValue() == OrderBehavior.LOSE_RESPONSE_AFTER_SUCCESS)
+            .map(Map.Entry::getKey)
+            .collect(Collectors.toUnmodifiableSet());
+    }
+
+    public int createCalls(String providerOrderId) {
+        AtomicInteger calls = createCallsByOrder.get(providerOrderId);
+        if (calls == null) {
+            return 0;
+        }
+        return calls.get();
+    }
+
+    public Set<String> duplicateCreateOrderIds() {
+        return createCallsByOrder.entrySet().stream()
+            .filter(entry -> entry.getValue().get() >= 2)
+            .map(Map.Entry::getKey)
+            .collect(Collectors.toUnmodifiableSet());
+    }
+
+    public long cancelCalls() {
+        return requests.stream()
+            .filter(request -> request.method().equals("POST") && isCancelPath(request.rawPath()))
+            .count();
+    }
+
+    public int cancelCalls(String providerOrderId) {
+        AtomicInteger calls = cancelCallsByOrder.get(providerOrderId);
+        if (calls == null) {
+            return 0;
+        }
+        return calls.get();
+    }
+
+    // create 응답 유실과 따로 둔다. 한 주문에 두 지정이 함께 있을 수 있다.
+    public void loseCancelResponse(String providerOrderId) {
+        lostCancelOrderIds.add(providerOrderId);
+    }
+
+    public void clearLostCancel(String providerOrderId) {
+        lostCancelOrderIds.remove(providerOrderId);
+    }
+
+    public Set<String> lostCancelOrderIds() {
+        return Set.copyOf(lostCancelOrderIds);
     }
 
     @Override
@@ -157,6 +273,8 @@ public final class TestPgServer implements AutoCloseable {
             }
             if (exchange.getRequestMethod().equals("POST") && uri.getRawPath().equals(PAYMENTS_PATH)) {
                 handleCreate(exchange, objectMapper.readTree(body));
+            } else if (exchange.getRequestMethod().equals("POST") && isCancelPath(uri.getRawPath())) {
+                handleCancel(exchange, uri.getRawPath(), body);
             } else if (exchange.getRequestMethod().equals("GET")) {
                 handleLookup(exchange, uri);
             } else {
@@ -170,6 +288,15 @@ public final class TestPgServer implements AutoCloseable {
     private void handleCreate(HttpExchange exchange, JsonNode request) throws IOException, InterruptedException {
         String orderId = request.path("orderId").asText();
         long amount = request.path("amount").asLong();
+        // 응답 종류와 상관없이 요청을 받은 순간 센다. 오류를 돌려준 중복 create도 감지해야 한다.
+        createCallsByOrder.computeIfAbsent(orderId, key -> new AtomicInteger()).incrementAndGet();
+        if (orderBehaviors.get(orderId) == OrderBehavior.LOSE_RESPONSE_AFTER_SUCCESS) {
+            // 거래를 SUCCESS로 확정한 뒤 read timeout보다 늦게 응답해, 클라이언트는 결과를 모르게 한다.
+            StoredTransaction stored = store(orderId, amount, "SUCCESS");
+            Thread.sleep(delay.toMillis());
+            send(exchange, 202, transactionJson(stored));
+            return;
+        }
         switch (createBehavior) {
             case ACCEPT_PENDING -> send(exchange, 202, transactionJson(store(orderId, amount, "PENDING")));
             case ACCEPT_SUCCESS -> send(exchange, 202, transactionJson(store(orderId, amount, "SUCCESS")));
@@ -177,7 +304,9 @@ public final class TestPgServer implements AutoCloseable {
             case ACCEPT_WITH_200 -> send(exchange, 200, transactionJson(store(orderId, amount, "PENDING")));
             case ACCEPT_BLANK_TRANSACTION_KEY -> send(exchange, 202,
                 transactionJson(new StoredTransaction(" ", orderId, amount, "PENDING")));
-            case ACCEPT_UNKNOWN_STATUS -> send(exchange, 202, transactionJson(store(orderId, amount, "CANCELED")));
+            // 포트가 모르는 상태 문자열이다. CANCELED는 취소 조회 상태로 포트가 안다.
+            case ACCEPT_UNKNOWN_STATUS -> send(exchange, 202, transactionJson(store(orderId, amount, "REFUNDING")));
+            case ACCEPT_CANCELED_STATUS -> send(exchange, 202, transactionJson(store(orderId, amount, "CANCELED")));
             case ACCEPT_AMOUNT_MISMATCH -> {
                 StoredTransaction stored = store(orderId, amount, "PENDING");
                 send(exchange, 202, transactionJson(
@@ -226,6 +355,106 @@ public final class TestPgServer implements AutoCloseable {
         }
     }
 
+    // 거래가 없으면 장면과 상관없이 404다. 장면은 취소할 거래가 있을 때의 응답만 바꾼다.
+    private void handleCancel(HttpExchange exchange, String rawPath, String body) throws IOException, InterruptedException {
+        String key = URLDecoder.decode(
+            rawPath.substring(PAYMENTS_PATH.length() + 1, rawPath.length() - CANCEL_SUFFIX.length()), StandardCharsets.UTF_8);
+        JsonNode request = body.isBlank() ? objectMapper.createObjectNode() : objectMapper.readTree(body);
+        String orderId = request.path("orderId").asText();
+        long amount = request.path("amount").asLong();
+        // 응답 종류와 상관없이 요청을 받은 순간 센다. 중복 취소를 감지해야 한다.
+        cancelCallsByOrder.computeIfAbsent(orderId, ignored -> new AtomicInteger()).incrementAndGet();
+        StoredTransaction stored = transactions.get(key);
+        if (stored == null) {
+            send(exchange, 404, "{\"code\":\"NOT_FOUND\"}");
+            return;
+        }
+        switch (cancelBehavior) {
+            case NORMAL -> cancelByContract(exchange, stored, orderId, amount);
+            case OK_WITHOUT_CANCEL -> send(exchange, 200, transactionJson(stored));
+            case OK_AMOUNT_MISMATCH -> {
+                StoredTransaction canceled = markCanceled(stored);
+                send(exchange, 200, transactionJson(new StoredTransaction(
+                    canceled.transactionKey(), canceled.orderId(), canceled.amount() + 1, canceled.status())));
+            }
+            case OK_ORDER_ID_MISMATCH -> {
+                StoredTransaction canceled = markCanceled(stored);
+                send(exchange, 200, transactionJson(new StoredTransaction(
+                    canceled.transactionKey(), canceled.orderId() + "-X", canceled.amount(), canceled.status())));
+            }
+            case OK_KEY_MISMATCH -> {
+                StoredTransaction canceled = markCanceled(stored);
+                send(exchange, 200, transactionJson(new StoredTransaction(
+                    canceled.transactionKey() + "-X", canceled.orderId(), canceled.amount(), canceled.status())));
+            }
+            case OK_BROKEN_JSON -> {
+                markCanceled(stored);
+                send(exchange, 200, "{\"transactionKey\":\"TR-");
+            }
+            case ACCEPT_202 -> send(exchange, 202, transactionJson(markCanceled(stored)));
+            case REJECT_OTHER_CODE -> send(exchange, 422, cancelRejectJson(key, orderId, amount, "CANCEL_NOT_ALLOWED", false));
+            case REJECT_WITHOUT_BODY -> send(exchange, 422, null);
+            case REJECT_AFTER_CANCEL -> {
+                markCanceled(stored);
+                send(exchange, 422, cancelRejectJson(key, orderId, amount, CANCEL_REJECT_CODE, true));
+            }
+            case ERROR_500_AFTER_CANCEL -> {
+                markCanceled(stored);
+                send(exchange, 500, "{\"code\":\"INTERNAL_ERROR\"}");
+            }
+            case ERROR_500_WITHOUT_CANCEL -> send(exchange, 500, null);
+            case ERROR_500_WITH_SECRET_BODY ->
+                send(exchange, 500, "{\"code\":\"INTERNAL_ERROR\",\"detail\":\"" + SECRET_BODY_MARKER + "\"}");
+            case DELAY_AFTER_CANCEL -> {
+                StoredTransaction canceled = markCanceled(stored);
+                Thread.sleep(delay.toMillis());
+                send(exchange, 200, transactionJson(canceled));
+            }
+            // 취소한 뒤 응답 헤더 없이 연결을 닫는다(HttpExchange.close가 연결을 끊는다).
+            case DROP_CONNECTION_AFTER_CANCEL -> markCanceled(stored);
+            default -> throw new IllegalStateException("지원하지 않는 동작: " + cancelBehavior);
+        }
+    }
+
+    // 가정 계약: 승인(SUCCESS) 거래만 취소한다. 이미 취소면 같은 200, 주문·금액 불일치나 미승인 거래는 효과 없는 422다.
+    private void cancelByContract(HttpExchange exchange, StoredTransaction stored, String orderId, long amount)
+        throws IOException, InterruptedException {
+        boolean sameRequest = stored.orderId().equals(orderId) && stored.amount() == amount;
+        boolean cancelable = stored.status().equals("SUCCESS") || stored.status().equals("CANCELED");
+        if (!sameRequest || !cancelable) {
+            send(exchange, 422, cancelRejectJson(stored.transactionKey(), orderId, amount, CANCEL_REJECT_CODE, false));
+            return;
+        }
+        StoredTransaction canceled = markCanceled(stored);
+        if (lostCancelOrderIds.contains(orderId)) {
+            // 취소를 확정한 뒤 read timeout보다 늦게 응답해, 클라이언트는 결과를 모르게 한다.
+            Thread.sleep(delay.toMillis());
+        }
+        send(exchange, 200, transactionJson(canceled));
+    }
+
+    private StoredTransaction markCanceled(StoredTransaction stored) {
+        StoredTransaction canceled = new StoredTransaction(
+            stored.transactionKey(), stored.orderId(), stored.amount(), "CANCELED");
+        transactions.put(stored.transactionKey(), canceled);
+        return canceled;
+    }
+
+    private String cancelRejectJson(String key, String orderId, long amount, String code, boolean canceled) {
+        ObjectNode node = objectMapper.createObjectNode();
+        node.put("code", code);
+        node.put("transactionKey", key);
+        node.put("orderId", orderId);
+        node.put("amount", amount);
+        node.put("canceled", canceled);
+        return node.toString();
+    }
+
+    private static boolean isCancelPath(String rawPath) {
+        return rawPath.startsWith(PAYMENTS_PATH + "/") && rawPath.endsWith(CANCEL_SUFFIX)
+            && rawPath.length() > PAYMENTS_PATH.length() + 1 + CANCEL_SUFFIX.length();
+    }
+
     private void handleLookup(HttpExchange exchange, URI uri) throws IOException, InterruptedException {
         switch (lookupBehavior) {
             case ERROR_500 -> {
@@ -252,6 +481,10 @@ public final class TestPgServer implements AutoCloseable {
             return;
         }
         String orderId = queryParameter(uri.getRawQuery(), "orderId");
+        if (lookupErrorOrderIds.contains(orderId)) {
+            send(exchange, 500, null);
+            return;
+        }
         ArrayNode array = objectMapper.createArrayNode();
         transactions.values().stream()
             .filter(stored -> stored.orderId().equals(orderId))

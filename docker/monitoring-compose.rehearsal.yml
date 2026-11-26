@@ -1,0 +1,7 @@
+# 리허설 오버레이(10주차 4b, 계획 P5). 운영 설정 파일은 바꾸지 않고 Prometheus 설정만 리허설용으로 바꿔 붙인다.
+# 사용: docker compose -p w10r-mon -f docker/monitoring-compose.yml -f docker/monitoring-compose.rehearsal.yml up -d
+services:
+  prometheus:
+    volumes:
+      - ./prometheus/prometheus.rehearsal.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/rules:/etc/prometheus/rules:ro

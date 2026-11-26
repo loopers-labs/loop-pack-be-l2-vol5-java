@@ -1,11 +1,16 @@
 package com.loopers.domains.order.app;
 
+import com.loopers.common.error.AlreadyLogged;
 import com.loopers.common.error.InvalidValueException;
 import com.loopers.common.error.RuleViolationException;
 import com.loopers.domains.order.app.port.OrderConfirmedOutbox;
 import com.loopers.domains.order.app.port.OrderConfirmedPayload;
 import com.loopers.domains.order.app.port.OrderConfirmedPublisher;
 import com.loopers.domains.order.app.port.OrderRepository;
+import com.loopers.domains.order.app.port.PaymentApplyFailureCounter;
+import com.loopers.domains.order.app.port.PaymentOutcomeRecorder;
+import com.loopers.domains.order.app.port.PaymentOutcomeRecorder.Outcome;
+import com.loopers.domains.order.app.port.PaymentProgressRecorder;
 import com.loopers.domains.order.domain.Order;
 import com.loopers.domains.order.domain.OrderItem;
 import com.loopers.domains.order.domain.Quantity;
@@ -21,13 +26,17 @@ import com.loopers.domains.payment.app.port.PaymentGateway;
 import com.loopers.domains.payment.app.port.PaymentLookupScheduleRepository.Schedule;
 import com.loopers.domains.payment.app.port.PaymentLookupScheduleRepository;
 import com.loopers.domains.payment.app.port.PaymentRecordRepository;
+import com.loopers.domains.payment.app.port.PaymentRefundCaseRepository;
 import com.loopers.domains.payment.app.port.PaymentTransactionsLookup;
+import com.loopers.domains.payment.app.port.RefundOutcomeRecorder;
 import com.loopers.domains.payment.domain.PaymentRecord;
+import com.loopers.domains.payment.domain.RefundCase;
 import com.loopers.domains.product.app.ProductNotFoundException;
 import com.loopers.domains.product.app.port.ProductRepository;
 import com.loopers.domains.product.domain.Product;
 import com.loopers.domains.product.domain.ProductId;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
@@ -39,6 +48,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 // confirm은 PG 호출을 트랜잭션·잠금 밖에 두기 위해 경계를 둘로 나눈다(설계 23절). 같은 객체의 @Transactional 메서드
@@ -58,13 +69,20 @@ public class OrderApplicationService {
     private final PaymentExpiryPolicy paymentExpiryPolicy;
     private final OrderConfirmedPublisher orderConfirmedPublisher;
     private final OrderConfirmedOutbox orderConfirmedOutbox;
+    private final PaymentOutcomeRecorder paymentOutcomeRecorder;
+    private final PaymentProgressRecorder paymentProgressRecorder;
+    private final PaymentRefundCaseRepository paymentRefundCaseRepository;
+    private final RefundOutcomeRecorder refundOutcomeRecorder;
+    private final PaymentApplyFailureRecorder paymentApplyFailureRecorder;
 
     public OrderApplicationService(OrderRepository orderRepository, ProductRepository productRepository,
         PaymentRecordRepository paymentRecordRepository, PaymentGatewayRegistry paymentGatewayRegistry,
         TransactionTemplate transactionTemplate, PaymentAnomalyRepository paymentAnomalyRepository, Clock clock,
         PaymentLookupScheduleRepository paymentLookupScheduleRepository, PaymentLookupPolicy paymentLookupPolicy,
         PaymentExpiryPolicy paymentExpiryPolicy, OrderConfirmedPublisher orderConfirmedPublisher,
-        OrderConfirmedOutbox orderConfirmedOutbox) {
+        OrderConfirmedOutbox orderConfirmedOutbox, PaymentOutcomeRecorder paymentOutcomeRecorder,
+        PaymentProgressRecorder paymentProgressRecorder, PaymentRefundCaseRepository paymentRefundCaseRepository,
+        RefundOutcomeRecorder refundOutcomeRecorder, PaymentApplyFailureRecorder paymentApplyFailureRecorder) {
         this.orderRepository = orderRepository;
         this.productRepository = productRepository;
         this.paymentRecordRepository = paymentRecordRepository;
@@ -77,12 +95,26 @@ public class OrderApplicationService {
         this.paymentExpiryPolicy = paymentExpiryPolicy;
         this.orderConfirmedPublisher = orderConfirmedPublisher;
         this.orderConfirmedOutbox = orderConfirmedOutbox;
+        this.paymentOutcomeRecorder = paymentOutcomeRecorder;
+        this.paymentProgressRecorder = paymentProgressRecorder;
+        this.paymentRefundCaseRepository = paymentRefundCaseRepository;
+        this.refundOutcomeRecorder = refundOutcomeRecorder;
+        this.paymentApplyFailureRecorder = paymentApplyFailureRecorder;
     }
 
     public record ItemRequest(long productId, int quantity) { }
 
     private enum PaymentSource {
-        CREATE, CALLBACK, MANUAL, AUTOMATIC;
+        CREATE(PaymentApplyFailureCounter.Source.CREATE),
+        CALLBACK(PaymentApplyFailureCounter.Source.CALLBACK),
+        MANUAL(PaymentApplyFailureCounter.Source.MANUAL),
+        AUTOMATIC(PaymentApplyFailureCounter.Source.AUTOMATIC);
+
+        private final PaymentApplyFailureCounter.Source applyFailureSource;
+
+        PaymentSource(PaymentApplyFailureCounter.Source applyFailureSource) {
+            this.applyFailureSource = applyFailureSource;
+        }
 
         boolean canResolveReview() {
             return this == MANUAL;
@@ -114,31 +146,40 @@ public class OrderApplicationService {
     }
 
     public OrderResult confirm(long userId, long orderId, ConfirmCommand command) {
-        PaymentStart start = transactionTemplate.execute(status -> startPayment(userId, orderId, command.attemptKey()));
-        if (!start.newlyStarted()) {
-            // 이미 발송 시작된 결제는 결과를 모르더라도 create를 다시 보내지 않는다. 확인은 조회로만 한다(설계 23절).
-            return start.current();
-        }
-        PaymentRecord payment = start.payment();
-        PaymentReport report = createPayment(payment, command);
-        try {
-            return applyPaymentResult(orderId, report);
-        } catch (RuntimeException e) {
-            // 외부 결제 사실은 rollback할 수 없으므로 저장된 주문을 새로 읽어 확인 경로로 돌려준다.
-            log.error("PG 호출 후 결과 저장에 실패했습니다. orderId={}, providerStatus={}", orderId, report.status());
-            return transactionTemplate.execute(status -> withPayment(
-                orderRepository.findById(orderId).orElseThrow(OrderNotFoundException::new)));
+        try (PaymentLogContext.Scope logContext = PaymentLogContext.open(orderId)) {
+            PaymentStart start = transactionTemplate.execute(status -> startPayment(userId, orderId, command.attemptKey()));
+            PaymentRecord payment = start.payment();
+            logContext.attempt(payment.getAttemptKey(), payment.getProviderOrderId());
+            if (!start.newlyStarted()) {
+                // 이미 발송 시작된 결제는 결과를 모르더라도 create를 다시 보내지 않는다. 확인은 조회로만 한다(설계 23절).
+                return start.current();
+            }
+            log.info("PG 결제를 시작했습니다. orderId={}, providerId={}", orderId, payment.getProviderId());
+            PaymentReport report = createPayment(payment, command, logContext);
+            try {
+                return applyPaymentResult(orderId, report);
+            } catch (RuntimeException e) {
+                // 외부 결제 사실은 rollback할 수 없으므로 저장된 주문을 새로 읽어 확인 경로로 돌려준다.
+                // 예외 원문에는 SQL·값이 섞일 수 있어 종류만 남긴다.
+                log.error("PG 호출 후 결과 저장에 실패했습니다. orderId={}, providerStatus={}, causeType={}",
+                    orderId, report.status(), e.getClass().getSimpleName());
+                paymentApplyFailureRecorder.record(orderId, PaymentSource.CREATE.applyFailureSource, e);
+                return transactionTemplate.execute(status -> withPayment(
+                    orderRepository.findById(orderId).orElseThrow(OrderNotFoundException::new)));
+            }
         }
     }
 
-    private PaymentReport createPayment(PaymentRecord payment, ConfirmCommand command) {
+    private PaymentReport createPayment(PaymentRecord payment, ConfirmCommand command, PaymentLogContext.Scope logContext) {
         List<PaymentGateway> gateways = paymentGatewayRegistry.inPriorityOrder();
         for (int index = 0; index < gateways.size(); index++) {
             PaymentGateway gateway = gateways.get(index);
             PaymentCreateResult created = gateway.create(new PaymentCreateCommand(
                 payment.getProviderOrderId(), command.cardType(), command.cardNo(), payment.getAmount()));
-            log.info("PG 결제 생성 시도 결과. orderId={}, providerId={}, result={}",
-                payment.getOrderId(), gateway.providerId(), created.getClass().getSimpleName());
+            if (created instanceof PaymentCreateResult.Accepted accepted) {
+                logContext.transactionKey(accepted.transaction().transactionKey());
+            }
+            logCreateResult(payment.getOrderId(), gateway.providerId(), created);
             if (!(created instanceof PaymentCreateResult.NotSent)) {
                 return PaymentReport.from(created);
             }
@@ -167,6 +208,28 @@ public class OrderApplicationService {
         throw new IllegalStateException("PG 우선순위 목록이 비어 있습니다.");
     }
 
+    // 결과 모름·미발송은 실패로 단정할 수 없는 정상 경로 이탈이라 WARN이다. adapter는 같은 사실을 DEBUG로만 남긴다.
+    private static void logCreateResult(long orderId, String providerId, PaymentCreateResult created) {
+        String result = created.getClass().getSimpleName();
+        switch (created) {
+            case PaymentCreateResult.Accepted accepted -> {
+                log.info("PG 결제 생성 시도 결과. orderId={}, providerId={}, result={}, status={}",
+                    orderId, providerId, result, accepted.transaction().status());
+            }
+            case PaymentCreateResult.RejectedNoEffect rejected -> {
+                log.info("PG 결제 생성 시도 결과. orderId={}, providerId={}, result={}", orderId, providerId, result);
+            }
+            case PaymentCreateResult.Unknown unknown -> {
+                log.warn("PG 결제 생성 시도 결과. orderId={}, providerId={}, result={}, reason={}",
+                    orderId, providerId, result, unknown.reason());
+            }
+            case PaymentCreateResult.NotSent notSent -> {
+                log.warn("PG 결제 생성 시도 결과. orderId={}, providerId={}, result={}, reason={}",
+                    orderId, providerId, result, notSent.reason());
+            }
+        }
+    }
+
     // PG가 보고한 결과 하나를 반영하는 유일한 경계. create 응답·조회·callback 모두 여기로 모은다(설계 23절).
     // 잠금 순서는 confirm과 같은 주문 → 상품 ID 오름차순이다. 상품은 실패로 재고를 돌려줄 때만 잠근다.
     public OrderResult applyPaymentResult(long orderId, PaymentReport report) {
@@ -177,16 +240,20 @@ public class OrderApplicationService {
     }
 
     public void receivePaymentCallback(String providerOrderId, String callbackKey) {
-        Optional<PaymentRecord> found = paymentRecordRepository.findByProviderOrderId(providerOrderId);
-        if (found.isEmpty()) {
-            log.warn("알 수 없는 주문의 PG callback입니다.");
-            return;
+        try (PaymentLogContext.Scope logContext = PaymentLogContext.openByProvider(providerOrderId)) {
+            Optional<PaymentRecord> found = paymentRecordRepository.findByProviderOrderId(providerOrderId);
+            if (found.isEmpty()) {
+                log.warn("알 수 없는 주문의 PG callback입니다.");
+                return;
+            }
+            PaymentRecord payment = found.get();
+            logContext.orderId(payment.getOrderId());
+            logContext.attempt(payment.getAttemptKey(), payment.getProviderOrderId());
+            if (payment.getProviderStatus() == PaymentRecord.ProviderStatus.NEEDS_REVIEW) {
+                return;
+            }
+            verifyPayment(payment, PaymentSource.CALLBACK, callbackKey, logContext);
         }
-        PaymentRecord payment = found.get();
-        if (payment.getProviderStatus() == PaymentRecord.ProviderStatus.NEEDS_REVIEW) {
-            return;
-        }
-        verifyPayment(payment, PaymentSource.CALLBACK, callbackKey);
     }
 
     public OrderResult reconcileMyPayment(long userId, long orderId) {
@@ -197,23 +264,34 @@ public class OrderApplicationService {
     }
 
     public OrderResult reconcilePayment(long orderId) {
-        orderRepository.findById(orderId).orElseThrow(OrderNotFoundException::new);
-        PaymentRecord payment = paymentRecordRepository.findByOrderId(orderId)
-            .filter(found -> found.getMethod() == PaymentRecord.Method.PG)
-            .orElseThrow(() -> new RuleViolationException("PG 결제가 아닌 주문은 조회 확정할 수 없습니다."));
-        return verifyPayment(payment, PaymentSource.MANUAL, null);
+        return reconcileForOperator(orderId).result();
+    }
+
+    // 관리자 일괄 조회 확정용이다. 수동 reconcile과 같은 경로를 타고 판정을 함께 돌려준다. 회로가 막히면 같은 예외를 던진다.
+    public PaymentReconciliation reconcileForOperator(long orderId) {
+        try (PaymentLogContext.Scope logContext = PaymentLogContext.open(orderId)) {
+            orderRepository.findById(orderId).orElseThrow(OrderNotFoundException::new);
+            PaymentRecord payment = paymentRecordRepository.findByOrderId(orderId)
+                .filter(found -> found.getMethod() == PaymentRecord.Method.PG)
+                .orElseThrow(() -> new RuleViolationException("PG 결제가 아닌 주문은 조회 확정할 수 없습니다."));
+            logContext.attempt(payment.getAttemptKey(), payment.getProviderOrderId());
+            return verifyPayment(payment, PaymentSource.MANUAL, null, logContext);
+        }
     }
 
     public void reconcileDuePayments() {
         List<Long> dueOrders = paymentLookupScheduleRepository.findDue(clock.instant(), paymentLookupPolicy.batchSize());
         for (long orderId : dueOrders) {
-            try {
-                Optional<PaymentRecord> payment = paymentRecordRepository.findByOrderId(orderId);
-                if (payment.isPresent() && payment.get().getProviderStatus() != PaymentRecord.ProviderStatus.NEEDS_REVIEW) {
-                    verifyPayment(payment.get(), PaymentSource.AUTOMATIC, null);
+            try (PaymentLogContext.Scope logContext = PaymentLogContext.open(orderId)) {
+                try {
+                    Optional<PaymentRecord> payment = paymentRecordRepository.findByOrderId(orderId);
+                    if (payment.isPresent() && payment.get().getProviderStatus() != PaymentRecord.ProviderStatus.NEEDS_REVIEW) {
+                        logContext.attempt(payment.get().getAttemptKey(), payment.get().getProviderOrderId());
+                        verifyPayment(payment.get(), PaymentSource.AUTOMATIC, null, logContext);
+                    }
+                } catch (RuntimeException e) {
+                    log.error("주문 자동 재조회 처리 실패. orderId={}, causeType={}", orderId, e.getClass().getSimpleName());
                 }
-            } catch (RuntimeException e) {
-                log.error("주문 자동 재조회 처리 실패. orderId={}, causeType={}", orderId, e.getClass().getSimpleName());
             }
         }
     }
@@ -224,10 +302,12 @@ public class OrderApplicationService {
         List<Long> overdueOrders = paymentRecordRepository.findExpirable(now.minus(paymentExpiryPolicy.timeout()),
             paymentLookupPolicy.batchSize());
         for (long orderId : overdueOrders) {
-            try {
-                transactionTemplate.executeWithoutResult(status -> expireLocked(orderId, now));
-            } catch (RuntimeException e) {
-                log.error("결제 만료 처리 실패. orderId={}, causeType={}", orderId, e.getClass().getSimpleName());
+            try (PaymentLogContext.Scope logContext = PaymentLogContext.open(orderId)) {
+                try {
+                    transactionTemplate.executeWithoutResult(status -> expireLocked(orderId, now));
+                } catch (RuntimeException e) {
+                    log.error("결제 만료 처리 실패. orderId={}, causeType={}", orderId, e.getClass().getSimpleName());
+                }
             }
         }
     }
@@ -241,14 +321,20 @@ public class OrderApplicationService {
         }
         returnReservedStock(order);
         orderRepository.save(order);
+        // 만료 당시 결과를 몰랐던 결제라 돈이 나갔을 수 있다. 환불 확인 대상을 같은 트랜잭션에서 열어 만료와 함께 commit·rollback한다.
+        RefundCase refundCase = RefundCase.openOnExpiry(payment, now, jitteredRefundCheck(RefundCase.FIRST_CHECK_DELAY));
         payment.expire();
         paymentRecordRepository.save(payment);
+        paymentRefundCaseRepository.save(refundCase);
         paymentAnomalyRepository.resolveTransient(orderId, now);
         paymentLookupScheduleRepository.delete(orderId);
+        afterCommit(() -> paymentOutcomeRecorder.record(Outcome.EXPIRED));
         log.info("결제 대기 상한이 지나 주문을 결제 만료로 종결했습니다. orderId={}", orderId);
     }
 
-    private OrderResult verifyPayment(PaymentRecord requested, PaymentSource source, String callbackKey) {
+    private PaymentReconciliation verifyPayment(PaymentRecord requested, PaymentSource source, String callbackKey,
+        PaymentLogContext.Scope logContext) {
+        logContext.transactionKey(requested.getTransactionKey());
         // callback 본문은 누구나 보낼 수 있는 신호다. 저장된 값으로 잠금·트랜잭션 밖에서 PG를 조회한다.
         PaymentTransactionsLookup lookup = paymentGatewayRegistry.get(requested.getProviderId())
             .verifyOrder(requested.getProviderOrderId(), requested.getTransactionKey());
@@ -259,36 +345,69 @@ public class OrderApplicationService {
                 throw new PaymentLookupNotCalledException();
             }
         }
-        return transactionTemplate.execute(status -> {
-            Order order = orderRepository.findByIdForUpdate(requested.getOrderId()).orElseThrow(OrderNotFoundException::new);
-            PaymentRecord payment = paymentRecordRepository.findByOrderId(order.getId()).orElseThrow();
-            if (!payment.getProviderId().equals(requested.getProviderId())
-                || (source != PaymentSource.MANUAL && payment.getProviderStatus() == PaymentRecord.ProviderStatus.NEEDS_REVIEW)) {
-                return OrderResult.from(order, Optional.of(payment));
-            }
-            OrderResult result = applyLookupLocked(order, payment, lookup, source, callbackKey);
-            if (source == PaymentSource.AUTOMATIC) {
-                advanceLookupSchedule(order, payment, lookup);
-            }
-            return result;
-        });
+        try {
+            return transactionTemplate.execute(status -> {
+                Order order = orderRepository.findByIdForUpdate(requested.getOrderId()).orElseThrow(OrderNotFoundException::new);
+                PaymentRecord payment = paymentRecordRepository.findByOrderId(order.getId()).orElseThrow();
+                if (!payment.getProviderId().equals(requested.getProviderId())
+                    || (source != PaymentSource.MANUAL
+                        && payment.getProviderStatus() == PaymentRecord.ProviderStatus.NEEDS_REVIEW)) {
+                    return new PaymentReconciliation(OrderResult.from(order, Optional.of(payment)), null);
+                }
+                PaymentReconciliation result = applyLookupLocked(order, payment, lookup, source, callbackKey, logContext);
+                if (source == PaymentSource.AUTOMATIC) {
+                    advanceLookupSchedule(order, payment, lookup);
+                }
+                return result;
+            });
+        } catch (RuntimeException e) {
+            logApplyFailure(requested.getOrderId(), source, e);
+            // 반영 트랜잭션이 rollback된 뒤라 주문 행 잠금을 쥐지 않은 채 기록한다. 잠금 대기 초과도 반영 실패로 남긴다(PL w10s7-P1).
+            paymentApplyFailureRecorder.record(requested.getOrderId(), source.applyFailureSource, e);
+            throw e;
+        }
     }
 
-    private OrderResult applyLookupLocked(Order order, PaymentRecord payment, PaymentTransactionsLookup lookup,
-        PaymentSource source, String callbackKey) {
+    // 수동 reconcile·callback의 반영 실패는 Scope가 닫힌 뒤 advice가 주문 열쇠 없이 원문·스택으로 다시 남긴다.
+    // 같은 사건이 두 번 찍히지 않게 여기서 주문 열쇠와 함께 원문 없이 한 번 남기고, advice가 건너뛰도록 표식을 붙인다.
+    // 자동 재조회는 호출부가 건별 ERROR를 이미 남기므로 여기서 남기지 않는다.
+    private static void logApplyFailure(long orderId, PaymentSource source, RuntimeException failure) {
+        if (source != PaymentSource.MANUAL && source != PaymentSource.CALLBACK) {
+            return;
+        }
+        log.error("결제 결과 반영 실패. orderId={}, source={}, causeType={}", orderId, source,
+            failure.getClass().getSimpleName());
+        failure.addSuppressed(new AlreadyLogged());
+    }
+
+    private PaymentReconciliation applyLookupLocked(Order order, PaymentRecord payment, PaymentTransactionsLookup lookup,
+        PaymentSource source, String callbackKey, PaymentLogContext.Scope logContext) {
         PaymentLookupAssessment assessment = PaymentLookupAssessment.assess(payment, lookup);
         if (source == PaymentSource.CALLBACK) {
             recordCallbackKeyMismatch(order.getId(), assessment.callbackComparisonKey(), callbackKey);
         }
-        return switch (assessment) {
+        OrderResult result = switch (assessment) {
             case PaymentLookupAssessment.NotCalled notCalled -> OrderResult.from(order, Optional.of(payment));
             case PaymentLookupAssessment.Uncertain uncertain -> {
-                recordTransientAnomaly(order, uncertain.kind(), uncertain.summary());
+                recordTransientAnomaly(order, uncertain, source, lookup);
                 yield OrderResult.from(order, Optional.of(payment));
             }
-            case PaymentLookupAssessment.Review review -> requireReview(order, payment, review.kind(), review.summary());
-            case PaymentLookupAssessment.Verified verified -> applyLocked(order, Optional.of(payment), verified.report(), source);
+            case PaymentLookupAssessment.Review review -> {
+                log.warn("PG 조회 판정. orderId={}, source={}, result=Review, kind={}, summary={}",
+                    order.getId(), source, review.kind(), review.summary());
+                yield requireReview(order, payment, review.kind(), review.summary());
+            }
+            case PaymentLookupAssessment.Verified verified -> {
+                // 조회로 찾은 거래 키는 우리 주문·금액과 일치한다고 판정된 뒤에만 붙인다. 불일치 거래 키가 이 주문의 것처럼 보이지 않게 한다.
+                if (payment.getTransactionKey() == null) {
+                    logContext.transactionKey(verified.report().transactionKey());
+                }
+                log.info("PG 조회 판정. orderId={}, source={}, result=Verified, providerStatus={}",
+                    order.getId(), source, verified.report().status());
+                yield applyLocked(order, Optional.of(payment), verified.report(), source);
+            }
         };
+        return new PaymentReconciliation(result, assessment);
     }
 
     private void advanceLookupSchedule(Order order, PaymentRecord payment, PaymentTransactionsLookup lookup) {
@@ -314,13 +433,18 @@ public class OrderApplicationService {
             attempts, schedule.createdAt(), now));
     }
 
-    private void recordTransientAnomaly(Order order, Kind kind, String summary) {
+    private void recordTransientAnomaly(Order order, PaymentLookupAssessment.Uncertain uncertain, PaymentSource source,
+        PaymentTransactionsLookup lookup) {
         if (order.getStatus() == Order.Status.PAYMENT_PENDING) {
-            recordAnomaly(order.getId(), kind, summary);
+            // 조회 실패 원인은 판정에 남지 않으므로 원본 조회 결과에서 읽는다.
+            String reason = lookup instanceof PaymentTransactionsLookup.Failed failed ? failed.reason() : null;
+            log.warn("PG 조회 판정. orderId={}, source={}, result=Uncertain, kind={}, summary={}, reason={}",
+                order.getId(), source, uncertain.kind(), uncertain.summary(), reason);
+            recordAnomaly(order.getId(), uncertain.kind(), uncertain.summary());
         } else {
             // 종결 후의 불확실한 조회로 해결된 이상을 다시 열거나 영구히 미해결인 행을 만들지 않는다.
             log.info("결제 대기가 아닌 주문의 미확정 PG 조회 결과입니다. orderId={}, status={}, kind={}",
-                order.getId(), order.getStatus(), kind);
+                order.getId(), order.getStatus(), uncertain.kind());
         }
     }
 
@@ -367,25 +491,114 @@ public class OrderApplicationService {
                     OrderConfirmedPayload payload = OrderConfirmedPayloadFactory.create(saved);
                     orderConfirmedOutbox.append(payload);
                 }
-                payment.applyProviderReport(report.status(), report.transactionKey());
-                payment = paymentRecordRepository.save(payment);
+                payment = applyProviderReport(payment, report);
                 paymentAnomalyRepository.resolveTransient(order.getId(), clock.instant());
                 paymentLookupScheduleRepository.delete(order.getId());
+                Outcome outcome = closingOutcome(saved, report);
+                afterCommit(() -> {
+                    paymentOutcomeRecorder.record(outcome);
+                    logClosed(order, outcome, report, source);
+                });
             }
             case UNCHANGED -> {
                 if (order.getStatus() == Order.Status.PAYMENT_PENDING) {
-                    payment.applyProviderReport(report.status(), report.transactionKey());
-                    payment = paymentRecordRepository.save(payment);
+                    payment = applyProviderReport(payment, report);
                 }
             }
             case CONFLICT -> {
                 recordAnomaly(order.getId(), Kind.CONFLICTING_RESULT, "status=" + report.status());
                 log.warn("종결된 주문에 반대 결제 결과가 들어와 반영하지 않았습니다. orderId={}, status={}, providerStatus={}",
                     order.getId(), order.getStatus(), report.status());
+                if (report.outcome() == Order.PaymentOutcome.SUCCEEDED) {
+                    trackLateSuccess(order, payment, report.transactionKey());
+                }
             }
             case ANOMALY -> throw new IllegalStateException("DRAFT 결과는 앞에서 처리해야 합니다.");
         }
         return OrderResult.from(order, Optional.of(payment));
+    }
+
+    // 종결된 주문에 돈이 나갔다는 결과다. 만료 주문은 환불 확인 대상으로 합류시키고, 결제 실패 주문은 결과 뒤집힘이라 사람에게 넘긴다.
+    // 환불 요청은 여기서 보내지 않는다(환불 스케줄러 한 곳).
+    private void trackLateSuccess(Order order, PaymentRecord payment, String transactionKey) {
+        Instant now = clock.instant();
+        // 환불 추적 회차와 같은 대상 행 잠금으로 직렬화한다. 잠그지 않으면 회차가 commit한 REFUND_REQUESTED를 읽어 둔 TRACKING으로 덮어
+        // "요청했을 수 있음" 기록이 사라지고 취소가 다시 나갈 수 있다. 잠금 순서는 주문 → 대상이고 회차는 대상만 잠근다.
+        // 행이 있을 때만 잠근다. 없는 행을 FOR UPDATE로 읽으면 gap lock이 잡혀 서로 다른 주문의 합류 INSERT끼리 데드락이 난다.
+        // 행이 없을 때 잠그지 않아도 안전하다: 대상을 새로 만드는 경로(만료·합류)는 모두 이 주문 행 잠금 아래라 같은 주문은 이미 직렬화된다.
+        Optional<RefundCase> found = paymentRefundCaseRepository.existsByOrderId(order.getId())
+            ? paymentRefundCaseRepository.findByOrderIdForUpdate(order.getId())
+            : Optional.empty();
+        RefundCase refundCase;
+        boolean wasPersonOpen = found.isPresent() && found.get().isPersonOpen();
+        if (found.isPresent()) {
+            refundCase = found.get();
+            refundCase.joinLateSuccess(transactionKey, now, jitteredRefundCheck(RefundCase.PERSON_CHECK_DELAY));
+        } else if (order.getStatus() == Order.Status.PAYMENT_EXPIRED) {
+            refundCase = RefundCase.openOnLateSuccess(payment, transactionKey, now);
+        } else {
+            refundCase = RefundCase.reverseOnLateSuccess(payment, transactionKey, now,
+                jitteredRefundCheck(RefundCase.PERSON_CHECK_DELAY));
+        }
+        paymentRefundCaseRepository.save(refundCase);
+        // 결과 뒤집힘으로 사람 담당이 된 것을 센다. 이미 사람 담당 중인 대상에 늦은 성공이 다시 와도 다시 세지 않는다.
+        if (!wasPersonOpen && refundCase.isPersonOpen()) {
+            String reason = refundCase.getOwnerReason();
+            afterCommit(() -> refundOutcomeRecorder.recordPersonAssigned(reason));
+        }
+    }
+
+    // 환불 확인 대상의 다음 조회도 결제 확정 조회와 같은 jitter 빈으로 흩뜨린다. 장애로 만료가 몰려도 첫 조회가 한 시각에 모이지 않는다.
+    private Duration jitteredRefundCheck(Duration ceiling) {
+        return Duration.ofMillis(paymentLookupPolicy.jitter().chooseMillis(ceiling.toMillis()));
+    }
+
+    // 결과 모름 유입은 UNKNOWN이 아닌 상태에서 UNKNOWN으로 처음 바뀐 반영만 센다. 이미 UNKNOWN인 기록의 재보고는 유입이 아니다.
+    private PaymentRecord applyProviderReport(PaymentRecord payment, PaymentReport report) {
+        boolean wasUnknown = payment.getProviderStatus() == PaymentRecord.ProviderStatus.UNKNOWN;
+        payment.applyProviderReport(report.status(), report.transactionKey());
+        PaymentRecord saved = paymentRecordRepository.save(payment);
+        if (!wasUnknown && payment.getProviderStatus() == PaymentRecord.ProviderStatus.UNKNOWN) {
+            String providerId = payment.getProviderId();
+            afterCommit(() -> paymentProgressRecorder.unknownEntered(providerId));
+        }
+        return saved;
+    }
+
+    // failed는 PG가 거래를 만들고 FAILED로 확정한 경우만이다. 거래가 생기기 전 거절·전체 미도달은 돈이 움직이지 않았으므로
+    // not_sent로 나눠, 거절 급증이 카드사·PG 판정 문제를 가리키게 한다.
+    private static Outcome closingOutcome(Order saved, PaymentReport report) {
+        if (saved.getStatus() == Order.Status.CONFIRMED) {
+            return Outcome.CONFIRMED;
+        }
+        if (report.status() == PaymentRecord.ProviderStatus.FAILED) {
+            return Outcome.FAILED;
+        }
+        return Outcome.NOT_SENT;
+    }
+
+    // PG가 FAILED로 확정한 결제는 우리 시스템의 실패가 아닌 정상 종결이라 INFO다.
+    private static void logClosed(Order order, Outcome outcome, PaymentReport report, PaymentSource source) {
+        if (outcome == Outcome.CONFIRMED) {
+            log.info("결제를 확정했습니다. orderId={}, source={}", order.getId(), source);
+        } else {
+            log.info("결제 실패로 종결했습니다. orderId={}, result={}, providerStatus={}, source={}",
+                order.getId(), outcome, report.status(), source);
+        }
+    }
+
+    // 결제 집계(시작·결과 모름 유입·종결)와 확정·실패 종결 INFO는 rollback된 변경을 세거나 알리지 않도록 commit 뒤에만 실행한다.
+    // 모두 잠금 트랜잭션 안에서 일어난다.
+    private static void afterCommit(Runnable action) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            throw new IllegalStateException("결제 집계는 트랜잭션 안에서만 기록할 수 있습니다.");
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                action.run();
+            }
+        });
     }
 
     private void recordAnomaly(long orderId, Kind kind, String summary) {
@@ -421,6 +634,7 @@ public class OrderApplicationService {
             throw new RuleViolationException("다른 주문에 사용한 결제 시도 키입니다.", e);
         }
         paymentLookupScheduleRepository.save(new Schedule(orderId, paymentLookupPolicy.nextAt(now, 0), 0, now, now));
+        afterCommit(() -> paymentProgressRecorder.started(providerId));
         return new PaymentStart(null, payment);
     }
 
@@ -478,6 +692,11 @@ public class OrderApplicationService {
     @Transactional(readOnly = true)
     public OrderResult getAdminOrder(long orderId) {
         return withPayment(orderRepository.findById(orderId).orElseThrow(OrderNotFoundException::new));
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<OrderResult> findAdminOrder(long orderId) {
+        return orderRepository.findById(orderId).map(this::withPayment);
     }
 
     @Transactional(readOnly = true)

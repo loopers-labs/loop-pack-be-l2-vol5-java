@@ -2,25 +2,38 @@ package com.loopers.architecture;
 
 import com.loopers.domains.order.app.PaymentLookupAssessment;
 import com.loopers.domains.order.app.port.OrderConfirmedOutbox;
+import com.loopers.domains.order.in.AdminRefundCaseController;
 import com.loopers.domains.order.in.PaymentLookupScheduler;
 import com.loopers.domains.order.out.OrderConfirmedOutboxJpaEntity;
 import com.loopers.domains.order.out.OrderConfirmedOutboxJpaRepository;
 import com.loopers.domains.order.out.OrderConfirmedOutboxPersistenceAdapter;
 import com.loopers.domains.payment.app.PaymentGatewayRegistry;
 import com.loopers.domains.payment.app.PaymentLookupPolicy;
+import com.loopers.domains.payment.app.RefundPersonResolutionService;
+import com.loopers.domains.payment.app.RefundTrackingService;
 import com.loopers.domains.payment.app.port.PaymentAnomalyRepository;
 import com.loopers.domains.payment.app.port.PaymentCreateResult;
 import com.loopers.domains.payment.app.port.PaymentGateway;
 import com.loopers.domains.payment.app.port.PaymentLookupScheduleRepository;
+import com.loopers.domains.payment.app.port.PaymentRefundCaseRepository;
 import com.loopers.domains.payment.app.port.PaymentTransactionsLookup;
+import com.loopers.domains.payment.app.port.RefundCaseCounter;
+import com.loopers.domains.payment.app.port.RefundOutcomeRecorder;
 import com.loopers.domains.payment.domain.LookupBackoff;
 import com.loopers.domains.payment.domain.PaymentRecord;
+import com.loopers.domains.payment.domain.RefundCase;
 import com.loopers.domains.payment.in.PaymentCallbackController;
+import com.loopers.domains.payment.in.RefundCaseMetrics;
+import com.loopers.domains.payment.in.RefundTrackingScheduler;
 import com.loopers.domains.payment.out.CircuitBreakingPaymentGateway;
+import com.loopers.domains.payment.out.JdbcRefundCaseCounter;
+import com.loopers.domains.payment.out.MicrometerRefundOutcomeRecorder;
 import com.loopers.domains.payment.out.PaymentAnomalyJpaEntity;
 import com.loopers.domains.payment.out.PaymentAnomalyPersistenceAdapter;
 import com.loopers.domains.payment.out.PaymentCircuitBreakers;
 import com.loopers.domains.payment.out.PaymentLookupScheduleJpaEntity;
+import com.loopers.domains.payment.out.PaymentRefundCaseJpaEntity;
+import com.loopers.domains.payment.out.PaymentRefundCasePersistenceAdapter;
 import com.loopers.domains.payment.out.TestPgPaymentGateway;
 import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.domain.JavaClasses;
@@ -234,6 +247,19 @@ class ArchitectureTest {
         assertThat(out.contain(CircuitBreakingPaymentGateway.class)).isTrue();
         assertThat(out.contain(PaymentCircuitBreakers.class)).isTrue();
         assertThat(app.contain(PaymentTransactionsLookup.NotCalled.class)).isTrue();
+        assertThat(domain.contain(RefundCase.class)).isTrue();
+        assertThat(app.contain(PaymentRefundCaseRepository.class)).isTrue();
+        assertThat(out.contain(PaymentRefundCaseJpaEntity.class)).isTrue();
+        assertThat(out.contain(PaymentRefundCasePersistenceAdapter.class)).isTrue();
+        assertThat(app.contain(RefundTrackingService.class)).isTrue();
+        assertThat(app.contain(RefundOutcomeRecorder.class)).isTrue();
+        assertThat(app.contain(RefundCaseCounter.class)).isTrue();
+        assertThat(in.contain(RefundTrackingScheduler.class)).isTrue();
+        assertThat(in.contain(RefundCaseMetrics.class)).isTrue();
+        assertThat(out.contain(MicrometerRefundOutcomeRecorder.class)).isTrue();
+        assertThat(out.contain(JdbcRefundCaseCounter.class)).isTrue();
+        assertThat(app.contain(RefundPersonResolutionService.class)).isTrue();
+        assertThat(in.contain(AdminRefundCaseController.class)).isTrue();
     }
 
     @Test

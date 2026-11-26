@@ -1,0 +1,205 @@
+{
+    "status": "success",
+    "data": {
+        "resultType": "streams",
+        "result": [
+            {
+                "stream": {
+                    "app": "commerce-api",
+                    "attemptKey": "30a42116-5d5c-4e87-a687-d7b0e8213ae6",
+                    "level": "WARN",
+                    "orderId": "4",
+                    "providerOrderId": "LP-ORD-0000000004"
+                },
+                "values": [
+                    [
+                        "1795617928741749000",
+                        "{\"@timestamp\":\"2026-11-25T23:45:28.741749+09:00\",\"@version\":\"1\",\"message\":\"PG 결제 생성 시도 결과. orderId=4, providerId=test-pg, result=Unknown, reason=ResourceAccessException(HttpTimeoutException)\",\"logger_name\":\"com.loopers.domains.order.app.OrderApplicationService\",\"thread_name\":\"http-nio-127.0.0.1-8080-exec-5\",\"level\":\"WARN\",\"level_value\":30000,\"traceId\":\"6b06f48552a7718062f42ad4b3f68b91\",\"spanId\":\"c691eebc819c5643\",\"orderId\":\"4\",\"providerOrderId\":\"LP-ORD-0000000004\",\"attemptKey\":\"30a42116-5d5c-4e87-a687-d7b0e8213ae6\"}"
+                    ]
+                ]
+            },
+            {
+                "stream": {
+                    "app": "commerce-api",
+                    "attemptKey": "30a42116-5d5c-4e87-a687-d7b0e8213ae6",
+                    "level": "INFO",
+                    "orderId": "4",
+                    "providerOrderId": "LP-ORD-0000000004"
+                },
+                "values": [
+                    [
+                        "1795617925724660000",
+                        "{\"@timestamp\":\"2026-11-25T23:45:25.72466+09:00\",\"@version\":\"1\",\"message\":\"PG 결제를 시작했습니다. orderId=4, providerId=test-pg\",\"logger_name\":\"com.loopers.domains.order.app.OrderApplicationService\",\"thread_name\":\"http-nio-127.0.0.1-8080-exec-5\",\"level\":\"INFO\",\"level_value\":20000,\"traceId\":\"6b06f48552a7718062f42ad4b3f68b91\",\"spanId\":\"c691eebc819c5643\",\"orderId\":\"4\",\"providerOrderId\":\"LP-ORD-0000000004\",\"attemptKey\":\"30a42116-5d5c-4e87-a687-d7b0e8213ae6\"}"
+                    ]
+                ]
+            },
+            {
+                "stream": {
+                    "app": "commerce-api",
+                    "attemptKey": "30a42116-5d5c-4e87-a687-d7b0e8213ae6",
+                    "level": "DEBUG",
+                    "orderId": "4",
+                    "providerOrderId": "LP-ORD-0000000004"
+                },
+                "values": [
+                    [
+                        "1795617928740762000",
+                        "{\"@timestamp\":\"2026-11-25T23:45:28.740762+09:00\",\"@version\":\"1\",\"message\":\"테스트 PG 결제 생성 결과를 알 수 없습니다. providerOrderId=LP-ORD-0000000004, reason=ResourceAccessException(HttpTimeoutException)\",\"logger_name\":\"com.loopers.domains.payment.out.TestPgPaymentGateway\",\"thread_name\":\"http-nio-127.0.0.1-8080-exec-5\",\"level\":\"DEBUG\",\"level_value\":10000,\"traceId\":\"6b06f48552a7718062f42ad4b3f68b91\",\"spanId\":\"c691eebc819c5643\",\"orderId\":\"4\",\"providerOrderId\":\"LP-ORD-0000000004\",\"attemptKey\":\"30a42116-5d5c-4e87-a687-d7b0e8213ae6\"}"
+                    ]
+                ]
+            }
+        ],
+        "stats": {
+            "summary": {
+                "bytesProcessedPerSecond": 20711043,
+                "linesProcessedPerSecond": 49163,
+                "totalBytesProcessed": 104054,
+                "totalLinesProcessed": 247,
+                "execTime": 0.005024,
+                "queueTime": 0.00023,
+                "subqueries": 0,
+                "totalEntriesReturned": 3,
+                "splits": 2,
+                "shards": 2,
+                "totalPostFilterLines": 3,
+                "totalStructuredMetadataBytesProcessed": 552
+            },
+            "querier": {
+                "store": {
+                    "totalChunksRef": 0,
+                    "totalChunksDownloaded": 0,
+                    "chunksDownloadTime": 0,
+                    "queryReferencedStructuredMetadata": false,
+                    "chunk": {
+                        "headChunkBytes": 0,
+                        "headChunkLines": 0,
+                        "decompressedBytes": 0,
+                        "decompressedLines": 0,
+                        "compressedBytes": 0,
+                        "totalDuplicates": 0,
+                        "postFilterLines": 0,
+                        "headChunkStructuredMetadataBytes": 0,
+                        "decompressedStructuredMetadataBytes": 0
+                    },
+                    "chunkRefsFetchTime": 0,
+                    "congestionControlLatency": 0,
+                    "pipelineWrapperFilteredLines": 0
+                }
+            },
+            "ingester": {
+                "totalReached": 2,
+                "totalChunksMatched": 3,
+                "totalBatches": 3,
+                "totalLinesSent": 3,
+                "store": {
+                    "totalChunksRef": 0,
+                    "totalChunksDownloaded": 0,
+                    "chunksDownloadTime": 0,
+                    "queryReferencedStructuredMetadata": true,
+                    "chunk": {
+                        "headChunkBytes": 104054,
+                        "headChunkLines": 247,
+                        "decompressedBytes": 0,
+                        "decompressedLines": 0,
+                        "compressedBytes": 0,
+                        "totalDuplicates": 0,
+                        "postFilterLines": 3,
+                        "headChunkStructuredMetadataBytes": 552,
+                        "decompressedStructuredMetadataBytes": 0
+                    },
+                    "chunkRefsFetchTime": 184042,
+                    "congestionControlLatency": 0,
+                    "pipelineWrapperFilteredLines": 0
+                }
+            },
+            "cache": {
+                "chunk": {
+                    "entriesFound": 0,
+                    "entriesRequested": 0,
+                    "entriesStored": 0,
+                    "bytesReceived": 0,
+                    "bytesSent": 0,
+                    "requests": 0,
+                    "downloadTime": 0,
+                    "queryLengthServed": 0
+                },
+                "index": {
+                    "entriesFound": 0,
+                    "entriesRequested": 0,
+                    "entriesStored": 0,
+                    "bytesReceived": 0,
+                    "bytesSent": 0,
+                    "requests": 0,
+                    "downloadTime": 0,
+                    "queryLengthServed": 0
+                },
+                "result": {
+                    "entriesFound": 0,
+                    "entriesRequested": 0,
+                    "entriesStored": 0,
+                    "bytesReceived": 0,
+                    "bytesSent": 0,
+                    "requests": 0,
+                    "downloadTime": 0,
+                    "queryLengthServed": 0
+                },
+                "statsResult": {
+                    "entriesFound": 0,
+                    "entriesRequested": 1,
+                    "entriesStored": 1,
+                    "bytesReceived": 0,
+                    "bytesSent": 0,
+                    "requests": 2,
+                    "downloadTime": 133125,
+                    "queryLengthServed": 0
+                },
+                "volumeResult": {
+                    "entriesFound": 0,
+                    "entriesRequested": 0,
+                    "entriesStored": 0,
+                    "bytesReceived": 0,
+                    "bytesSent": 0,
+                    "requests": 0,
+                    "downloadTime": 0,
+                    "queryLengthServed": 0
+                },
+                "seriesResult": {
+                    "entriesFound": 0,
+                    "entriesRequested": 0,
+                    "entriesStored": 0,
+                    "bytesReceived": 0,
+                    "bytesSent": 0,
+                    "requests": 0,
+                    "downloadTime": 0,
+                    "queryLengthServed": 0
+                },
+                "labelResult": {
+                    "entriesFound": 0,
+                    "entriesRequested": 0,
+                    "entriesStored": 0,
+                    "bytesReceived": 0,
+                    "bytesSent": 0,
+                    "requests": 0,
+                    "downloadTime": 0,
+                    "queryLengthServed": 0
+                },
+                "instantMetricResult": {
+                    "entriesFound": 0,
+                    "entriesRequested": 0,
+                    "entriesStored": 0,
+                    "bytesReceived": 0,
+                    "bytesSent": 0,
+                    "requests": 0,
+                    "downloadTime": 0,
+                    "queryLengthServed": 0
+                }
+            },
+            "index": {
+                "totalChunks": 0,
+                "postFilterChunks": 0,
+                "shardsDuration": 0,
+                "usedBloomFilters": false
+            }
+        }
+    }
+}

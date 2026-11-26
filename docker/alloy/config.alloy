@@ -1,0 +1,70 @@
+// 앱 JSON 로그 → Loki(10주차 4b).
+// 앱은 호스트 JVM에서 local 프로필로 저장소 logs/ 아래에 logstash 형식 JSON을 한 줄씩 쓴다(MDC 키는 최상위 필드).
+// compose가 그 디렉터리를 /var/log/commerce에 읽기 전용으로 붙인다.
+// label은 app(파일 이름)·level만 둔다. 값이 유한해야 Loki 색인이 늘지 않는다.
+// orderId·providerOrderId·attemptKey·transactionKey는 structured metadata로 붙인다.
+//   찾기: {app="commerce-api"} | orderId="11"
+// 로그 줄 본문은 바꾸지 않는다. 카드·비밀값은 앱이 애초에 남기지 않는다(설계 문서 2-2).
+
+local.file_match "app_logs" {
+  path_targets = [{"__path__" = "/var/log/commerce/*.json"}]
+  sync_period  = "5s"
+}
+
+loki.source.file "app_logs" {
+  targets    = local.file_match.app_logs.targets
+  forward_to = [loki.process.app_logs.receiver]
+}
+
+loki.process "app_logs" {
+  // logs/commerce-api.json → app="commerce-api"
+  stage.regex {
+    source     = "filename"
+    expression = "^.*/(?P<app>[^/]+)\\.json$"
+  }
+
+  stage.json {
+    expressions = {
+      level           = "level",
+      ts              = "\"@timestamp\"",
+      orderId         = "orderId",
+      providerOrderId = "providerOrderId",
+      attemptKey      = "attemptKey",
+      transactionKey  = "transactionKey",
+    }
+  }
+
+  stage.timestamp {
+    source            = "ts"
+    format            = "RFC3339"
+    action_on_failure = "skip"
+  }
+
+  stage.labels {
+    values = {
+      app   = "",
+      level = "",
+    }
+  }
+
+  stage.structured_metadata {
+    values = {
+      orderId         = "",
+      providerOrderId = "",
+      attemptKey      = "",
+      transactionKey  = "",
+    }
+  }
+
+  stage.label_drop {
+    values = ["filename"]
+  }
+
+  forward_to = [loki.write.local.receiver]
+}
+
+loki.write "local" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}

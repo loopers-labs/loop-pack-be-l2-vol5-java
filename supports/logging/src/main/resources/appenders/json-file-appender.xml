@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<included>
+    <!-- 경로·롤링 기본값은 logging.file.name, logging.logback.rollingpolicy.* 가 없을 때만 쓴다. 롤링 상한은 [임시]다. -->
+    <springProperty name="APP_NAME" source="spring.application.name" defaultValue="application"/>
+    <property name="LOG_FILE" value="${LOG_FILE:-logs/${APP_NAME}.json}"/>
+    <property name="LOGBACK_ROLLINGPOLICY_MAX_FILE_SIZE" value="${LOGBACK_ROLLINGPOLICY_MAX_FILE_SIZE:-10MB}"/>
+    <property name="LOGBACK_ROLLINGPOLICY_MAX_HISTORY" value="${LOGBACK_ROLLINGPOLICY_MAX_HISTORY:-3}"/>
+    <property name="LOGBACK_ROLLINGPOLICY_TOTAL_SIZE_CAP" value="${LOGBACK_ROLLINGPOLICY_TOTAL_SIZE_CAP:-100MB}"/>
+    <property name="FILE_LOG_STRUCTURED_FORMAT" value="logstash"/>
+    <include resource="org/springframework/boot/logging/logback/defaults.xml" />
+    <include resource="org/springframework/boot/logging/logback/structured-file-appender.xml" />
+</included>

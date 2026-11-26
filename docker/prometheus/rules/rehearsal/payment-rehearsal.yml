@@ -1,0 +1,35 @@
+# 리허설 전용 짧은 규칙(10주차 4b, 계획 P5). 운영 규칙(../payment.yml)은 그대로 두고 monitoring-compose.rehearsal.yml이 함께 로드한다.
+# 식 모양은 운영 규칙과 같고 수치만 줄였다: 창 30m→5m, 건수 20→3, 지속 10m→1m. 만료는 창 10m→5m, 건수 5→3.
+# alertname은 운영과 같게 둬서 runbook 앵커·가이드 서버·라우팅을 그대로 탄다. rehearsal="true" label로 운영 알림과 구분한다.
+# 운영 promtool 테스트(payment_test.yml) 대상이 아니다. 문법은 promtool check rules로만 확인한다.
+groups:
+  - name: commerce-payment-rehearsal
+    rules:
+      - alert: PaymentUnresolvedPiling
+        expr: |
+          (
+            sum(increase(commerce_payment_unknown_entered_total[5m]))
+              / clamp_min(sum(increase(commerce_payment_started_total[5m])), 1)
+          ) > 0.002
+          and
+          max(commerce_payment_unresolved{status="unknown"}) >= 3
+        for: 1m
+        labels:
+          severity: critical
+          rehearsal: "true"
+        annotations:
+          summary: "[리허설] 결과 모름 결제가 새로 생기고 3건 이상 쌓였습니다(운영 기준: 20건·10분)."
+          runbook_url: docs/runbook/week10.md#paymentunresolvedpiling
+          dashboard_url: http://localhost:3000/d/commerce-payment-incident
+
+      - alert: PaymentAbandonedPiling
+        expr: |
+          sum(increase(commerce_payment_outcome_total{result="expired"}[5m])) >= 3
+        for: 1m
+        labels:
+          severity: critical
+          rehearsal: "true"
+        annotations:
+          summary: "[리허설] 만료로 종결한 결제가 5분에 3건 이상입니다(운영 기준: 10분 5건·10분)."
+          runbook_url: docs/runbook/week10.md#paymentabandonedpiling
+          dashboard_url: http://localhost:3000/d/commerce-payment-incident

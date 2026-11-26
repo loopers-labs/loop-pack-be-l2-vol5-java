@@ -1,0 +1,1 @@
+{"meta":{"result":"SUCCESS"},"data":{"requested":1,"processed":1,"stopReason":null,"results":[{"orderId":6,"beforeStatus":"CONFIRMED","afterStatus":"CONFIRMED","beforeProviderStatus":"SUCCESS","afterProviderStatus":"SUCCESS","assessment":null,"outcome":"ALREADY_CLOSED","reason":null}]}}

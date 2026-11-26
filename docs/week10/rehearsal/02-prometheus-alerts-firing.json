@@ -1,0 +1,22 @@
+{
+    "status": "success",
+    "data": {
+        "alerts": [
+            {
+                "labels": {
+                    "alertname": "PaymentUnresolvedPiling",
+                    "rehearsal": "true",
+                    "severity": "critical"
+                },
+                "annotations": {
+                    "dashboard_url": "http://localhost:3000/d/commerce-payment-incident",
+                    "runbook_url": "docs/runbook/week10.md#paymentunresolvedpiling",
+                    "summary": "[리허설] 결과 모름 결제가 새로 생기고 3건 이상 쌓였습니다(운영 기준: 20건·10분)."
+                },
+                "state": "firing",
+                "activeAt": "2026-11-25T14:45:41.38729989Z",
+                "value": "5.714285714285714e-01"
+            }
+        ]
+    }
+}

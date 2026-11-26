@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.loopers.domains.brand.app.BrandApplicationService;
 import com.loopers.domains.order.app.OrderApplicationService;
 import com.loopers.domains.payment.app.PaymentGatewayRegistry;
+import com.loopers.domains.payment.app.port.PaymentCancelCommand;
+import com.loopers.domains.payment.app.port.PaymentCancelResult;
 import com.loopers.domains.payment.app.port.PaymentCreateCommand;
 import com.loopers.domains.payment.app.port.PaymentCreateResult;
 import com.loopers.domains.payment.app.port.PaymentGateway;
@@ -274,6 +276,11 @@ class OrderPaymentFallbackIntegrationTest {
         @Override
         public PaymentTransactionsLookup verifyOrder(String providerOrderId, String storedTransactionKey) {
             return delegate.verifyOrder(providerOrderId, storedTransactionKey);
+        }
+
+        @Override
+        public PaymentCancelResult cancel(PaymentCancelCommand command) {
+            return delegate.cancel(command);
         }
     }
 }
