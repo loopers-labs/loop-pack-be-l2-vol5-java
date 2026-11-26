@@ -7,6 +7,7 @@ import ch.qos.logback.core.read.ListAppender;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.loopers.domains.brand.app.BrandApplicationService;
+import com.loopers.domains.order.app.port.PaymentApplyFailureCounter;
 import com.loopers.domains.payment.app.port.PaymentAnomalyRepository;
 import com.loopers.domains.payment.app.port.PaymentLookupScheduleRepository;
 import com.loopers.domains.payment.out.PaymentAnomalyPersistenceAdapter;
@@ -23,13 +24,24 @@ import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.persistence.EntityManager;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.BrokenBarrierException;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -83,6 +95,9 @@ class PaymentApplyFailureAnomalyTest {
 
     @Autowired
     private FailingAnomalyRepository failingAnomalyRepository;
+
+    @Autowired
+    private PaymentApplyFailureRecorder paymentApplyFailureRecorder;
 
     @Autowired
     private PaymentLookupScheduleRepository paymentLookupScheduleRepository;
@@ -315,6 +330,56 @@ class PaymentApplyFailureAnomalyTest {
         assertThat(row.get("latestAnomaly").get("summary").asText()).isEqualTo(summary("IllegalStateException", "MANUAL"));
     }
 
+    // 반영 실패 기록은 주문 잠금 없이 돈다(w10s7-P3). 두 기록의 "기존 행 확인"과 "쓰기"가 겹치게 하려고 테스트 대역 저장소가
+    // 기록 트랜잭션 안에서 읽기 시점을 잡은 뒤 장벽에서 서로를 기다리게 한다. 장벽은 대역에만 있고 기록기 경로에는 없다.
+    @ParameterizedTest(name = "기존 APPLY_FAILED occurrences={0}")
+    @ValueSource(longs = {0, 1})
+    @DisplayName("같은 주문에 반영 실패 두 건을 동시에 기록하면 두 건 모두 기록되고 occurrences는 기존 값에 2를 더한 값이며 counter도 2 는다")
+    void concurrentApplyFailureRecordsAreAtomic(long priorOccurrences) throws Exception {
+        PaymentApplyFailureCounter.Source source = PaymentApplyFailureCounter.Source.MANUAL;
+        IllegalStateException failure = new IllegalStateException("동시 반영 실패");
+        for (long index = 0; index < priorOccurrences; index++) {
+            paymentApplyFailureRecorder.record(orderId, source, failure);
+        }
+        assertThat(applyFailedOccurrences()).as("준비된 기존 occurrences").isEqualTo(priorOccurrences);
+        double counted = applyFailed("manual");
+        int attempts = 2;
+        failingAnomalyRepository.overlapNext(attempts);
+        ExecutorService executor = Executors.newFixedThreadPool(attempts);
+        int thrown = 0;
+        int timedOut = 0;
+        try {
+            var futures = new ArrayList<Future<?>>();
+            for (int index = 0; index < attempts; index++) {
+                futures.add(executor.submit(() -> paymentApplyFailureRecorder.record(orderId, source, failure)));
+            }
+            for (Future<?> future : futures) {
+                try {
+                    future.get(20, TimeUnit.SECONDS);
+                } catch (ExecutionException e) {
+                    thrown++;
+                } catch (TimeoutException e) {
+                    timedOut++;
+                }
+            }
+        } finally {
+            failingAnomalyRepository.disarm();
+            executor.shutdownNow();
+            assertThat(executor.awaitTermination(10, TimeUnit.SECONDS)).as("executor 종료").isTrue();
+        }
+
+        long recordFailures = recorderLogs.list.stream().filter(event -> event.getLevel() == Level.ERROR).count();
+        long succeeded = attempts - thrown - timedOut - recordFailures;
+        assertThat(failingAnomalyRepository.overlapped()).as("두 기록이 장벽에서 실제로 겹쳤는지").isTrue();
+        assertThat(succeeded + recordFailures + thrown + timedOut).as("성공+기록 실패+예외+시간 초과 합계").isEqualTo(attempts);
+        assertThat(thrown).as("기록기 밖으로 나온 예외").isZero();
+        assertThat(timedOut).as("시간 초과").isZero();
+        assertThat(applyFailedRows()).as("APPLY_FAILED 행 수").isEqualTo(1);
+        assertThat(applyFailedOccurrences()).as("occurrences = 기존 + 성공 기록 수").isEqualTo(priorOccurrences + succeeded);
+        assertThat(applyFailed("manual") - counted).as("counter 증가 = 성공 기록 수").isEqualTo(succeeded);
+        assertThat(recordFailures).as("기록 실패 ERROR 줄 수").isZero();
+    }
+
     private void confirmPendingThenSucceedOnPg() {
         orderApplicationService.confirm(1, orderId, TestPgFixture.command());
         server.changeStatus(transactionKey(), "SUCCESS");
@@ -341,6 +406,12 @@ class PaymentApplyFailureAnomalyTest {
 
     private long applyFailedRows() {
         return jdbcTemplate.queryForObject("select count(*) from payment_anomalies where kind = 'APPLY_FAILED'", Long.class);
+    }
+
+    private long applyFailedOccurrences() {
+        List<Long> occurrences = jdbcTemplate.queryForList(
+            "select occurrences from payment_anomalies where order_id = ? and kind = 'APPLY_FAILED'", Long.class, orderId);
+        return occurrences.isEmpty() ? 0 : occurrences.get(0);
     }
 
     private void assertSingleRecordFailureError() {
@@ -391,7 +462,9 @@ class PaymentApplyFailureAnomalyTest {
         private final PaymentAnomalyRepository delegate;
         private final EntityManager entityManager;
         private final AtomicReference<Kind> armedKind = new AtomicReference<>();
+        private final AtomicReference<CyclicBarrier> overlapBarrier = new AtomicReference<>();
         private volatile boolean recordFailed;
+        private volatile boolean overlapped;
 
         FailingAnomalyRepository(PaymentAnomalyRepository delegate, EntityManager entityManager) {
             this.delegate = delegate;
@@ -403,9 +476,24 @@ class PaymentApplyFailureAnomalyTest {
             armedKind.set(kind);
         }
 
+        // 다음 기록들이 각자 트랜잭션에서 읽기 시점을 잡은 뒤 서로를 기다리게 한다. 늦게 온 기록이 먼저 commit된 기록을
+        // 못 본 채 쓰는 상황을 결정적으로 만든다(REPEATABLE READ의 일관 읽기 시점은 첫 읽기에서 정해진다).
+        void overlapNext(int parties) {
+            overlapped = false;
+            overlapBarrier.set(new CyclicBarrier(parties, () -> overlapped = true));
+        }
+
         void disarm() {
             armedKind.set(null);
             recordFailed = false;
+            CyclicBarrier barrier = overlapBarrier.getAndSet(null);
+            if (barrier != null) {
+                barrier.reset();
+            }
+        }
+
+        boolean overlapped() {
+            return overlapped;
         }
 
         boolean recordFailed() {
@@ -414,6 +502,18 @@ class PaymentApplyFailureAnomalyTest {
 
         @Override
         public void record(long orderId, Kind kind, String summary, Instant now) {
+            CyclicBarrier barrier = overlapBarrier.get();
+            if (barrier != null) {
+                entityManager.createNativeQuery("select count(*) from payment_anomalies").getSingleResult();
+                try {
+                    barrier.await(10, TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException("겹치기 장벽 대기 중단", e);
+                } catch (BrokenBarrierException | TimeoutException e) {
+                    throw new IllegalStateException("겹치기 장벽 대기 실패", e);
+                }
+            }
             delegate.record(orderId, kind, summary, now);
             if (armedKind.compareAndSet(kind, null)) {
                 entityManager.flush();
