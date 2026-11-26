@@ -76,4 +76,53 @@ tasks.test {
     systemProperty("coupon.migration", couponMigration.absolutePath)
     inputs.files(fixtureDockerfile, fixtureJar, safetyMigration, conflictMigration, confirmedAtMigration)
     inputs.file(couponMigration)
+    // 결제 응답 유실 사고 연결 테스트는 다른 앱 JAR를 실행하므로 incidentTest에서만 돌린다.
+    useJUnitPlatform { excludeTags("incident") }
+}
+
+// 결제 응답 유실 사고를 결제부터 주간 랭킹까지 한 테스트로 잇는다. streamer·batch는 실제 bootJar를 자식 프로세스로 띄운다.
+// 다른 앱 JAR에 대한 빌드 의존과 입력 등록은 이 task에만 둔다. 일반 test는 이 앱들의 빌드와 무관하다.
+val incidentApps = listOf(":apps:commerce-streamer", ":apps:commerce-batch")
+val incidentTest by tasks.registering(Test::class) {
+    description = "결제 응답 유실 사고를 결제부터 주간 랭킹까지 잇는 연결 테스트"
+    group = LifecycleBasePlugin.VERIFICATION_GROUP
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    useJUnitPlatform { includeTags("incident") }
+    maxParallelForks = 1
+    systemProperty("user.timezone", "Asia/Seoul")
+    systemProperty("spring.profiles.active", "test")
+    jvmArgs("-Xshare:off")
+    shouldRunAfter(tasks.test)
+
+    dependsOn(":apps:test-pg:bootJar")
+    incidentApps.forEach { dependsOn("$it:bootJar") }
+    val fixtureDockerfile = rootProject.file("apps/test-pg/Dockerfile")
+    val fixtureJar = rootProject.file("apps/test-pg/build/libs/test-pg.jar")
+    val initSql = rootProject.file("docker/mysql/init.sql")
+    systemProperty("test-pg.dockerfile", fixtureDockerfile.absolutePath)
+    systemProperty("test-pg.jar", fixtureJar.absolutePath)
+    systemProperty("incident.init-sql", initSql.absolutePath)
+    systemProperty("incident.evidence-dir", layout.buildDirectory.dir("incident-evidence").get().asFile.absolutePath)
+    inputs.files(fixtureDockerfile, fixtureJar, initSql)
+    // streamer·batch JAR 이름에는 커밋 해시가 붙으므로, 다른 프로젝트 설정이 끝난 실행 시점에 bootJar 출력을 읽는다.
+    incidentApps.forEach { path ->
+        inputs.files(provider { project(path).tasks.getByName("bootJar").outputs.files })
+    }
+    doFirst {
+        systemProperty("incident.streamer-jar",
+            project(":apps:commerce-streamer").tasks.getByName("bootJar").outputs.files.singleFile.absolutePath)
+        systemProperty("incident.batch-jar",
+            project(":apps:commerce-batch").tasks.getByName("bootJar").outputs.files.singleFile.absolutePath)
+    }
+    // 태그로 고른 테스트가 0건이어도 Gradle은 실패하지 않는다. 0건은 통과가 아니므로 직접 실패시킨다.
+    afterSuite(KotlinClosure2<TestDescriptor, TestResult, Unit>({ descriptor, result ->
+        if (descriptor.parent == null && result.testCount == 0L) {
+            throw GradleException("incidentTest가 실행한 테스트가 0건입니다.")
+        }
+    }))
+}
+
+tasks.check {
+    dependsOn(incidentTest)
 }
