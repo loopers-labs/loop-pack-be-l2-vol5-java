@@ -29,6 +29,7 @@ public record PaymentReport(PaymentRecord.ProviderStatus status, String transact
             case PENDING -> PaymentRecord.ProviderStatus.PENDING;
             case SUCCESS -> PaymentRecord.ProviderStatus.SUCCESS;
             case FAILED -> PaymentRecord.ProviderStatus.FAILED;
+            case CANCELED -> PaymentRecord.ProviderStatus.UNKNOWN;
         };
         return new PaymentReport(status, transaction.transactionKey());
     }

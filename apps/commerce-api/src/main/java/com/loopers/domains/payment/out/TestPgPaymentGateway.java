@@ -4,6 +4,8 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.loopers.common.domain.Money;
+import com.loopers.domains.payment.app.port.PaymentCancelCommand;
+import com.loopers.domains.payment.app.port.PaymentCancelResult;
 import com.loopers.domains.payment.app.port.PaymentCreateCommand;
 import com.loopers.domains.payment.app.port.PaymentCreateResult;
 import com.loopers.domains.payment.app.port.PaymentGateway;
@@ -107,6 +109,11 @@ public class TestPgPaymentGateway implements PaymentGateway {
     @Override
     public PaymentTransactionsLookup verifyOrder(String providerOrderId, String storedTransactionKey) {
         return findByOrderId(providerOrderId);
+    }
+
+    @Override
+    public PaymentCancelResult cancel(PaymentCancelCommand command) {
+        return new PaymentCancelResult.Unknown("미구현");
     }
 
     PaymentTransactionLookup findByTransactionKey(String transactionKey) {

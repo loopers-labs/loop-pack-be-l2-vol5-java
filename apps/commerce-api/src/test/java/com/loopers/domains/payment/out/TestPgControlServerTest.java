@@ -163,6 +163,62 @@ class TestPgControlServerTest {
     }
 
     @Test
+    @DisplayName("주문 단위 취소 응답 유실을 지정하면 취소 응답은 제한 시간 안에 오지 않고 거래는 CANCELED로 바뀐다")
+    void losesCancelResponseWhenMarked() throws Exception {
+        String key = testPg.addTransaction(ORDER_ID, AMOUNT, "SUCCESS");
+
+        HttpResponse<String> marked = control("PUT", "/control/lost-cancels/" + ORDER_ID, null);
+
+        assertThat(marked.statusCode()).isEqualTo(204);
+        assertThatThrownBy(() -> cancel(key)).isInstanceOf(HttpTimeoutException.class);
+        assertThat(testPg.transactions())
+            .extracting(StoredTransaction::orderId, StoredTransaction::status)
+            .containsExactly(tuple(ORDER_ID, "CANCELED"));
+    }
+
+    @Test
+    @DisplayName("취소 응답 유실 지정을 해제하면 취소가 즉시 200으로 답하고 create 유실 지정은 그대로다")
+    void clearsLostCancel() throws Exception {
+        String key = testPg.addTransaction(ORDER_ID, AMOUNT, "SUCCESS");
+        control("PUT", "/control/lost-responses/" + ORDER_ID, null);
+        control("PUT", "/control/lost-cancels/" + ORDER_ID, null);
+
+        HttpResponse<String> cleared = control("DELETE", "/control/lost-cancels/" + ORDER_ID, null);
+        HttpResponse<String> canceled = cancel(key);
+
+        assertThat(cleared.statusCode()).isEqualTo(204);
+        assertThat(canceled.statusCode()).isEqualTo(200);
+        assertThat(testPg.lostCancelOrderIds()).isEmpty();
+        assertThat(testPg.lostResponseOrderIds()).containsExactly(ORDER_ID);
+    }
+
+    @Test
+    @DisplayName("취소 응답 유실 경로에 PUT·DELETE 외 메서드를 쓰면 405로 답하고 지정을 바꾸지 않는다")
+    void rejectsOtherMethodOnLostCancels() throws Exception {
+        HttpResponse<String> response = control("POST", "/control/lost-cancels/" + ORDER_ID, null);
+
+        assertThat(response.statusCode()).isEqualTo(405);
+        assertThat(testPg.lostCancelOrderIds()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("상태 조회는 create와 섞지 않은 취소 호출 수와 취소 유실 지정 주문 목록을 돌려준다")
+    void reportsCancelStatus() throws Exception {
+        String key = testPg.addTransaction(ORDER_ID, AMOUNT, "SUCCESS");
+        control("PUT", "/control/lost-cancels/LP-ORD-0000000002", null);
+        control("PUT", "/control/lost-cancels/LP-ORD-0000000001", null);
+        cancel(key);
+
+        JsonNode body = objectMapper.readTree(control("GET", "/control/status", null).body());
+
+        assertThat(body.path("cancelCalls").isIntegralNumber()).isTrue();
+        assertThat(body.path("cancelCalls").asLong()).isEqualTo(1);
+        assertThat(body.path("createCalls").asLong()).isZero();
+        assertThat(objectMapper.convertValue(body.path("lostCancelOrderIds"), List.class))
+            .containsExactly("LP-ORD-0000000001", "LP-ORD-0000000002");
+    }
+
+    @Test
     @DisplayName("없는 제어 경로는 404로 답한다")
     void rejectsUnknownControlPath() throws Exception {
         HttpResponse<String> response = control("POST", "/control/unknown", null);
@@ -198,6 +254,17 @@ class TestPgControlServerTest {
     private HttpResponse<String> create(String orderId) throws Exception {
         String body = "{\"orderId\":\"" + orderId + "\",\"amount\":" + AMOUNT + ",\"cardType\":\"SAMSUNG\"}";
         HttpRequest request = HttpRequest.newBuilder(testPg.baseUrl().resolve(TestPgServer.PAYMENTS_PATH))
+            .timeout(CLIENT_TIMEOUT)
+            .header("Content-Type", "application/json")
+            .header("X-USER-ID", USER_ID)
+            .POST(HttpRequest.BodyPublishers.ofString(body))
+            .build();
+        return client.send(request, HttpResponse.BodyHandlers.ofString());
+    }
+
+    private HttpResponse<String> cancel(String key) throws Exception {
+        String body = "{\"orderId\":\"" + ORDER_ID + "\",\"amount\":" + AMOUNT + "}";
+        HttpRequest request = HttpRequest.newBuilder(testPg.baseUrl().resolve(TestPgServer.PAYMENTS_PATH + "/" + key + "/cancel"))
             .timeout(CLIENT_TIMEOUT)
             .header("Content-Type", "application/json")
             .header("X-USER-ID", USER_ID)

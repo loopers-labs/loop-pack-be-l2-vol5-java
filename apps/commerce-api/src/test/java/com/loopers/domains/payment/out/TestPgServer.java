@@ -28,6 +28,7 @@ import java.util.stream.Collectors;
 public final class TestPgServer implements AutoCloseable {
     static final String PAYMENTS_PATH = "/api/v1/payments";
     static final String REJECT_CODE = "TEST_PG_REJECTED_BEFORE_CREATE";
+    static final String CANCEL_REJECT_CODE = "TEST_PG_CANCEL_REJECTED";
 
     public enum CreateBehavior {
         ACCEPT_PENDING,
@@ -56,6 +57,25 @@ public final class TestPgServer implements AutoCloseable {
 
     private enum OrderBehavior {
         LOSE_RESPONSE_AFTER_SUCCESS
+    }
+
+    // 취소 API는 과정 PG 계약에 없는 가정이다(w10s5-3). NORMAL이 그 가정 계약이고 나머지는 계약을 벗어난 장면이다.
+    public enum CancelBehavior {
+        NORMAL,
+        OK_WITHOUT_CANCEL,
+        OK_AMOUNT_MISMATCH,
+        OK_ORDER_ID_MISMATCH,
+        OK_KEY_MISMATCH,
+        OK_BROKEN_JSON,
+        ACCEPT_202,
+        REJECT_OTHER_CODE,
+        REJECT_WITHOUT_BODY,
+        REJECT_AFTER_CANCEL,
+        ERROR_500_AFTER_CANCEL,
+        ERROR_500_WITHOUT_CANCEL,
+        ERROR_500_WITH_SECRET_BODY,
+        DELAY_AFTER_CANCEL,
+        DROP_CONNECTION_AFTER_CANCEL
     }
 
     public enum LookupBehavior {
@@ -92,6 +112,7 @@ public final class TestPgServer implements AutoCloseable {
     private final Set<String> lookupErrorOrderIds = ConcurrentHashMap.newKeySet();
     private volatile CreateBehavior createBehavior = CreateBehavior.ACCEPT_PENDING;
     private volatile LookupBehavior lookupBehavior = LookupBehavior.NORMAL;
+    private volatile CancelBehavior cancelBehavior = CancelBehavior.NORMAL;
 
     public TestPgServer(String expectedUserId, Duration delay) throws IOException {
         this(expectedUserId, delay, 0);
@@ -124,6 +145,10 @@ public final class TestPgServer implements AutoCloseable {
 
     public LookupBehavior lookupBehavior() {
         return lookupBehavior;
+    }
+
+    public void cancelBehavior(CancelBehavior behavior) {
+        this.cancelBehavior = behavior;
     }
 
     public String addTransaction(String orderId, long amount, String status) {
@@ -194,6 +219,24 @@ public final class TestPgServer implements AutoCloseable {
             .collect(Collectors.toUnmodifiableSet());
     }
 
+    public long cancelCalls() {
+        return 0;
+    }
+
+    public int cancelCalls(String providerOrderId) {
+        return 0;
+    }
+
+    public void loseCancelResponse(String providerOrderId) {
+    }
+
+    public void clearLostCancel(String providerOrderId) {
+    }
+
+    public Set<String> lostCancelOrderIds() {
+        return Set.of();
+    }
+
     @Override
     public void close() throws InterruptedException {
         server.stop(0);
@@ -242,7 +285,8 @@ public final class TestPgServer implements AutoCloseable {
             case ACCEPT_WITH_200 -> send(exchange, 200, transactionJson(store(orderId, amount, "PENDING")));
             case ACCEPT_BLANK_TRANSACTION_KEY -> send(exchange, 202,
                 transactionJson(new StoredTransaction(" ", orderId, amount, "PENDING")));
-            case ACCEPT_UNKNOWN_STATUS -> send(exchange, 202, transactionJson(store(orderId, amount, "CANCELED")));
+            // 포트가 모르는 상태 문자열이다. CANCELED는 취소 조회 상태로 포트가 안다.
+            case ACCEPT_UNKNOWN_STATUS -> send(exchange, 202, transactionJson(store(orderId, amount, "REFUNDING")));
             case ACCEPT_AMOUNT_MISMATCH -> {
                 StoredTransaction stored = store(orderId, amount, "PENDING");
                 send(exchange, 202, transactionJson(

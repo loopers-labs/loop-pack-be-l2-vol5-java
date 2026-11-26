@@ -1,5 +1,7 @@
 package com.loopers.domains.payment.app;
 
+import com.loopers.domains.payment.app.port.PaymentCancelCommand;
+import com.loopers.domains.payment.app.port.PaymentCancelResult;
 import com.loopers.domains.payment.app.port.PaymentCreateCommand;
 import com.loopers.domains.payment.app.port.PaymentCreateResult;
 import com.loopers.domains.payment.app.port.PaymentGateway;
@@ -77,6 +79,11 @@ class PaymentGatewayRegistryTest {
 
         @Override
         public PaymentTransactionsLookup verifyOrder(String providerOrderId, String storedTransactionKey) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public PaymentCancelResult cancel(PaymentCancelCommand command) {
             throw new UnsupportedOperationException();
         }
     }

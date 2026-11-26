@@ -2,6 +2,8 @@ package com.loopers.domains.payment.out;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.loopers.common.domain.Money;
+import com.loopers.domains.payment.app.port.PaymentCancelCommand;
+import com.loopers.domains.payment.app.port.PaymentCancelResult;
 import com.loopers.domains.payment.app.port.PaymentCreateCommand;
 import com.loopers.domains.payment.app.port.PaymentCreateResult;
 import com.loopers.domains.payment.app.port.PaymentGateway;
@@ -90,6 +92,38 @@ class CircuitBreakingPaymentGatewayTest {
         assertThat(main.createCalls()).isEqualTo(1);
         assertThat(main.transactions()).hasSize(1);
         assertThat(sub.createCalls()).isZero();
+    }
+
+    @Test
+    @DisplayName("main 조회 회로가 열려도 main 취소는 회로를 거치지 않고 실제로 나간다")
+    void doesNotWrapCancelWhenLookupCircuitIsOpen() {
+        String key = main.addTransaction("LP-ORD-0000000042", 2000, "SUCCESS");
+        main.lookupBehavior(TestPgServer.LookupBehavior.ERROR_500);
+        for (int index = 0; index < 10; index++) {
+            lookup(mainGateway);
+        }
+        assertThat(lookup(mainGateway)).isInstanceOf(PaymentTransactionsLookup.NotCalled.class);
+
+        PaymentCancelResult canceled = mainGateway.cancel(new PaymentCancelCommand("LP-ORD-0000000042", key, new Money(2000)));
+
+        assertThat(canceled).isInstanceOf(PaymentCancelResult.Canceled.class);
+        assertThat(main.cancelCalls()).isEqualTo(1);
+        assertThat(main.lookupCalls()).isEqualTo(10);
+    }
+
+    @Test
+    @DisplayName("취소가 500으로 20번 실패해도 조회 회로 표본이 아니므로 다음 조회는 실제로 나간다")
+    void cancelFailuresDoNotOpenLookupCircuit() {
+        String key = main.addTransaction("LP-ORD-0000000042", 2000, "SUCCESS");
+        main.cancelBehavior(TestPgServer.CancelBehavior.ERROR_500_WITHOUT_CANCEL);
+        for (int index = 0; index < 20; index++) {
+            assertThat(mainGateway.cancel(new PaymentCancelCommand("LP-ORD-0000000042", key, new Money(2000))))
+                .isInstanceOf(PaymentCancelResult.Unknown.class);
+        }
+
+        assertThat(lookup(mainGateway)).isInstanceOf(PaymentTransactionsLookup.Found.class);
+        assertThat(main.cancelCalls()).isEqualTo(20);
+        assertThat(main.lookupCalls()).isEqualTo(1);
     }
 
     private PaymentTransactionsLookup lookup(PaymentGateway gateway) {

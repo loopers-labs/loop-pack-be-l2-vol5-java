@@ -248,6 +248,16 @@ class PaymentVerificationApiIntegrationTest {
     }
 
     @Test
+    @DisplayName("callback 조회에서 PG 거래가 CANCELED면 돈이 나가지 않은 확정으로 결제 실패 종결하고 재고를 한 번 반환한다")
+    void closesAsFailedWhenLookupReportsCanceled() throws Exception {
+        start(CreateBehavior.ACCEPT_PENDING);
+        server.changeStatus(transactionKey(), "CANCELED");
+        callback("FAILED").andExpect(status().isOk());
+        scene("PAYMENT_FAILED", 5, "FAILED", 1, 1, 1);
+        assertThat(anomalyCount()).isZero();
+    }
+
+    @Test
     @DisplayName("가짜 성공 callback의 상태와 금액은 무시하고 PG가 PENDING이면 결제 대기를 유지한다")
     void ignoresForgedCallbackStatus() throws Exception {
         start(CreateBehavior.ACCEPT_PENDING);

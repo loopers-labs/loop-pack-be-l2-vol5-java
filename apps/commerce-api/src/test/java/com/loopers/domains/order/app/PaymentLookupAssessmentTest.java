@@ -21,8 +21,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 class PaymentLookupAssessmentTest {
     private static final Instant STARTED_AT = Instant.parse("2026-10-21T00:00:00Z");
 
+    // CANCELED는 같은 이름의 결제 기록 상태가 없어 아래 별도 테스트로 확인한다.
     @ParameterizedTest(name = "일치 단일 거래 상태={0}")
-    @EnumSource(PaymentTransactionStatus.class)
+    @EnumSource(value = PaymentTransactionStatus.class, names = {"PENDING", "SUCCESS", "FAILED"})
     @DisplayName("일치하는 단일 거래는 보고와 callback 비교 키를 제공하고 결제 기록은 변경하지 않는다")
     void verifiesSingleTransaction(PaymentTransactionStatus status) {
         PaymentRecord payment = payment(null);
@@ -30,6 +31,18 @@ class PaymentLookupAssessmentTest {
 
         assertThat(assessment).isEqualTo(new PaymentLookupAssessment.Verified(
             new PaymentReport(PaymentRecord.ProviderStatus.valueOf(status.name()), "TR-1"), "TR-1"));
+        assertThat(payment.getTransactionKey()).isNull();
+        assertThat(payment.getProviderStatus()).isEqualTo(PaymentRecord.ProviderStatus.PENDING);
+    }
+
+    @Test
+    @DisplayName("일치하는 단일 거래가 CANCELED면 돈이 나가지 않은 확정 결과(FAILED 보고)로 검증하고 결제 기록은 변경하지 않는다")
+    void verifiesCanceledTransactionAsFailed() {
+        PaymentRecord payment = payment(null);
+        PaymentLookupAssessment assessment = PaymentLookupAssessment.assess(payment, found(PaymentTransactionStatus.CANCELED));
+
+        assertThat(assessment).isEqualTo(new PaymentLookupAssessment.Verified(
+            new PaymentReport(PaymentRecord.ProviderStatus.FAILED, "TR-1"), "TR-1"));
         assertThat(payment.getTransactionKey()).isNull();
         assertThat(payment.getProviderStatus()).isEqualTo(PaymentRecord.ProviderStatus.PENDING);
     }

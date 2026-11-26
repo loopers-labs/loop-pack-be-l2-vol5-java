@@ -2,6 +2,8 @@ package com.loopers.support.pg;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.loopers.domains.order.app.ConfirmCommand;
+import com.loopers.domains.payment.app.port.PaymentCancelCommand;
+import com.loopers.domains.payment.app.port.PaymentCancelResult;
 import com.loopers.domains.payment.app.port.PaymentCreateCommand;
 import com.loopers.domains.payment.app.port.PaymentCreateResult;
 import com.loopers.domains.payment.app.port.PaymentGateway;
@@ -100,6 +102,14 @@ public class TestPgFixture {
         return server().duplicateCreateOrderIds();
     }
 
+    public void loseCancelResponse(String providerOrderId) {
+        server().loseCancelResponse(providerOrderId);
+    }
+
+    public int cancelCalls(String providerOrderId) {
+        return server().cancelCalls(providerOrderId);
+    }
+
     public void close() throws InterruptedException {
         TestPgServer current = server;
         server = null;
@@ -143,6 +153,11 @@ public class TestPgFixture {
                 throw new IllegalStateException("주입된 주문별 조회 예외");
             }
             return client().verifyOrder(providerOrderId, storedTransactionKey);
+        }
+
+        @Override
+        public PaymentCancelResult cancel(PaymentCancelCommand command) {
+            return client().cancel(command);
         }
     }
 }
