@@ -1,8 +1,6 @@
 package com.loopers.infrastructure.payment;
 
-import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
-import ch.qos.logback.core.read.ListAppender;
 import com.loopers.domain.common.Money;
 import com.loopers.domain.payment.CardNumber;
 import com.loopers.domain.payment.CardType;
@@ -13,6 +11,7 @@ import com.loopers.domain.payment.PaymentGateway;
 import com.loopers.domain.payment.PgTransaction;
 import com.loopers.domain.payment.ProviderOrderId;
 import com.loopers.domain.payment.TransactionKey;
+import com.loopers.support.log.LogEvents;
 import com.loopers.support.pg.PgFixture;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import org.junit.jupiter.api.AfterAll;
@@ -24,7 +23,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
-import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
 import org.springframework.boot.autoconfigure.http.HttpMessageConvertersAutoConfiguration;
@@ -42,9 +40,7 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
 import java.time.Duration;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -252,61 +248,27 @@ class PaymentProviderContractTest {
             assertThat(output.getOut()).doesNotContain("0000-0000-0000-0000");
         }
 
-        @DisplayName("원인을 남기는 줄은 PG 주문 식별자와 원인과 상태 코드를 따로 찾을 수 있는 필드로도 갖는다")
+        @DisplayName("원인을 남기는 줄은 응답을 못 받았는지 해석을 못 했는지를 가리키는 이름과, "
+            + "PG 주문 식별자와 원인과 상태 코드를 따로 찾을 수 있는 필드로도 갖는다")
         @Test
-        void carriesCauseAsFields() {
-            Logger gatewayLogger = (Logger) LoggerFactory.getLogger(
-                "com.loopers.infrastructure.payment.PgPaymentGateway");
-            ListAppender<ILoggingEvent> events = new ListAppender<>();
-            events.start();
-            gatewayLogger.addAppender(events);
-            try {
+        void carriesNameAndCauseAsFields() {
+            List<ILoggingEvent> events = LogEvents.during("com.loopers.infrastructure.payment.PgPaymentGateway", () -> {
                 PG.dropNextCreateResponse();
                 gateway.create(creation(54L, 7000));
                 PG.respondNextCreateWith(500, "");
                 gateway.create(creation(55L, 7000));
+            });
 
-                assertThat(events.list).hasSize(2);
-                assertThat(fieldsOf(events.list.get(0)))
-                    .containsEntry("providerOrderId", "LP-ORD-0000000054")
-                    .containsEntry("cause", "connection_lost");
-                assertThat(fieldsOf(events.list.get(1)))
-                    .containsEntry("providerOrderId", "LP-ORD-0000000055")
-                    .containsEntry("cause", "unexpected_response")
-                    .containsEntry("status", 500);
-            } finally {
-                gatewayLogger.detachAppender(events);
-            }
-        }
-
-        @DisplayName("원인을 남기는 줄은 응답을 못 받았는지 해석을 못 했는지를 가리키는 이름을 필드로 갖는다")
-        @Test
-        void carriesEventName() {
-            Logger gatewayLogger = (Logger) LoggerFactory.getLogger(
-                "com.loopers.infrastructure.payment.PgPaymentGateway");
-            ListAppender<ILoggingEvent> events = new ListAppender<>();
-            events.start();
-            gatewayLogger.addAppender(events);
-            try {
-                PG.dropNextCreateResponse();
-                gateway.create(creation(56L, 7000));
-                PG.respondNextCreateWith(500, "");
-                gateway.create(creation(57L, 7000));
-
-                assertThat(events.list).hasSize(2);
-                assertThat(fieldsOf(events.list.get(0))).containsEntry("event", "payment_create_no_response");
-                assertThat(fieldsOf(events.list.get(1))).containsEntry("event", "payment_create_unexpected_response");
-            } finally {
-                gatewayLogger.detachAppender(events);
-            }
-        }
-
-        private Map<String, Object> fieldsOf(ILoggingEvent event) {
-            Map<String, Object> fields = new HashMap<>();
-            if (event.getKeyValuePairs() != null) {
-                event.getKeyValuePairs().forEach(pair -> fields.put(pair.key, pair.value));
-            }
-            return fields;
+            assertThat(events).hasSize(2);
+            assertThat(LogEvents.fieldsOf(events.get(0)))
+                .containsEntry("event", "payment_create_no_response")
+                .containsEntry("providerOrderId", "LP-ORD-0000000054")
+                .containsEntry("cause", "connection_lost");
+            assertThat(LogEvents.fieldsOf(events.get(1)))
+                .containsEntry("event", "payment_create_unexpected_response")
+                .containsEntry("providerOrderId", "LP-ORD-0000000055")
+                .containsEntry("cause", "unexpected_response")
+                .containsEntry("status", 500);
         }
 
         private List<String> linesOf(CapturedOutput output, String providerOrderId) {

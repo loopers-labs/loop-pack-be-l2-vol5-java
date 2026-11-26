@@ -1,8 +1,6 @@
 package com.loopers.application.payment;
 
-import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
-import ch.qos.logback.core.read.ListAppender;
 import com.loopers.CommerceApiApplication;
 import com.loopers.application.brand.BrandFacade;
 import com.loopers.application.order.OrderCreateCommand;
@@ -27,6 +25,7 @@ import com.loopers.support.error.DomainError;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.DomainException;
 import com.loopers.support.error.ErrorType;
+import com.loopers.support.log.LogEvents;
 import com.loopers.support.pg.PgFixture;
 import com.loopers.utils.DatabaseCleanUp;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
@@ -39,7 +38,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.WebApplicationType;
 import org.springframework.boot.builder.SpringApplicationBuilder;
@@ -56,9 +54,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
@@ -730,6 +726,8 @@ class PaymentFacadeIntegrationTest {
     @DisplayName("결제 한 건의 경위는 paymentId 와 orderId 로 이어지는 로그로 남는다")
     class Trail {
 
+        private static final String PAYMENT_LOG = "com.loopers.application.payment.PaymentLog";
+
         @DisplayName("생성 응답이 끊기면 그 결제와 주문의 id 로 결과를 모른다는 줄이 한 번 남는다")
         @Test
         void logsUnknownCreate(CapturedOutput output) {
@@ -738,11 +736,8 @@ class PaymentFacadeIntegrationTest {
 
             Payment payment = confirm(order.getId(), "attempt-1");
 
-            assertThat(output.getOut().lines()
-                .filter(line -> line.contains("paymentId=" + payment.getId()))
-                .filter(line -> line.contains("orderId=" + order.getId()))
-                .filter(line -> line.contains("result=unknown")))
-                .hasSize(1);
+            assertThat(linesOf(output, payment, "result=unknown")).singleElement().asString()
+                .contains("orderId=" + order.getId());
         }
 
         @DisplayName("정상 접수된 생성 호출은 줄을 남기지 않는다")
@@ -753,26 +748,24 @@ class PaymentFacadeIntegrationTest {
             Payment payment = confirm(order.getId(), "attempt-1");
 
             assertThat(payment.getStatus()).isEqualTo(PaymentStatus.PENDING);
-            assertThat(createLines(output, payment)).isEmpty();
+            assertThat(linesOf(output, payment, "result=")).isEmpty();
         }
 
-        @DisplayName("거절된 생성 호출은 DB 에 실패로만 남으므로 거절이었다는 줄이 한 줄 남는다")
+        @DisplayName("거절된 생성 호출은 DB 에 실패로만 남으므로 거절이었다는 줄이 한 줄 남고, 접수되지 않았다는 이름을 필드로 갖는다")
         @Test
         void logsRejectedCreate(CapturedOutput output) {
             Order order = place(2);
-            PG.rejectNextCreate();
+            Payment[] payment = new Payment[1];
 
-            Payment payment = confirm(order.getId(), "attempt-1");
+            List<ILoggingEvent> events = LogEvents.during(PAYMENT_LOG, () -> {
+                PG.rejectNextCreate();
+                payment[0] = confirm(order.getId(), "attempt-1");
+            });
 
-            assertThat(createLines(output, payment)).singleElement().asString()
+            assertThat(linesOf(output, payment[0], "result=")).singleElement().asString()
                 .contains("orderId=" + order.getId(), "result=rejected");
-        }
-
-        private List<String> createLines(CapturedOutput output, Payment payment) {
-            return output.getOut().lines()
-                .filter(line -> line.contains("paymentId=" + payment.getId()))
-                .filter(line -> line.contains("result="))
-                .toList();
+            assertThat(events).singleElement().satisfies(event ->
+                assertThat(LogEvents.fieldsOf(event)).containsEntry("event", "payment_create_not_accepted"));
         }
 
         @DisplayName("reconcile 이 조회 결과로 상태를 바꾸면 어디서 무엇이 무엇으로 바뀌었는지 한 줄 남는다")
@@ -781,11 +774,11 @@ class PaymentFacadeIntegrationTest {
             Order order = place(2);
             PG.dropNextCreateResponse();
             Payment payment = confirm(order.getId(), "attempt-1");
-            PG.changeStatus(PG.transactionsOf(payment.getProviderOrderId().value()).get(0).transactionKey(), PgFixture.Status.SUCCESS);
+            PG.changeStatus(pgKeyOf(payment), PgFixture.Status.SUCCESS);
 
             paymentFacade.reconcile(USER, order.getId(), NOW.plusSeconds(10));
 
-            assertThat(changedLines(output, payment)).singleElement().asString()
+            assertThat(linesOf(output, payment, "from=")).singleElement().asString()
                 .contains("orderId=" + order.getId(), "source=reconcile", "from=UNKNOWN", "to=SUCCESS");
         }
 
@@ -799,7 +792,7 @@ class PaymentFacadeIntegrationTest {
             paymentFacade.reconcile(USER, order.getId(), NOW.plusSeconds(10));
 
             assertThat(lookups()).isEqualTo(before + 1);
-            assertThat(changedLines(output, payment)).isEmpty();
+            assertThat(linesOf(output, payment, "from=")).isEmpty();
         }
 
         @DisplayName("callback 이 조회 결과로 상태를 바꾸면 callback 이 바꿨다는 줄이 한 줄 남는다")
@@ -807,12 +800,11 @@ class PaymentFacadeIntegrationTest {
         void logsStatusChangedByCallback(CapturedOutput output) {
             Order order = place(2);
             Payment payment = confirm(order.getId(), "attempt-1");
-            PG.changeStatus(
-                PG.transactionsOf(payment.getProviderOrderId().value()).get(0).transactionKey(), PgFixture.Status.SUCCESS);
+            PG.changeStatus(pgKeyOf(payment), PgFixture.Status.SUCCESS);
 
             paymentFacade.onCallback(payment.getProviderOrderId(), NOW.plusSeconds(1));
 
-            assertThat(changedLines(output, payment)).singleElement().asString()
+            assertThat(linesOf(output, payment, "from=")).singleElement().asString()
                 .contains("orderId=" + order.getId(), "source=callback", "from=PENDING", "to=SUCCESS");
         }
 
@@ -822,130 +814,38 @@ class PaymentFacadeIntegrationTest {
             Order order = place(2);
             PG.dropNextCreateResponse();
             Payment payment = confirm(order.getId(), "attempt-1");
-            PG.changeStatus(
-                PG.transactionsOf(payment.getProviderOrderId().value()).get(0).transactionKey(), PgFixture.Status.FAILED);
+            PG.changeStatus(pgKeyOf(payment), PgFixture.Status.FAILED);
 
             paymentSweeper.sweepOnce(NOW.plusSeconds(11));
 
-            assertThat(changedLines(output, payment)).singleElement().asString()
+            assertThat(linesOf(output, payment, "from=")).singleElement().asString()
                 .contains("orderId=" + order.getId(), "source=sweeper", "from=UNKNOWN", "to=FAILED");
         }
 
-        @DisplayName("reconcile 이 조회 결과를 반영하지 못하면 실패를 그대로 올리되, 어느 결제에서 어떤 오류였는지 한 줄 남는다")
+        @DisplayName("reconcile 이 조회 결과를 반영하지 못하면 실패를 그대로 올리되, 어느 결제에서 어떤 오류였는지 한 줄 남는다. "
+            + "그 줄은 이름과 오류 종류를 필드로 갖고, 같은 실패가 몰릴 때 줄이 불어나지 않게 stack trace 는 싣지 않는다")
         @Test
         void logsFailedApplyByReconcile(CapturedOutput output) throws Exception {
             Order order = place(2);
             PG.dropNextCreateResponse();
             Payment payment = confirm(order.getId(), "attempt-1");
-            PG.changeStatus(
-                PG.transactionsOf(payment.getProviderOrderId().value()).get(0).transactionKey(), PgFixture.Status.SUCCESS);
-
-            try (Connection holder = dataSource.getConnection()) {
-                holder.setAutoCommit(false);
-                lockOrder(holder, order.getId());
-                assertThatThrownBy(() -> paymentFacade.reconcile(USER, order.getId(), NOW.plusSeconds(10)))
-                    .isInstanceOf(DataAccessException.class);
-                holder.rollback();
-            }
-
-            assertThat(output.getOut().lines()
-                .filter(line -> line.contains("paymentId=" + payment.getId()))
-                .filter(line -> line.contains("source=reconcile"))
-                .filter(line -> line.contains("error=")))
-                .singleElement().asString().contains("orderId=" + order.getId());
-            assertThat(changedLines(output, payment)).isEmpty();
-        }
-
-        @DisplayName("결제의 줄은 식별자와 판단 값을 문장 속 글자뿐 아니라 따로 찾을 수 있는 필드로도 갖는다")
-        @Test
-        void carriesIdsAsFields() {
-            Logger paymentLogger = (Logger) LoggerFactory.getLogger("com.loopers.application.payment.PaymentLog");
-            ListAppender<ILoggingEvent> events = new ListAppender<>();
-            events.start();
-            paymentLogger.addAppender(events);
-            try {
-                Order order = place(2);
-                PG.dropNextCreateResponse();
-                Payment payment = confirm(order.getId(), "attempt-1");
-                PG.changeStatus(
-                    PG.transactionsOf(payment.getProviderOrderId().value()).get(0).transactionKey(),
-                    PgFixture.Status.SUCCESS);
-                paymentFacade.reconcile(USER, order.getId(), NOW.plusSeconds(10));
-
-                assertThat(events.list).hasSize(2);
-                assertThat(fieldsOf(events.list.get(0)))
-                    .containsEntry("paymentId", payment.getId())
-                    .containsEntry("orderId", order.getId())
-                    .containsEntry("result", "unknown");
-                assertThat(fieldsOf(events.list.get(1)))
-                    .containsEntry("paymentId", payment.getId())
-                    .containsEntry("orderId", order.getId())
-                    .containsEntry("source", "reconcile")
-                    .containsEntry("from", "UNKNOWN")
-                    .containsEntry("to", "SUCCESS");
-            } finally {
-                paymentLogger.detachAppender(events);
-            }
-        }
-
-        @DisplayName("결제의 줄은 무슨 일인지를 가리키는 이름과, adapter 의 줄과 이어지는 PG 주문 식별자를 필드로 갖는다")
-        @Test
-        void carriesEventNameAndProviderOrderId() {
-            Order order = place(2);
-            String[] providerOrderId = new String[1];
-
-            List<ILoggingEvent> events = paymentLogDuring(() -> {
-                PG.dropNextCreateResponse();
-                Payment payment = confirm(order.getId(), "attempt-1");
-                providerOrderId[0] = payment.getProviderOrderId().value();
-                PG.changeStatus(PG.transactionsOf(providerOrderId[0]).get(0).transactionKey(), PgFixture.Status.SUCCESS);
-                paymentFacade.reconcile(USER, order.getId(), NOW.plusSeconds(10));
-            });
-
-            assertThat(events).hasSize(2);
-            assertThat(fieldsOf(events.get(0)))
-                .containsEntry("event", "payment_create_unknown")
-                .containsEntry("providerOrderId", providerOrderId[0]);
-            assertThat(fieldsOf(events.get(1)))
-                .containsEntry("event", "payment_status_changed")
-                .containsEntry("providerOrderId", providerOrderId[0]);
-        }
-
-        @DisplayName("거절된 생성 호출의 줄은 접수되지 않았다는 이름을 갖는다")
-        @Test
-        void namesNotAcceptedCreate() {
-            Order order = place(2);
-
-            List<ILoggingEvent> events = paymentLogDuring(() -> {
-                PG.rejectNextCreate();
-                confirm(order.getId(), "attempt-1");
-            });
-
-            assertThat(events).singleElement().satisfies(event ->
-                assertThat(fieldsOf(event)).containsEntry("event", "payment_create_not_accepted"));
-        }
-
-        @DisplayName("반영하지 못한 줄은 그 이름과 오류 종류를 필드로 갖고, 같은 실패가 몰릴 때 줄이 불어나지 않게 stack trace 는 싣지 않는다")
-        @Test
-        void namesFailedApplyWithoutStackTrace() throws Exception {
-            Order order = place(2);
-            PG.dropNextCreateResponse();
-            Payment payment = confirm(order.getId(), "attempt-1");
-            PG.changeStatus(
-                PG.transactionsOf(payment.getProviderOrderId().value()).get(0).transactionKey(), PgFixture.Status.SUCCESS);
+            PG.changeStatus(pgKeyOf(payment), PgFixture.Status.SUCCESS);
 
             List<ILoggingEvent> events;
             try (Connection holder = dataSource.getConnection()) {
                 holder.setAutoCommit(false);
                 lockOrder(holder, order.getId());
-                events = paymentLogDuring(() ->
+                events = LogEvents.during(PAYMENT_LOG, () ->
                     assertThatThrownBy(() -> paymentFacade.reconcile(USER, order.getId(), NOW.plusSeconds(10)))
                         .isInstanceOf(DataAccessException.class));
                 holder.rollback();
             }
 
+            assertThat(linesOf(output, payment, "error=")).singleElement().asString()
+                .contains("orderId=" + order.getId(), "source=reconcile");
+            assertThat(linesOf(output, payment, "from=")).isEmpty();
             assertThat(events).singleElement().satisfies(event -> {
-                assertThat(fieldsOf(event))
+                assertThat(LogEvents.fieldsOf(event))
                     .containsEntry("event", "payment_apply_failed")
                     .containsEntry("providerOrderId", payment.getProviderOrderId().value())
                     .containsEntry("source", "reconcile")
@@ -954,31 +854,45 @@ class PaymentFacadeIntegrationTest {
             });
         }
 
-        private List<ILoggingEvent> paymentLogDuring(Runnable action) {
-            Logger paymentLogger = (Logger) LoggerFactory.getLogger("com.loopers.application.payment.PaymentLog");
-            ListAppender<ILoggingEvent> events = new ListAppender<>();
-            events.start();
-            paymentLogger.addAppender(events);
-            try {
-                action.run();
-            } finally {
-                paymentLogger.detachAppender(events);
-            }
-            return events.list;
+        @DisplayName("결제의 줄은 무슨 일인지 가리키는 이름과 식별자와 판단 값을, 문장 속 글자뿐 아니라 따로 찾을 수 있는 필드로도 갖는다")
+        @Test
+        void carriesNameAndIdsAsFields() {
+            Order order = place(2);
+            Payment[] sent = new Payment[1];
+
+            List<ILoggingEvent> events = LogEvents.during(PAYMENT_LOG, () -> {
+                PG.dropNextCreateResponse();
+                sent[0] = confirm(order.getId(), "attempt-1");
+                PG.changeStatus(pgKeyOf(sent[0]), PgFixture.Status.SUCCESS);
+                paymentFacade.reconcile(USER, order.getId(), NOW.plusSeconds(10));
+            });
+
+            Payment payment = sent[0];
+            assertThat(events).hasSize(2);
+            assertThat(LogEvents.fieldsOf(events.get(0)))
+                .containsEntry("event", "payment_create_unknown")
+                .containsEntry("paymentId", payment.getId())
+                .containsEntry("orderId", order.getId())
+                .containsEntry("providerOrderId", payment.getProviderOrderId().value())
+                .containsEntry("result", "unknown");
+            assertThat(LogEvents.fieldsOf(events.get(1)))
+                .containsEntry("event", "payment_status_changed")
+                .containsEntry("paymentId", payment.getId())
+                .containsEntry("orderId", order.getId())
+                .containsEntry("providerOrderId", payment.getProviderOrderId().value())
+                .containsEntry("source", "reconcile")
+                .containsEntry("from", "UNKNOWN")
+                .containsEntry("to", "SUCCESS");
         }
 
-        private Map<String, Object> fieldsOf(ILoggingEvent event) {
-            Map<String, Object> fields = new HashMap<>();
-            if (event.getKeyValuePairs() != null) {
-                event.getKeyValuePairs().forEach(pair -> fields.put(pair.key, pair.value));
-            }
-            return fields;
+        private String pgKeyOf(Payment payment) {
+            return PG.transactionsOf(payment.getProviderOrderId().value()).get(0).transactionKey();
         }
 
-        private List<String> changedLines(CapturedOutput output, Payment payment) {
+        private List<String> linesOf(CapturedOutput output, Payment payment, String marker) {
             return output.getOut().lines()
                 .filter(line -> line.contains("paymentId=" + payment.getId()))
-                .filter(line -> line.contains("from="))
+                .filter(line -> line.contains(marker))
                 .toList();
         }
     }
