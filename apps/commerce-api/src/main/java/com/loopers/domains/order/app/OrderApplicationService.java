@@ -27,6 +27,7 @@ import com.loopers.domains.payment.app.port.PaymentLookupScheduleRepository;
 import com.loopers.domains.payment.app.port.PaymentRecordRepository;
 import com.loopers.domains.payment.app.port.PaymentRefundCaseRepository;
 import com.loopers.domains.payment.app.port.PaymentTransactionsLookup;
+import com.loopers.domains.payment.app.port.RefundOutcomeRecorder;
 import com.loopers.domains.payment.domain.PaymentRecord;
 import com.loopers.domains.payment.domain.RefundCase;
 import com.loopers.domains.product.app.ProductNotFoundException;
@@ -69,6 +70,7 @@ public class OrderApplicationService {
     private final PaymentOutcomeRecorder paymentOutcomeRecorder;
     private final PaymentProgressRecorder paymentProgressRecorder;
     private final PaymentRefundCaseRepository paymentRefundCaseRepository;
+    private final RefundOutcomeRecorder refundOutcomeRecorder;
 
     public OrderApplicationService(OrderRepository orderRepository, ProductRepository productRepository,
         PaymentRecordRepository paymentRecordRepository, PaymentGatewayRegistry paymentGatewayRegistry,
@@ -76,7 +78,8 @@ public class OrderApplicationService {
         PaymentLookupScheduleRepository paymentLookupScheduleRepository, PaymentLookupPolicy paymentLookupPolicy,
         PaymentExpiryPolicy paymentExpiryPolicy, OrderConfirmedPublisher orderConfirmedPublisher,
         OrderConfirmedOutbox orderConfirmedOutbox, PaymentOutcomeRecorder paymentOutcomeRecorder,
-        PaymentProgressRecorder paymentProgressRecorder, PaymentRefundCaseRepository paymentRefundCaseRepository) {
+        PaymentProgressRecorder paymentProgressRecorder, PaymentRefundCaseRepository paymentRefundCaseRepository,
+        RefundOutcomeRecorder refundOutcomeRecorder) {
         this.orderRepository = orderRepository;
         this.productRepository = productRepository;
         this.paymentRecordRepository = paymentRecordRepository;
@@ -92,6 +95,7 @@ public class OrderApplicationService {
         this.paymentOutcomeRecorder = paymentOutcomeRecorder;
         this.paymentProgressRecorder = paymentProgressRecorder;
         this.paymentRefundCaseRepository = paymentRefundCaseRepository;
+        this.refundOutcomeRecorder = refundOutcomeRecorder;
     }
 
     public record ItemRequest(long productId, int quantity) { }
@@ -502,8 +506,15 @@ public class OrderApplicationService {
     // 환불 요청은 여기서 보내지 않는다(환불 스케줄러 한 곳).
     private void trackLateSuccess(Order order, PaymentRecord payment, String transactionKey) {
         Instant now = clock.instant();
-        Optional<RefundCase> found = paymentRefundCaseRepository.findByOrderId(order.getId());
+        // 환불 추적 회차와 같은 대상 행 잠금으로 직렬화한다. 잠그지 않으면 회차가 commit한 REFUND_REQUESTED를 읽어 둔 TRACKING으로 덮어
+        // "요청했을 수 있음" 기록이 사라지고 취소가 다시 나갈 수 있다. 잠금 순서는 주문 → 대상이고 회차는 대상만 잠근다.
+        // 행이 있을 때만 잠근다. 없는 행을 FOR UPDATE로 읽으면 gap lock이 잡혀 서로 다른 주문의 합류 INSERT끼리 데드락이 난다.
+        // 행이 없을 때 잠그지 않아도 안전하다: 대상을 새로 만드는 경로(만료·합류)는 모두 이 주문 행 잠금 아래라 같은 주문은 이미 직렬화된다.
+        Optional<RefundCase> found = paymentRefundCaseRepository.existsByOrderId(order.getId())
+            ? paymentRefundCaseRepository.findByOrderIdForUpdate(order.getId())
+            : Optional.empty();
         RefundCase refundCase;
+        boolean wasHandedToHuman = found.isPresent() && found.get().getStatus() == RefundCase.Status.HANDED_TO_HUMAN;
         if (found.isPresent()) {
             refundCase = found.get();
             refundCase.joinLateSuccess(transactionKey, now);
@@ -513,6 +524,10 @@ public class OrderApplicationService {
             refundCase = RefundCase.handToHumanOnReversal(payment, transactionKey, now);
         }
         paymentRefundCaseRepository.save(refundCase);
+        // 결과 뒤집힘 이관도 환불 결론이다. 이미 사람에게 넘긴 대상에 늦은 성공이 다시 와도 다시 세지 않는다.
+        if (!wasHandedToHuman && refundCase.getStatus() == RefundCase.Status.HANDED_TO_HUMAN) {
+            afterCommit(() -> refundOutcomeRecorder.record(RefundOutcomeRecorder.Outcome.HANDED_TO_HUMAN));
+        }
     }
 
     // 결과 모름 유입은 UNKNOWN이 아닌 상태에서 UNKNOWN으로 처음 바뀐 반영만 센다. 이미 UNKNOWN인 기록의 재보고는 유입이 아니다.

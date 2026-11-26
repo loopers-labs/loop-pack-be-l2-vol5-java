@@ -5,6 +5,7 @@ import com.loopers.domains.payment.domain.RefundCase;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -19,7 +20,7 @@ public class PaymentRefundCasePersistenceAdapter implements PaymentRefundCaseRep
 
     @Override
     public RefundCase save(RefundCase refundCase) {
-        // 호출자가 주문 행을 잠근 트랜잭션에 참여한다. 같은 주문의 대상 갱신도 그 잠금으로 직렬화된다.
+        // 호출자가 대상 행을 잠근(findByOrderIdForUpdate) 트랜잭션에 참여한다. 합류와 환불 추적의 갱신이 그 잠금으로 직렬화된다.
         PaymentRefundCaseJpaEntity entity = paymentRefundCaseJpaRepository.findById(refundCase.getOrderId())
             .map(found -> {
                 found.update(refundCase);
@@ -35,14 +36,21 @@ public class PaymentRefundCasePersistenceAdapter implements PaymentRefundCaseRep
         return paymentRefundCaseJpaRepository.findById(orderId).map(PaymentRefundCaseJpaEntity::toRefundCase);
     }
 
+    // 엔티티를 영속성 컨텍스트에 올리지 않는다. 올리면 뒤이은 FOR UPDATE 조회가 DB의 최신 행 대신 먼저 읽은 상태를 돌려준다.
+    @Override
+    @Transactional(readOnly = true)
+    public boolean existsByOrderId(long orderId) {
+        return paymentRefundCaseJpaRepository.existsById(orderId);
+    }
+
     @Override
     public Optional<RefundCase> findByOrderIdForUpdate(long orderId) {
-        return Optional.empty();
+        return paymentRefundCaseJpaRepository.findForUpdate(orderId).map(PaymentRefundCaseJpaEntity::toRefundCase);
     }
 
     @Override
     @Transactional(readOnly = true)
     public List<Long> findDue(Instant now, int limit) {
-        return List.of();
+        return paymentRefundCaseJpaRepository.findDue(now, PageRequest.of(0, limit));
     }
 }

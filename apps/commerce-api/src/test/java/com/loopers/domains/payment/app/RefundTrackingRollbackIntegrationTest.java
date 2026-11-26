@@ -34,11 +34,17 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.annotation.DirtiesContext;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 // 결론 저장 트랜잭션이 실패하면 상태도 counter도 남지 않아야 한다(counter는 commit 뒤에만 센다).
-// 실패 주입은 테스트 설정의 저장소에서 한다: 결론 상태 저장 SQL을 flush로 DB에 보낸 뒤 예외를 던지고, 서비스 트랜잭션이 끝난 뒤 새로 읽는다.
+// 실패 주입은 테스트 설정의 저장소에서 한다: 결론 상태 저장 SQL을 flush로 DB에 보낸 뒤 commit 직전(beforeCommit)에 예외를 던지고,
+// 서비스 트랜잭션이 끝난 뒤 새로 읽는다. save 안에서 던지면 저장 뒤에 셈을 등록하는 경로(이관)는 셈 코드에 닿지 못해 판별력이 없다.
+// 전용 테스트 설정이라 캐시에 남으면 DB 연결을 계속 붙잡는다(전체 검사에서 Too many connections). 클래스가 끝나면 닫는다.
+@DirtiesContext
 @SpringBootTest
 @Import(RefundTrackingRollbackIntegrationTest.FailureInjectionConfig.class)
 class RefundTrackingRollbackIntegrationTest {
@@ -77,7 +83,7 @@ class RefundTrackingRollbackIntegrationTest {
 
     @ParameterizedTest(name = "장면={0} → 실패한 결론={1}")
     @CsvSource({"failed, CLOSED_NO_CHARGE, closed_no_charge", "deadline, HANDED_TO_HUMAN, handed_to_human"})
-    @DisplayName("결론 저장이 flush 뒤 실패해 rollback되면 대상은 TRACKING 그대로이고 결론 counter는 늘지 않으며 건별 실패만 ERROR로 남는다")
+    @DisplayName("결론 저장이 flush되고 셈 등록까지 지난 뒤 commit 직전에 실패해 rollback되면 대상은 TRACKING 그대로이고 결론 counter는 늘지 않으며 건별 실패만 ERROR로 남는다")
     void doesNotCountRolledBackConclusion(String scene, RefundCase.Status failingStatus, String result) {
         failingRefundCases.save(RefundCase.restore(ORDER_ID, TestPgFixture.PROVIDER_ID, PROVIDER_ORDER_ID, new Money(1000),
             RefundCase.Status.TRACKING, PaymentRecord.ProviderStatus.PENDING, null, NOW, NOW.plus(RefundCase.HANDOFF_AFTER),
@@ -155,7 +161,13 @@ class RefundTrackingRollbackIntegrationTest {
                 entityManager.flush();
                 stateBeforeFailure.set(jdbcTemplate.queryForObject("select status from payment_refund_cases where order_id = ?",
                     String.class, refundCase.getOrderId()));
-                throw new IllegalStateException("주입된 환불 결론 저장 실패");
+                failingStatus.set(null);
+                TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                    @Override
+                    public void beforeCommit(boolean readOnly) {
+                        throw new IllegalStateException("주입된 환불 결론 저장 실패");
+                    }
+                });
             }
             return saved;
         }
@@ -163,6 +175,11 @@ class RefundTrackingRollbackIntegrationTest {
         @Override
         public Optional<RefundCase> findByOrderId(long orderId) {
             return delegate.findByOrderId(orderId);
+        }
+
+        @Override
+        public boolean existsByOrderId(long orderId) {
+            return delegate.existsByOrderId(orderId);
         }
 
         @Override

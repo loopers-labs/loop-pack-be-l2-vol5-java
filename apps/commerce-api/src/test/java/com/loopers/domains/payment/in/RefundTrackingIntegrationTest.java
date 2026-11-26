@@ -8,9 +8,11 @@ import com.loopers.common.domain.Money;
 import com.loopers.domains.brand.app.BrandApplicationService;
 import com.loopers.domains.order.app.OrderApplicationService;
 import com.loopers.domains.payment.app.RefundTrackingService;
+import com.loopers.domains.payment.app.port.PaymentLookupCircuitState;
 import com.loopers.domains.payment.app.port.PaymentRefundCaseRepository;
 import com.loopers.domains.payment.domain.PaymentRecord;
 import com.loopers.domains.payment.domain.RefundCase;
+import com.loopers.domains.payment.out.PaymentCircuitBreakers;
 import com.loopers.domains.payment.out.TestPgServer;
 import com.loopers.domains.payment.out.TestPgServer.CancelBehavior;
 import com.loopers.domains.payment.out.TestPgServer.CreateBehavior;
@@ -27,6 +29,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -42,12 +45,16 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.annotation.DirtiesContext;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 // 만료된 PG 결제의 환불 추적 한 회차를 실제 DB·test-pg로 본다(10주차 5단계 F2~F7·F9·F10, 경계 로그).
 // 스케줄러는 test 프로필에서 꺼져 있어 서비스 회차를 직접 부른다. 대상은 서비스 트랜잭션이 끝난 뒤 포트로 새로 읽는다.
 // counter는 컨텍스트가 공유하는 MeterRegistry에 누적되므로 테스트 시작 값 대비 증가분으로 본다.
+// 전용 테스트 설정이라 캐시에 남으면 DB 연결을 계속 붙잡는다(전체 검사에서 Too many connections). 클래스가 끝나면 닫는다.
+@DirtiesContext
 @SpringBootTest
 @Import(RefundTrackingIntegrationTest.TimeConfig.class)
 class RefundTrackingIntegrationTest {
@@ -69,6 +76,7 @@ class RefundTrackingIntegrationTest {
     @Autowired private UserJpaRepository users;
     @Autowired private JdbcTemplate jdbc;
     @Autowired private DatabaseCleanUp cleanup;
+    @Autowired private FailingCircuitState failingCircuitState;
     private final Logger serviceLogger = (Logger) LoggerFactory.getLogger(RefundTrackingService.class);
     private ListAppender<ILoggingEvent> logs;
     private TestPgServer server;
@@ -89,6 +97,7 @@ class RefundTrackingIntegrationTest {
     @AfterEach
     void clean() throws Exception {
         serviceLogger.detachAppender(logs);
+        failingCircuitState.disarm();
         pg.close();
         jdbc.update("delete from order_items");
         cleanup.truncateAllTables();
@@ -141,7 +150,7 @@ class RefundTrackingIntegrationTest {
         server.changeStatus(transactionKey(orderId), "SUCCESS");
         pg.crashBeforeCancel();
 
-        refundTracking.trackDueCases();
+        assertThatThrownBy(refundTracking::trackDueCases).isInstanceOf(TestPgFixture.InjectedCrash.class);
 
         assertThat(refundCase(orderId).getStatus()).isEqualTo(RefundCase.Status.REFUND_REQUESTED);
         assertThat(pg.cancelCalls(providerOrderId(orderId))).isZero();
@@ -309,7 +318,7 @@ class RefundTrackingIntegrationTest {
     void logsHandoffAndPerCaseFailure() {
         long failing = expiredOrder();
         server.changeStatus(transactionKey(failing), "SUCCESS");
-        pg.crashBeforeCancel();
+        failingCircuitState.failNextCheck();
 
         refundTracking.trackDueCases();
 
@@ -319,7 +328,6 @@ class RefundTrackingIntegrationTest {
             assertThat(event.getThrowableProxy()).isNull();
         });
 
-        pg.resumeCancel();
         clock.set(EXPIRES_AT.plus(Duration.ofDays(2)));
         logs.list.clear();
         refundTracking.trackDueCases();
@@ -401,6 +409,38 @@ class RefundTrackingIntegrationTest {
         @Primary
         MutablePaymentClock refundTrackingClock() {
             return new MutablePaymentClock();
+        }
+
+        @Bean
+        @Primary
+        FailingCircuitState failingCircuitState(PaymentCircuitBreakers delegate) {
+            return new FailingCircuitState(delegate);
+        }
+    }
+
+    // 건별 처리 실패를 만드는 테스트 설정이다. 회로 확인은 조회·취소 예외 처리 밖(잠금 트랜잭션 안)이라 예외가 회차의 건별 catch까지 간다.
+    static class FailingCircuitState implements PaymentLookupCircuitState {
+        private final PaymentLookupCircuitState delegate;
+        private final AtomicBoolean failNext = new AtomicBoolean();
+
+        FailingCircuitState(PaymentLookupCircuitState delegate) {
+            this.delegate = delegate;
+        }
+
+        void failNextCheck() {
+            failNext.set(true);
+        }
+
+        void disarm() {
+            failNext.set(false);
+        }
+
+        @Override
+        public boolean blocksLookup(String providerId) {
+            if (failNext.getAndSet(false)) {
+                throw new IllegalStateException("주입된 회로 확인 실패");
+            }
+            return delegate.blocksLookup(providerId);
         }
     }
 }

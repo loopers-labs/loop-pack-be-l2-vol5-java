@@ -108,32 +108,83 @@ public final class RefundCase {
     }
 
     public boolean isConcluded() {
-        return false;
+        return status == Status.REFUNDED || status == Status.CLOSED_NO_CHARGE || status == Status.HANDED_TO_HUMAN;
     }
 
     public boolean isHandoffDue(Instant now) {
-        return false;
+        return !isConcluded() && !now.isBefore(handoffAt);
     }
 
+    // 환불 요청은 주문당 한 번만이다. 이 상태를 commit한 뒤에만 취소를 보내므로, 추적 중이 아닌 대상에서는 다시 요청할 수 없다.
+    // 결과가 기록되지 않은 채 멈춘 경우를 다음 회차가 조회로 확인하도록 결과 확인 시각을 잡아 둔다.
     public void requestRefund(String foundTransactionKey, Instant now) {
+        requireStatus(Status.TRACKING);
+        storeKey(foundTransactionKey);
+        status = Status.REFUND_REQUESTED;
+        refundRequestedAt = now;
+        nextCheckAt = now.plus(FIRST_CHECK_DELAY);
     }
 
     public void markRefunded(Instant now) {
+        if (status != Status.REFUND_REQUESTED && status != Status.REFUND_UNKNOWN) {
+            throw new IllegalStateException("환불을 요청한 대상만 환불 완료로 바꿀 수 있습니다: " + status);
+        }
+        conclude(Status.REFUNDED, now);
     }
 
     public void markRefundUnknown(Instant now) {
+        requireStatus(Status.REFUND_REQUESTED);
+        status = Status.REFUND_UNKNOWN;
+        nextCheckAt = now.plus(FIRST_CHECK_DELAY);
     }
 
     public void closeNoCharge(Instant now) {
+        requireStatus(Status.TRACKING);
+        conclude(Status.CLOSED_NO_CHARGE, now);
     }
 
     public void handOff(String handoffReason, Instant now) {
+        requireOpen();
+        reason = handoffReason;
+        conclude(Status.HANDED_TO_HUMAN, now);
     }
 
     public void recordInconclusiveCheck(Instant now) {
+        requireOpen();
+        checkAttempts++;
+        nextCheckAt = now.plus(checkDelay());
     }
 
+    // 회로 때문에 PG를 부르지 못한 것은 조회가 아니므로 횟수를 늘리지 않고 마지막 간격만큼 미룬다.
     public void postponeCheck(Instant now) {
+        requireOpen();
+        nextCheckAt = now.plus(checkDelay());
+    }
+
+    private Duration checkDelay() {
+        Duration delay = FIRST_CHECK_DELAY;
+        for (int doubled = 1; doubled < checkAttempts && delay.compareTo(MAX_CHECK_DELAY) < 0; doubled++) {
+            delay = delay.multipliedBy(2);
+        }
+        return delay.compareTo(MAX_CHECK_DELAY) > 0 ? MAX_CHECK_DELAY : delay;
+    }
+
+    private void conclude(Status concluded, Instant now) {
+        status = concluded;
+        concludedAt = now;
+        nextCheckAt = null;
+    }
+
+    private void requireStatus(Status expected) {
+        if (status != expected) {
+            throw new IllegalStateException("환불 확인 대상 상태가 " + expected + "가 아닙니다: " + status);
+        }
+    }
+
+    private void requireOpen() {
+        if (isConcluded()) {
+            throw new IllegalStateException("결론 난 환불 확인 대상은 바꿀 수 없습니다: " + status);
+        }
     }
 
     private void storeKey(String reportedTransactionKey) {

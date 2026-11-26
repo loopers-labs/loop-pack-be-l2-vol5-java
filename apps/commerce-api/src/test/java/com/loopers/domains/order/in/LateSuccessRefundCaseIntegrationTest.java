@@ -14,6 +14,8 @@ import com.loopers.domains.user.out.UserJpaRepository;
 import com.loopers.support.pg.MutablePaymentClock;
 import com.loopers.support.pg.TestPgFixture;
 import com.loopers.utils.DatabaseCleanUp;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -60,6 +62,7 @@ class LateSuccessRefundCaseIntegrationTest {
     @Autowired private UserJpaRepository users;
     @Autowired private JdbcTemplate jdbc;
     @Autowired private DatabaseCleanUp cleanup;
+    @Autowired private MeterRegistry meterRegistry;
     private TestPgServer server;
     private long productId;
     private long orderId;
@@ -232,6 +235,51 @@ class LateSuccessRefundCaseIntegrationTest {
         assertThat(caseCount()).isZero();
         assertOrder("CONFIRMED", 3);
         assertThat(unresolved("CONFLICTING_RESULT")).isEqualTo(1);
+    }
+
+    @ParameterizedTest(name = "앞선 종결={0}")
+    @ValueSource(strings = {"payment-failed", "closed-no-charge"})
+    @DisplayName("결과 뒤집힘으로 사람에게 넘기면 commit 뒤 handed_to_human counter가 1 늘고 늦은 성공이 다시 와도 더 늘지 않는다")
+    void countsReversalHandoffOnce(String prior) throws Exception {
+        if (prior.equals("payment-failed")) {
+            start(CreateBehavior.ACCEPT_FAILED);
+        } else {
+            start(CreateBehavior.ACCEPT_PENDING);
+            clock.set(EXPIRES_AT);
+            orders.expireOverduePayments();
+            jdbc.update("update payment_refund_cases set status = 'CLOSED_NO_CHARGE', next_check_at = null where order_id = ?",
+                orderId);
+        }
+        server.changeStatus(transactionKey(), "SUCCESS");
+        clock.set(LATE);
+        double before = handedToHuman();
+
+        lateSuccess("callback");
+        lateSuccess("admin-reconcile");
+
+        assertThat(refundCase().orElseThrow().getStatus()).isEqualTo(RefundCase.Status.HANDED_TO_HUMAN);
+        assertThat(handedToHuman() - before).isEqualTo(1.0);
+    }
+
+    @Test
+    @DisplayName("추적 중 대상에 늦은 성공이 합류하는 것은 결론이 아니라 handed_to_human counter가 늘지 않는다")
+    void doesNotCountJoinIntoTrackingCase() throws Exception {
+        start(CreateBehavior.ACCEPT_PENDING);
+        clock.set(EXPIRES_AT);
+        orders.expireOverduePayments();
+        server.changeStatus(transactionKey(), "SUCCESS");
+        clock.set(LATE);
+        double before = handedToHuman();
+
+        lateSuccess("callback");
+
+        assertThat(refundCase().orElseThrow().getStatus()).isEqualTo(RefundCase.Status.TRACKING);
+        assertThat(handedToHuman() - before).isZero();
+    }
+
+    private double handedToHuman() {
+        Counter counter = meterRegistry.find("commerce.payment.refund_outcome").tag("result", "handed_to_human").counter();
+        return counter == null ? 0 : counter.count();
     }
 
     private void start(CreateBehavior behavior) throws Exception {

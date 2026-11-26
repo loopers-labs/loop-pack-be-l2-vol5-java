@@ -1,16 +1,35 @@
 package com.loopers.domains.payment.app;
 
+import com.loopers.domains.payment.app.port.PaymentCancelCommand;
+import com.loopers.domains.payment.app.port.PaymentCancelResult;
 import com.loopers.domains.payment.app.port.PaymentLookupCircuitState;
 import com.loopers.domains.payment.app.port.PaymentRefundCaseRepository;
+import com.loopers.domains.payment.app.port.PaymentTransaction;
+import com.loopers.domains.payment.app.port.PaymentTransactionStatus;
+import com.loopers.domains.payment.app.port.PaymentTransactionsLookup;
 import com.loopers.domains.payment.app.port.RefundOutcomeRecorder;
+import com.loopers.domains.payment.app.port.RefundOutcomeRecorder.Outcome;
+import com.loopers.domains.payment.domain.RefundCase;
 import java.time.Clock;
+import java.time.Instant;
+import java.util.List;
+import java.util.Optional;
+import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
+// 만료된 PG 결제의 환불 확인 대상을 결론까지 끌고 간다(10주차 5단계 계획 2-1·2-2). 환불(PG 취소)은 이 서비스 한 곳에서만 보낸다.
+// 대상마다 트랜잭션을 나눈다: 잠금 아래 기한·회로 판단 → 잠금 밖 PG 조회 → 잠금 아래 다시 읽고 반영 → (환불 요청 commit 뒤) 취소 → 결과 반영.
+// 대상 행 잠금이 늦은 성공 합류(OrderApplicationService)와 다른 인스턴스의 회차를 직렬화한다. 잠금 아래 상태가 바뀌었으면 반영하지 않는다.
+@Slf4j
 @Service
 public class RefundTrackingService {
-    // [임시] 한 회차에 다루는 대상 수 상한이다(계획 2-2).
+    // [임시] 한 회차에 다루는 대상 수 상한이다(계획 2-2). PG가 회복 중일 때 조회를 몰아붙이지 않기 위해서다.
     public static final int BATCH_SIZE = 20;
+    private static final String ORDER_ID_KEY = "orderId";
 
     private final PaymentRefundCaseRepository paymentRefundCaseRepository;
     private final PaymentGatewayRegistry paymentGatewayRegistry;
@@ -31,5 +50,205 @@ public class RefundTrackingService {
     }
 
     public void trackDueCases() {
+        List<Long> dueOrders = paymentRefundCaseRepository.findDue(clock.instant(), BATCH_SIZE);
+        for (long orderId : dueOrders) {
+            String previousOrderId = MDC.get(ORDER_ID_KEY);
+            MDC.put(ORDER_ID_KEY, String.valueOf(orderId));
+            try {
+                track(orderId);
+            } catch (RuntimeException e) {
+                log.error("환불 추적 처리 실패. orderId={}, causeType={}", orderId, e.getClass().getSimpleName());
+            } finally {
+                restoreOrderId(previousOrderId);
+            }
+        }
+    }
+
+    private void track(long orderId) {
+        RefundCase snapshot = transactionTemplate.execute(status -> prepareLookup(orderId));
+        if (snapshot == null) {
+            return;
+        }
+        PaymentTransactionsLookup lookup = lookUp(snapshot);
+        PaymentCancelCommand cancelCommand = transactionTemplate.execute(status -> applyLookup(snapshot, lookup));
+        if (cancelCommand == null) {
+            return;
+        }
+        log.info("환불을 요청합니다. orderId={}, providerId={}", orderId, snapshot.getProviderId());
+        PaymentCancelResult result = cancel(snapshot, cancelCommand);
+        transactionTemplate.executeWithoutResult(status -> applyCancelResult(orderId, result));
+    }
+
+    // 취소 호출 예외는 요청이 나갔는지 모르는 경우다. REFUND_REQUESTED로 두지 않고 결과 모름으로 넘겨 알림(PaymentRefundUnknown)이 보게 한다.
+    private PaymentCancelResult cancel(RefundCase snapshot, PaymentCancelCommand cancelCommand) {
+        try {
+            return paymentGatewayRegistry.get(snapshot.getProviderId()).cancel(cancelCommand);
+        } catch (RuntimeException e) {
+            log.warn("환불 취소 호출이 예외로 끝나 결과 모름으로 둡니다. orderId={}, causeType={}", snapshot.getOrderId(),
+                e.getClass().getSimpleName());
+            return new PaymentCancelResult.Unknown(e.getClass().getSimpleName());
+        }
+    }
+
+    // 기한이 지난 대상은 PG를 부르지 않고 사람에게 넘긴다. 조회 회로가 막힌 PG의 대상은 PG를 다시 쓰러뜨리지 않도록 조회 없이 미룬다.
+    private RefundCase prepareLookup(long orderId) {
+        Optional<RefundCase> found = paymentRefundCaseRepository.findByOrderIdForUpdate(orderId);
+        Instant now = clock.instant();
+        if (found.isEmpty() || !isDue(found.get(), now)) {
+            return null;
+        }
+        RefundCase refundCase = found.get();
+        if (refundCase.isHandoffDue(now)) {
+            handOff(refundCase, RefundCase.HANDOFF_DEADLINE, now);
+            return null;
+        }
+        if (paymentLookupCircuitState.blocksLookup(refundCase.getProviderId())) {
+            refundCase.postponeCheck(now);
+            paymentRefundCaseRepository.save(refundCase);
+            return null;
+        }
+        return refundCase;
+    }
+
+    private static boolean isDue(RefundCase refundCase, Instant now) {
+        return !refundCase.isConcluded() && refundCase.getNextCheckAt() != null && !refundCase.getNextCheckAt().isAfter(now);
+    }
+
+    // 조회 예외는 조회 실패와 같다. 결론 근거가 아니므로 다음 조회로 넘긴다.
+    private PaymentTransactionsLookup lookUp(RefundCase refundCase) {
+        try {
+            return paymentGatewayRegistry.get(refundCase.getProviderId())
+                .verifyOrder(refundCase.getProviderOrderId(), refundCase.getTransactionKey());
+        } catch (RuntimeException e) {
+            log.warn("환불 확인 조회가 예외로 끝나 다음 조회로 넘깁니다. orderId={}, causeType={}", refundCase.getOrderId(),
+                e.getClass().getSimpleName());
+            return new PaymentTransactionsLookup.Failed(e.getClass().getSimpleName());
+        }
+    }
+
+    // 환불 요청 상태로 바꾸면 취소 명령을 돌려준다. 호출부는 이 트랜잭션이 commit된 뒤에만 취소를 보낸다.
+    // 환불 요청 뒤 상태(REFUND_REQUESTED·REFUND_UNKNOWN)는 조회만 한다. 요청이 나갔을 수 있으므로 어떤 경우에도 다시 보내지 않는다.
+    private PaymentCancelCommand applyLookup(RefundCase snapshot, PaymentTransactionsLookup lookup) {
+        Optional<RefundCase> found = paymentRefundCaseRepository.findByOrderIdForUpdate(snapshot.getOrderId());
+        if (found.isEmpty() || found.get().getStatus() != snapshot.getStatus() || found.get().isConcluded()) {
+            return null;
+        }
+        RefundCase refundCase = found.get();
+        Instant now = clock.instant();
+        boolean tracking = refundCase.getStatus() == RefundCase.Status.TRACKING;
+        PaymentCancelCommand cancelCommand = null;
+        switch (lookup) {
+            case PaymentTransactionsLookup.NotCalled notCalled -> refundCase.postponeCheck(now);
+            case PaymentTransactionsLookup.Failed failed -> refundCase.recordInconclusiveCheck(now);
+            case PaymentTransactionsLookup.Found result -> {
+                List<PaymentTransaction> transactions = result.transactions();
+                if (transactions.isEmpty()) {
+                    refundCase.recordInconclusiveCheck(now);
+                } else if (transactions.size() > 1 || !matches(refundCase, transactions.get(0))) {
+                    String reason = transactions.size() > 1 ? RefundCase.MULTIPLE_TRANSACTIONS : RefundCase.TRANSACTION_MISMATCH;
+                    if (tracking) {
+                        handOff(refundCase, reason, now);
+                        return null;
+                    }
+                    refundCase.recordInconclusiveCheck(now);
+                } else if (tracking) {
+                    cancelCommand = applyTrackingResult(refundCase, transactions.get(0), now);
+                } else if (transactions.get(0).status() == PaymentTransactionStatus.CANCELED) {
+                    conclude(refundCase, Outcome.REFUNDED, now);
+                } else {
+                    refundCase.recordInconclusiveCheck(now);
+                }
+            }
+        }
+        paymentRefundCaseRepository.save(refundCase);
+        return cancelCommand;
+    }
+
+    private PaymentCancelCommand applyTrackingResult(RefundCase refundCase, PaymentTransaction transaction, Instant now) {
+        switch (transaction.status()) {
+            case SUCCESS -> {
+                refundCase.requestRefund(transaction.transactionKey(), now);
+                return new PaymentCancelCommand(refundCase.getProviderOrderId(), refundCase.getTransactionKey(),
+                    refundCase.getAmount());
+            }
+            case FAILED, CANCELED -> conclude(refundCase, Outcome.CLOSED_NO_CHARGE, now);
+            case PENDING -> refundCase.recordInconclusiveCheck(now);
+        }
+        return null;
+    }
+
+    private static boolean matches(RefundCase refundCase, PaymentTransaction transaction) {
+        return refundCase.getProviderOrderId().equals(transaction.providerOrderId())
+            && refundCase.getAmount().equals(transaction.amount())
+            && (refundCase.getTransactionKey() == null || refundCase.getTransactionKey().equals(transaction.transactionKey()));
+    }
+
+    // NotSent도 결과 모름으로 둔다. 요청 전 기록이 이미 commit됐으므로 "한 번만" 원칙상 다시 보내지 않고 조회로만 확인한다(PL P11-1).
+    private void applyCancelResult(long orderId, PaymentCancelResult result) {
+        Optional<RefundCase> found = paymentRefundCaseRepository.findByOrderIdForUpdate(orderId);
+        if (found.isEmpty() || found.get().getStatus() != RefundCase.Status.REFUND_REQUESTED) {
+            // 응답을 기다리는 사이 다른 인스턴스의 회차가 기한 이관·조회 결론을 냈다. 사람이 볼 수 있게 결과 종류만 남긴다.
+            log.warn("상태가 이미 바뀐 대상에 늦게 온 취소 결과를 반영하지 않습니다. orderId={}, status={}, cancelResult={}", orderId,
+                found.map(RefundCase::getStatus).orElse(null), result.getClass().getSimpleName());
+            return;
+        }
+        RefundCase refundCase = found.get();
+        Instant now = clock.instant();
+        switch (result) {
+            case PaymentCancelResult.Canceled canceled -> {
+                conclude(refundCase, Outcome.REFUNDED, now);
+                paymentRefundCaseRepository.save(refundCase);
+            }
+            case PaymentCancelResult.RejectedNoEffect rejected -> handOff(refundCase, RefundCase.REFUND_REJECTED, now);
+            case PaymentCancelResult.Unknown unknown -> markUnknown(refundCase, result, now);
+            case PaymentCancelResult.NotSent notSent -> markUnknown(refundCase, result, now);
+        }
+    }
+
+    private void markUnknown(RefundCase refundCase, PaymentCancelResult result, Instant now) {
+        refundCase.markRefundUnknown(now);
+        paymentRefundCaseRepository.save(refundCase);
+        log.warn("환불 결과를 알 수 없어 다시 보내지 않고 조회로 확인합니다. orderId={}, cancelResult={}", refundCase.getOrderId(),
+            result.getClass().getSimpleName());
+    }
+
+    private void conclude(RefundCase refundCase, Outcome outcome, Instant now) {
+        if (outcome == Outcome.REFUNDED) {
+            refundCase.markRefunded(now);
+        } else {
+            refundCase.closeNoCharge(now);
+        }
+        afterCommit(() -> refundOutcomeRecorder.record(outcome));
+    }
+
+    private void handOff(RefundCase refundCase, String reason, Instant now) {
+        refundCase.handOff(reason, now);
+        paymentRefundCaseRepository.save(refundCase);
+        long orderId = refundCase.getOrderId();
+        afterCommit(() -> {
+            refundOutcomeRecorder.record(Outcome.HANDED_TO_HUMAN);
+            log.warn("환불 확인 대상을 사람 확인으로 넘겼습니다. orderId={}, reason={}", orderId, reason);
+        });
+    }
+
+    private static void restoreOrderId(String previousOrderId) {
+        if (previousOrderId == null) {
+            MDC.remove(ORDER_ID_KEY);
+            return;
+        }
+        MDC.put(ORDER_ID_KEY, previousOrderId);
+    }
+
+    // rollback된 결론을 세거나 알리지 않도록 commit 뒤에만 실행한다.
+    private static void afterCommit(Runnable action) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            throw new IllegalStateException("환불 결론 집계는 트랜잭션 안에서만 기록할 수 있습니다.");
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                action.run();
+            }
+        });
     }
 }

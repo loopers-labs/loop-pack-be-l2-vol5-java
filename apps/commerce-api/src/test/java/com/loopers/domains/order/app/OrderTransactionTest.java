@@ -15,6 +15,7 @@ import com.loopers.domains.payment.app.port.PaymentAnomalyRepository;
 import com.loopers.domains.payment.app.port.PaymentLookupScheduleRepository;
 import com.loopers.domains.payment.app.port.PaymentRecordRepository;
 import com.loopers.domains.payment.app.port.PaymentRefundCaseRepository;
+import com.loopers.domains.payment.app.port.RefundOutcomeRecorder;
 import com.loopers.domains.payment.domain.PaymentRecord;
 import com.loopers.domains.payment.domain.RefundCase;
 import com.loopers.domains.payment.out.PaymentLookupSchedulePersistenceAdapter;
@@ -30,6 +31,8 @@ import com.loopers.domains.user.out.UserJpaRepository;
 import com.loopers.support.pg.MutablePaymentClock;
 import com.loopers.support.pg.TestPgFixture;
 import com.loopers.utils.DatabaseCleanUp;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.persistence.EntityManager;
 import java.time.Instant;
 import java.util.Collection;
@@ -129,6 +132,12 @@ class OrderTransactionTest {
 
     @Autowired
     private ProductRepository productRepository;
+
+    @Autowired
+    private RefundOutcomeRecorder refundOutcomeRecorder;
+
+    @Autowired
+    private MeterRegistry meterRegistry;
 
     @Autowired
     private TransactionTemplate transactionTemplate;
@@ -296,7 +305,7 @@ class OrderTransactionTest {
             new PaymentGatewayRegistry(List.of(testPgFixture.newClient()), List.of(TestPgFixture.PROVIDER_ID)),
             transactionTemplate, paymentAnomalyRepository, clock, paymentLookupScheduleRepository, paymentLookupPolicy,
             paymentExpiryPolicy, orderConfirmedPublisher, orderConfirmedOutbox, paymentOutcomeRecorder,
-            paymentProgressRecorder, failingRefundCaseRepository);
+            paymentProgressRecorder, failingRefundCaseRepository, refundOutcomeRecorder);
         OrderResult afterRestart = restarted.confirm(1, orderId, TestPgFixture.command(attemptKey));
 
         assertThat(afterRestart.status()).isEqualTo("PAYMENT_PENDING");
@@ -326,6 +335,26 @@ class OrderTransactionTest {
         assertState("PAYMENT_PENDING", 3, 4, 1);
         assertThat(paymentRecord()).containsEntry("result", "PENDING").containsEntry("provider_status", "PENDING");
         assertThat(jdbcTemplate.queryForObject("select count(*) from payment_refund_cases", Long.class)).isZero();
+    }
+
+    @Test
+    @DisplayName("결제 실패 주문의 늦은 성공을 사람에게 넘기는 대상 저장이 DB에 반영되고 셈 등록까지 지난 뒤 commit 직전에 실패하면 대상이 남지 않고 handed_to_human counter도 늘지 않는다")
+    void doesNotCountReversalHandoffWhenRolledBack() {
+        server.createBehavior(CreateBehavior.ACCEPT_FAILED);
+        orderApplicationService.confirm(1, orderId, TestPgFixture.command());
+        server.changeStatus(server.transactions().get(0).transactionKey(), "SUCCESS");
+        Counter handed = meterRegistry.find("commerce.payment.refund_outcome").tag("result", "handed_to_human").counter();
+        double before = handed == null ? 0 : handed.count();
+        failingRefundCaseRepository.failBeforeCommitAfterNextSave();
+
+        assertThatThrownBy(() -> orderApplicationService.reconcilePayment(orderId))
+            .hasMessage(FailingRefundCaseRepository.INJECTED_FAILURE);
+
+        assertThat(failingRefundCaseRepository.stateBeforeFailure()).endsWith("order=PAYMENT_FAILED, payment=FAILED, refundCases=1");
+        assertThat(jdbcTemplate.queryForObject("select count(*) from payment_refund_cases", Long.class)).isZero();
+        Counter after = meterRegistry.find("commerce.payment.refund_outcome").tag("result", "handed_to_human").counter();
+        assertThat(after).isNotNull();
+        assertThat(after.count() - before).isZero();
     }
 
     private void assertState(String orderStatus, int firstStock, int secondStock, long createCalls) {
@@ -600,6 +629,8 @@ class OrderTransactionTest {
 
     // 무장 후 다음 환불 확인 대상 저장을 실제로 한 뒤 같은 트랜잭션의 앞선 변경과 함께 DB로 보내고 실패한다.
     // 대상 기록이 만료와 같은 트랜잭션에 있어야 함께 rollback된다.
+    // beforeCommit 모드는 저장 뒤 서비스가 셈(afterCommit)을 등록할 때까지 진행시키고 commit 직전에 실패한다.
+    // save 안에서 던지면 셈 등록 코드에 닿지 못해, 셈을 commit 전에 하는 결함을 잡지 못한다.
     static class FailingRefundCaseRepository implements PaymentRefundCaseRepository {
         static final String INJECTED_FAILURE = "주입된 환불 확인 대상 저장 실패";
 
@@ -608,6 +639,7 @@ class OrderTransactionTest {
         private final JdbcTemplate jdbcTemplate;
         private final AtomicInteger remainingFailures = new AtomicInteger();
         private final AtomicReference<String> stateBeforeFailure = new AtomicReference<>();
+        private volatile boolean failBeforeCommit;
 
         FailingRefundCaseRepository(PaymentRefundCaseRepository delegate, EntityManager entityManager, JdbcTemplate jdbcTemplate) {
             this.delegate = delegate;
@@ -617,11 +649,19 @@ class OrderTransactionTest {
 
         void failOnNextSave() {
             stateBeforeFailure.set(null);
+            failBeforeCommit = false;
+            remainingFailures.set(1);
+        }
+
+        void failBeforeCommitAfterNextSave() {
+            stateBeforeFailure.set(null);
+            failBeforeCommit = true;
             remainingFailures.set(1);
         }
 
         void disarm() {
             remainingFailures.set(0);
+            failBeforeCommit = false;
         }
 
         String stateBeforeFailure() {
@@ -638,7 +678,15 @@ class OrderTransactionTest {
                 stateBeforeFailure.set(stockState(jdbcTemplate) + ", order=" + state.get("status")
                     + ", payment=" + state.get("provider_status") + ", refundCases="
                     + jdbcTemplate.queryForObject("select count(*) from payment_refund_cases", Long.class));
-                throw new IllegalStateException(INJECTED_FAILURE);
+                if (!failBeforeCommit) {
+                    throw new IllegalStateException(INJECTED_FAILURE);
+                }
+                TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                    @Override
+                    public void beforeCommit(boolean readOnly) {
+                        throw new IllegalStateException(INJECTED_FAILURE);
+                    }
+                });
             }
             return saved;
         }
@@ -646,6 +694,11 @@ class OrderTransactionTest {
         @Override
         public Optional<RefundCase> findByOrderId(long orderId) {
             return delegate.findByOrderId(orderId);
+        }
+
+        @Override
+        public boolean existsByOrderId(long orderId) {
+            return delegate.existsByOrderId(orderId);
         }
 
         @Override

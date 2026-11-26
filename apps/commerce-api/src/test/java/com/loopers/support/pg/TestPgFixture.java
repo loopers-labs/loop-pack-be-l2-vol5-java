@@ -85,6 +85,7 @@ public class TestPgFixture {
     }
 
     // 환불 요청 상태를 commit한 뒤 취소를 보내기 전에 프로세스가 멈춘 상황을 흉내 낸다. 서버에는 취소 요청이 가지 않는다.
+    // 프로세스 중단은 업무 코드가 잡을 수 있는 예외가 아니다. 취소 호출 예외(→ 결과 모름)와 구분되도록 Error로 회차 밖까지 빠져나간다.
     public void crashBeforeCancel() {
         crashBeforeCancel = true;
     }
@@ -170,9 +171,15 @@ public class TestPgFixture {
         @Override
         public PaymentCancelResult cancel(PaymentCancelCommand command) {
             if (crashBeforeCancel) {
-                throw new IllegalStateException("주입된 취소 전 중단");
+                throw new InjectedCrash("주입된 취소 전 중단");
             }
             return client().cancel(command);
+        }
+    }
+
+    public static final class InjectedCrash extends Error {
+        InjectedCrash(String message) {
+            super(message);
         }
     }
 }

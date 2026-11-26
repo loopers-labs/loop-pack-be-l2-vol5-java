@@ -91,6 +91,11 @@ payment:
     scheduler:
       enabled: true
       fixed-delay: PT1S
+  # 만료 뒤 늦은 성공 환불 추적(10주차 5단계). 주기 30s는 [임시]. 회차 상한 20건·조회 간격 1m→1h·이관 2일은 코드 상수다.
+  refund:
+    scheduler:
+      enabled: true
+      fixed-delay: PT30S
   expiry:
     timeout: 2m # 설계 26절 [임시]. 결제 시작 후 이 시간이 지나도 결과 미확정이면 결제 만료·재고 반환
   # 관리자 일괄 조회 확정. 모두 [임시] 수치다. 조회 회로 창(20·최소 10)과 비교해 PG를 다시 몰아붙이지 않게 한 번 50건,
@@ -170,6 +175,9 @@ spring:
       on-profile: test
 payment:
   lookup:
+    scheduler:
+      enabled: false
+  refund:
     scheduler:
       enabled: false
   # 일괄 조회 확정의 PG 조회 간격은 운영 속도 제한이라 테스트에서는 기다리지 않는다.

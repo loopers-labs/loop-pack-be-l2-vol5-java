@@ -42,7 +42,7 @@ class OrderConfirmedProducerConfigTest extends OrderEventsIntegrationSupport {
     // C3: 스케줄 작업마다 전용 단일 스레드 스케줄러를 둬 한 작업이 길게 막혀도 다른 작업이 기다리지 않는다(w10s1b 1-3, 8주차 28절 풀 2 대체).
     // 실제로 막힌 작업 옆에서 다른 작업이 도는지는 ScheduledJobIsolationTest가 본다.
     @Test
-    @DisplayName("스케줄러는 결제 재조회·relay·미확인 gauge 갱신마다 작업 이름이 붙은 단일 스레드 하나씩이다")
+    @DisplayName("스케줄러는 결제 재조회·relay·미확인 gauge 갱신·환불 추적마다 작업 이름이 붙은 단일 스레드 하나씩이다")
     void eachScheduledJobHasDedicatedSingleThreadScheduler() {
         assertThat(applicationContext.getBeansOfType(ThreadPoolTaskScheduler.class).values())
             .extracting(ThreadPoolTaskScheduler::getThreadNamePrefix,
@@ -50,7 +50,8 @@ class OrderConfirmedProducerConfigTest extends OrderEventsIntegrationSupport {
             .containsExactlyInAnyOrder(
                 tuple("sched-payment-lookup-", 1),
                 tuple("sched-outbox-relay-", 1),
-                tuple("sched-unresolved-metric-", 1));
+                tuple("sched-unresolved-metric-", 1),
+                tuple("sched-payment-refund-", 1));
     }
 
     @Test

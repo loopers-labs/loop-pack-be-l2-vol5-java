@@ -1,5 +1,9 @@
 package com.loopers.domains.payment.app;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.loopers.common.domain.Money;
 import com.loopers.domains.payment.app.port.PaymentCancelCommand;
 import com.loopers.domains.payment.app.port.PaymentCancelResult;
@@ -29,6 +33,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.slf4j.LoggerFactory;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.AbstractPlatformTransactionManager;
 import org.springframework.transaction.support.DefaultTransactionStatus;
@@ -155,8 +160,8 @@ class RefundTrackingServiceTest {
     }
 
     @Test
-    @DisplayName("취소 호출이 예외로 끝나도 REFUND_REQUESTED는 commit된 채 남고 같은 회차의 다음 대상은 계속 처리한다")
-    void continuesWhenCancelThrows() {
+    @DisplayName("취소 호출이 예외로 끝나면 다시 보내지 않고 REFUND_UNKNOWN으로 두며 같은 회차의 다음 대상은 계속 처리한다")
+    void marksUnknownAndContinuesWhenCancelThrows() {
         refundCases.put(tracking(1, PG_A, "TR-1"));
         refundCases.put(trackingAt(2, PG_A, "TR-2", NOW.minusSeconds(1)));
         lookup(gatewayA, 1, found(tx("TR-1", 1, AMOUNT, PaymentTransactionStatus.SUCCESS)));
@@ -168,8 +173,11 @@ class RefundTrackingServiceTest {
 
         service.trackDueCases();
 
-        assertThat(refundCases.get(1).getStatus()).isEqualTo(RefundCase.Status.REFUND_REQUESTED);
+        assertThat(refundCases.get(1).getStatus()).isEqualTo(RefundCase.Status.REFUND_UNKNOWN);
+        assertThat(events).containsSubsequence("save:1:REFUND_REQUESTED", "commit", "cancel:1", "save:1:REFUND_UNKNOWN", "commit");
+        assertThat(events.stream().filter("cancel:1"::equals)).hasSize(1);
         assertThat(refundCases.get(2).getStatus()).isEqualTo(RefundCase.Status.CLOSED_NO_CHARGE);
+        assertThat(outcomes).containsExactly(RefundOutcomeRecorder.Outcome.CLOSED_NO_CHARGE);
     }
 
     @ParameterizedTest(name = "PG 상태={0}")
@@ -344,6 +352,38 @@ class RefundTrackingServiceTest {
         assertThat(refundCases.get(1).getStatus()).isEqualTo(RefundCase.Status.REFUND_REQUESTED);
     }
 
+    @Test
+    @DisplayName("취소 응답 전에 대상이 이미 다른 상태로 바뀌었으면 늦게 온 취소 결과를 반영하지 않고 orderId와 결과 종류만 WARN 한 줄로 남긴다")
+    void logsDiscardedLateCancelResult() {
+        refundCases.put(tracking(1, PG_A, "TR-1"));
+        lookup(gatewayA, 1, found(tx("TR-1", 1, AMOUNT, PaymentTransactionStatus.SUCCESS)));
+        doAnswer(invocation -> {
+            refundCases.put(withStatus(1, PG_A, "TR-1", RefundCase.Status.HANDED_TO_HUMAN));
+            return new PaymentCancelResult.Canceled(tx("TR-1", 1, AMOUNT, PaymentTransactionStatus.CANCELED));
+        }).when(gatewayA).cancel(any());
+        Logger serviceLogger = (Logger) LoggerFactory.getLogger(RefundTrackingService.class);
+        ListAppender<ILoggingEvent> logs = new ListAppender<>();
+        logs.start();
+        serviceLogger.addAppender(logs);
+
+        try {
+            service.trackDueCases();
+        } finally {
+            serviceLogger.detachAppender(logs);
+        }
+
+        assertThat(refundCases.get(1).getStatus()).isEqualTo(RefundCase.Status.HANDED_TO_HUMAN);
+        assertThat(outcomes).isEmpty();
+        assertThat(logs.list.stream().filter(event -> event.getFormattedMessage().contains("cancelResult=")).toList())
+            .singleElement()
+            .satisfies(event -> {
+                assertThat(event.getLevel()).isEqualTo(Level.WARN);
+                assertThat(event.getMDCPropertyMap()).containsEntry("orderId", "1");
+                assertThat(event.getFormattedMessage()).contains("orderId=1", "cancelResult=Canceled")
+                    .doesNotContain("TR-1");
+            });
+    }
+
     private static PaymentGateway gateway(String providerId) {
         PaymentGateway gateway = mock(PaymentGateway.class);
         when(gateway.providerId()).thenReturn(providerId);
@@ -430,6 +470,11 @@ class RefundTrackingServiceTest {
         @Override
         public Optional<RefundCase> findByOrderId(long orderId) {
             return Optional.ofNullable(rows.get(orderId)).map(RefundTrackingServiceTest::copy);
+        }
+
+        @Override
+        public boolean existsByOrderId(long orderId) {
+            return rows.containsKey(orderId);
         }
 
         @Override
