@@ -9,6 +9,7 @@ import com.loopers.domain.payment.PgPaymentRequest;
 import com.loopers.domain.payment.PgTransaction;
 import com.loopers.domain.payment.UnavailableReason;
 import com.loopers.domain.payment.UnknownReason;
+import com.loopers.support.log.BoundaryLog;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig;
@@ -95,17 +96,47 @@ public class TestPgPaymentGateway implements PaymentGateway {
         if (result instanceof PgCreateResult.Unknown unknown) {
             log.warn("PG 거래 생성 결과를 확인하지 못했다. providerOrderId={}, reason={}", request.providerOrderId(), unknown.reason());
         }
+        createResultLog(request, result).info(log);
         return result;
+    }
+
+    // 생성 응답 경계의 결과. 응답을 잃었는지(UNKNOWN·이유)와 거래 키를 받았는지를 주문 번호로 잇는다
+    private static BoundaryLog createResultLog(PgPaymentRequest request, PgCreateResult result) {
+        BoundaryLog entry = BoundaryLog.event("pg.create.result")
+            .with("providerOrderId", request.providerOrderId())
+            .with("amount", request.amount());
+        return switch (result) {
+            case PgCreateResult.Accepted accepted -> entry.with("outcome", "ACCEPTED").with("transactionKey", accepted.transactionKey());
+            case PgCreateResult.RejectedNoEffect rejected -> entry.with("outcome", "REJECTED");
+            case PgCreateResult.Unknown unknown -> entry.with("outcome", "UNKNOWN").with("reason", unknown.reason());
+        };
     }
 
     @Override
     public PgLookupResult findTransaction(String transactionKey) {
-        return lookup(() -> lookupByKeyOnce(transactionKey));
+        PgLookupResult result = lookup(() -> lookupByKeyOnce(transactionKey));
+        lookupResultLog("transactionKey", transactionKey, result).info(log);
+        return result;
     }
 
     @Override
     public PgLookupResult findTransactionsByOrder(String providerOrderId) {
-        return lookup(() -> lookupByOrderOnce(providerOrderId));
+        PgLookupResult result = lookup(() -> lookupByOrderOnce(providerOrderId));
+        lookupResultLog("providerOrderId", providerOrderId, result).info(log);
+        return result;
+    }
+
+    // 권위 조회 경계의 결과. 거래가 몇 건이고 어떤 상태·금액인지를 남긴다. 확인하지 못했으면 이유만 남긴다
+    private static BoundaryLog lookupResultLog(String byKey, String byValue, PgLookupResult result) {
+        BoundaryLog entry = BoundaryLog.event("pg.lookup.result").with("by", byKey).with(byKey, byValue);
+        return switch (result) {
+            case PgLookupResult.Transactions found -> entry.with("outcome", "FOUND")
+                .with("count", found.transactions().size())
+                .with("transactions", found.transactions().stream()
+                    .map(tx -> tx.transactionKey() + ":" + tx.providerOrderId() + ":" + tx.amount() + ":" + tx.status())
+                    .toList());
+            case PgLookupResult.Unavailable unavailable -> entry.with("outcome", "UNAVAILABLE").with("reason", unavailable.reason());
+        };
     }
 
     private PgLookupResult lookup(Supplier<List<PgTransaction>> call) {
