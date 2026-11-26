@@ -20,6 +20,7 @@ interface OrderJpaRepository extends JpaRepository<Order, Long> {
     @EntityGraph(attributePaths = "payment")
     List<Order> findByPayment_StatusInAndIdGreaterThanOrderByIdAsc(
         List<PaymentStatus> statuses, Long afterOrderId, Pageable pageable);
+    long countByPayment_StatusIn(List<PaymentStatus> statuses);
 
     List<Order> findAllByBuyerId(Long buyerId, Pageable pageable);
 

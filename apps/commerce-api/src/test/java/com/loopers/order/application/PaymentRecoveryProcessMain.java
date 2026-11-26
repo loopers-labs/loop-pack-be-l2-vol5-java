@@ -16,6 +16,8 @@ public final class PaymentRecoveryProcessMain {
         application.setWebApplicationType(WebApplicationType.NONE);
         String[] springArgs = {
             "--spring.profiles.active=test",
+            "--server.port=0",
+            "--management.server.port=0",
             "--spring.jpa.hibernate.ddl-auto=none",
             "--datasource.mysql-jpa.main.jdbc-url=" + args[1],
             "--datasource.mysql-jpa.main.username=" + args[2],

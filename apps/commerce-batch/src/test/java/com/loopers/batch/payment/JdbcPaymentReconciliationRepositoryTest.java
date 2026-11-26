@@ -5,7 +5,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.h2.jdbcx.JdbcDataSource;
-import org.springframework.batch.repeat.RepeatStatus;
 
 import java.time.Clock;
 import java.time.Instant;

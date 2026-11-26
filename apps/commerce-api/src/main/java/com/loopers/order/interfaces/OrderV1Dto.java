@@ -112,6 +112,12 @@ public class OrderV1Dto {
         }
     }
 
+    public record ReconcilePaymentResponse(OrderStatus orderStatus, PaymentStatus paymentStatus) {
+        public static ReconcilePaymentResponse from(Order order) {
+            return new ReconcilePaymentResponse(order.getStatus(), order.getPayment().status());
+        }
+    }
+
     public record OrderSummaryResponse(
         Long id,
         OrderStatus status,
