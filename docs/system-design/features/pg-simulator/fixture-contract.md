@@ -140,7 +140,7 @@ plan target은 서버 저장/요청과 같은 문자열 식별자로 직접 전�
 
 ### W10 SUCCESS 저장 후 생성 응답 유실
 
-**상태:** 2026-11-23 Claude 전체 검토·보완 재확인 후 사용자가 W10 전체 설계를 최종 승인했다. 아래 API는 승인된 구현 계약이며 아직 구현·검증 전이다. 작은 구현 단위의 착수·코드/테스트·실습 실행 승인은 별도다. [사고 관측·연결 계약](../checkout-incident.md)의 §1~§10과 함께 읽는다.
+**상태:** 2026-11-23 Claude 전체 검토·보완 재확인 후 사용자가 W10 전체 설계를 최종 승인했다. 아래 API는 승인된 구현 계약이며 단위1(`20ba851`)에서 구현·검증했다. 최종 check의 fixture 회귀와 AUTO 연결 결과·남은 한계는 결제 사고 실행 기록을 따른다. [사고 관측·연결 계약](../checkout-incident.md)의 §1~§10과 함께 읽는다.
 
 추가 공개 메서드는 `ResponsePlan.successThenCloseEarly(): ResponsePlan` 하나다. `createOutcome=SUCCESS`, `reply=CLOSE_EARLY`, 나머지 미사용 필드는 기존 `closeEarly()`와 동일한0/null로 만든다. `PgFixtureServer.enqueuePlan`의 기존 validation에 따라 CREATE 외 operation 등록은 IllegalArgumentException이다. 기존 `closeEarly()`의 기본 PENDING, 기존 factory/enum·FIFO·서버·수명 의미는 변경하지 않는다.
 

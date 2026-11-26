@@ -2,7 +2,7 @@
 
 ## 1. 상태·적용 범위·읽기 기준
 
-2026-11-23 사용자가 전체 설계를 최종 승인했다. 전체 Claude 검토와 P1~P4·후속 보완 재확인을 거쳐 마지막 Lab exec/안내 단일 writer/collector 기본 인자 세 항목도 구현 전 필수 문제 없음 의견을 받았다. AI 검토 의견과 사용자 최종 승인은 구분한다. 이 문서는 승인된 구현·검증 계약이며 작은 구현 단위의 착수·코드/테스트·실습 실행 승인은 아니다. 아래 새 타입·메서드·Gradle 작업은 구현할 계약이며 현재 존재/통과한다고 가정하지 않는다. 실제 환경/컴파일/수집·시간 예산은 실행 전 미검증이다.
+2026-11-23 전체 설계 승인 후 작은 단위로 구현했고, AUTO 사고·복구·후속 결과와 단일 check를 검증했다. 이 문서는 현재 구현·검증 계약이며, 실행 기준·수량·미실행·한계는 실행 기록(`docs/verification/checkout-incident.md`)을 따른다. 운영 배포·실계정·부하·모든 장애의 검증 완료를 뜻하지 않는다.
 
 이 문서와 연결된 기준 설계만으로 구현·검증 계약을 읽을 수 있어야 한다. 로컬 주차 토론 기록은 필수 근거가 아니다. 기존 제품 계약의 원본은 다음과 같으며 중복 정의하지 않는다.
 
@@ -14,9 +14,9 @@
 
 원문 근거는 「10주차 실습 · 원인을 구분하고 업무 결과로 복구 증명하기」 Implementation Quest §1~8·Checklist·Technical Writing Quest와 「10주차 · 사용자 여정의 증거로 사고를 복구하기」다. 원문에서 정한 수량/순서/보호 조건과 아래 구체적인 구현 선택을 구분한다.
 
-추가 범위는 UNKNOWN 업무 지표 하나, 생성/조회/적용/TX 진단 로그, SUCCESS 뒤 응답 유실 fixture 조합, 동일 lifecycle의 20주문 연결 검증, 명시 관찰 진행과 실행별 증거다. PG·주문·쿠폰·Outbox·랭킹의 외부 API/판정/회로를 바꾸지 않는다. 새 자동 reconcile scheduler·분산 추적 backend·Loki·운영 부하/실계정/운영 장애 검증·fault 시점 추가 랭킹 공개는 포함하지 않는다. 기존 W9 재시작/revision 회귀는 유지한다.
+추가 범위는 UNKNOWN 업무 지표 하나, 생성/조회/적용/TX 진단 로그, SUCCESS 뒤 응답 유실 fixture 조합, 동일 lifecycle의 20주문 연결 검증과 실행별 증거다. PG·주문·쿠폰·Outbox·랭킹의 외부 API/판정/회로를 바꾸지 않는다. 새 자동 reconcile scheduler·분산 추적 backend·Loki·운영 부하/실계정/운영 장애 검증·fault 시점 추가 랭킹 공개는 포함하지 않는다. 기존 W9 재시작/revision 회귀는 유지한다.
 
-**2026-11-23 범위 변경(사용자 결정):** 원문 필수 요구가 아닌 OBSERVED 직접 관찰 실행(`CheckoutIncidentLabTest`·`checkoutIncidentLab` 작업·`IncidentMonitoringSupport`의 실행별 collector·운영자 명령/판단 파일 진행·I9)을 범위에서 제외한다. 로컬 관측은 기존 앱과 이미 떠 있는 공유 Prometheus·Grafana(`docker/monitoring-compose.yml`, 수집 대상 `host.docker.internal:8081`)로 하며 공유 스택은 수정·재시작·중지하지 않는다. 원문의 health·Prometheus 원문·경계 로그·업무 지표 검증은 AUTO가 실제 직접 GET·로그 capture로 증거를 남긴다. AUTO는 기본으로 임의 management port를 쓰고, opt-in Gradle 속성 `-Pw10ObservePort=<port>`를 주면 그 포트(공유 수집과 맞추려면 8081)로 management를 띄워 공유 Prometheus가 실행 중 지표를 수집할 수 있게 한다. 이 관찰은 보조 화면이며 신선도 판정·통과 근거가 아니다. 아래 OBSERVED·collector·Lab·I9 관련 절은 승인 당시 기록으로 남기고 구현 대상이 아니다. `IncidentCheckpoint`의 OBSERVED 분기는 이미 구현·단위 검증된 코드로 남지만 실행 경로에서 쓰지 않는다.
+**제외 범위와 이유:** 사용자 결정(2026-11-23)으로 원문 필수가 아닌 OBSERVED Lab·실행별 collector/Grafana·사람 명령/판단 파일 진행을 제외했고 전용 코드를 삭제했다. 이 문서에는 현재 AUTO 계약만 남긴다. 변경 전 상세 절차는 Git 이력에 보존한다. 실제 health·Prometheus 원문·경계 로그는 AUTO가 직접 수집한다. 이미 떠 있는 공유 Prometheus·Grafana는 보조 관측으로만 재사용하며 수정·재시작·중지하지 않는다(§7).
 
 ## 2. 입력·식별·시간·불변 조건
 
@@ -197,30 +197,26 @@ recordConstraintConflict:
 
 ### 6.1 테스트 책임과 수명
 
-다음 test 타입은 모두 commerce-api test 소스 `com.loopers.infrastructure.order`에 두어 기존 package-private 자식 helper를 재사용한다.
+테스트 타입은 commerce-api test 소스 `com.loopers.infrastructure.order`에 두어 기존 package-private 자식 helper를 재사용한다.
 
-|타입|주요 메서드·계약|
+|타입|책임·주요 메서드|
 |---|---|
-|CheckoutIncidentScenario|`run(Mode, ScenarioInputs, EvidenceWriter, Checkpoint, Deadline)`. 유일한 시나리오/주장 구현. 단계 간 DB/PG초기화 없음|
-|CheckoutIncidentTest|자동 wrapper1건, @Timeout420초. 동일 시나리오 AUTO 모드, 사람 대기/모니터링컨테이너 없음. 실제 health/Prometheus직접 GET과 실제 Kafka/배치 검증은 동일|
-|CheckoutIncidentLabTest|**(2026-11-23 제외)** 실습 wrapper1건, @Timeout30분. OBSERVED모드, 직접 GET+실제Prometheus/Grafana+명시진행. AUTO와 업무 assertion 동일|
-|IncidentEvidenceWriter|§9의 새 실행/write-once/실패/봉인 계약|
-|IncidentCheckpoint|§8의 단계/nonce/advance/cancel/한도 계약. AUTO는 업무·증거 assertion 뒤에만 자동통과. **(2026-11-23 단위D 정리)** OBSERVED 경로 코드는 삭제했고 현재 구현은 `await(stage, facts)`의 AUTO accepted 기록과 자동 판정 불허 시 중단뿐이다|
-|IncidentMonitoringSupport|**(2026-11-23 제외)** OBSERVED의 실행별 collector 생성/준비/샘플확인/종료, §7|
+|CheckoutIncidentScenario|`run(IncidentMode, ScenarioInputs, IncidentEvidenceWriter, IncidentCheckpoint, IncidentDeadline)`. AUTO의 유일한 업무 시나리오·assertion 구현. 단계 사이 DB/PG 초기화 없음|
+|CheckoutIncidentTest|자동 wrapper 1건, `@Timeout(420)`. 업무 예산은 `IncidentDeadline.after(360초)`. 사람 대기·모니터링 컨테이너 없음|
+|IncidentEvidenceWriter|새 실행·write-once·실패 기록·fault 봉인/불변 확인(§9)|
+|IncidentCheckpoint|`create(writer)`, `await(stage, facts)`. assertion 뒤 AUTO 진행 기록과 판정 불허 시 중단(§8.2)|
+|IncidentDiagnosis|사전 예상과 수집 증거를 대조해 가설별 판정·진행 가능 여부 반환(§8.1.1)|
 
-각 wrapper는 새 worker JVM의 별도 Test 작업에서만 실행한다. 일반 `test`에서는 이 **신규 두 클래스만** 정확히 제외하고 `checkoutIncidentTest`는 check에 연결한다. 기존 테스트 제외/기대값/검증 강도는 바꾸지 않는다. 수동 `checkoutIncidentLab`는 check에 연결하지 않는다. skip으로 수동 실행을 통과한 것처럼 표시하지 않는다.
+`CheckoutIncidentTest`는 일반 `test`에서 제외하고 별도 `checkoutIncidentTest` 작업으로 실행하며 `check`에 연결한다. 기존 O11 별도 작업(`w6OutboxRecoveryTest`)과 일반 test의 `WeeklyRankingFlowTest`·기존 회귀는 유지한다.
 
-두 신규 W10 작업 각각에 기존 streamer bootJar와 batch child 준비 작업 의존·파일 입력·JVM 경로 전달을 명시적으로 연결한다. 현재 batch child 연결은 일반 `tasks.test`에만 있으므로 새 Test 작업에 자동 상속된다고 가정하지 않는다. 기존 provider/준비 작업을 재사용하고 O11 작업에 불필요한 batch 의존을 추가하지 않는다. API 제품 runtime에 다른 앱을 의존시키지 않는다. JUnit플랫폼·test프로필·Asia/Seoul·-Xshare:off·1g heap·maxParallelForks1·forkEvery1·failOnNoMatchingTests를 명시한다. 실제 외부자원 검증이므로 두 작업의 up-to-date/build cache를 끄고 결과/XML/JaCoCo경로를 각 작업 이름으로 분리한다. 기존 별도 `w6OutboxRecoveryTest`(O11)와 일반 `test`에서 실행되는 `WeeklyRankingFlowTest`·관련 회귀를 유지한다. 별도 W9 Flow Test 작업이 이미 있다고 쓰지 않는다. 기존 `JacocoReport`의 O11 순서를 유지하면서 두 신규 W10 Test 작업에 대한 `mustRunAfter`도 추가해, 같은 작업 그래프에 포함된 보고서가 각 exec 생성 전에 실행되지 않게 한다. 순서 제약은 수동 Lab를 자동 실행시키는 dependsOn이 아니다. Lab의 JaCoCo destinationFile은 API 모듈 `build/checkout-incident-lab-coverage/checkoutIncidentLab.exec`로 명시한다. 기존 공통 보고서의 `build/jacoco/*.exec` glob 밖이므로 이번에 실행하지 않은 Lab의 과거 exec가 공통 보고서에 포함되지 않는다. Lab exec를 기존 glob 경로에 복사하거나 공통 executionData에 별도로 추가하지 않는다. 자동 `checkoutIncidentTest`의 exec는 기존 작업별 `build/jacoco/checkoutIncidentTest.exec`에 두고, 루트 공통 보고서 설정은 변경하지 않는다. 신규 작업을 이전의 잘못된 기본 경로로 실행한 개발 산출물 `build/jacoco/checkoutIncidentLab.exec`가 남아 있으면 소유 경로/출처를 확인해 해당 파일 하나만 별도로 보존·수집 경로 밖으로 이동한 뒤 보고서를 생성한다. 원인 미확인 exec를 임의 삭제하거나 build 전체를 정리하지 않는다. 이 경로 계약은 Lab 혼입만 방지하며 공통 보고서 전체가 이번 실행의 자료만 포함한다고 보장하지 않는다. 기존 다른 작업의 잔여 exec 가능성과 실제 테스트 수/failure/error/skip·코드 기준·실행 시각의 검증 증거를 구분한다. Lab 커버리지의 공통 보고서 통합/별도 보고서 작업은 이번 범위에 추가하지 않는다.
+전용 작업은 다음을 명시한다.
 
-추가 메서드 계약:
+- 기존 streamer bootJar·batch child 준비 작업 의존, 파일 입력과 JVM 경로 전달. 일반 test 설정이 자동 상속된다고 가정하지 않고 API 제품 runtime에 다른 앱을 의존시키지 않는다.
+- JUnit Platform·test 프로필·Asia/Seoul·`-Xshare:off`·heap 1g·`maxParallelForks=1`·`forkEvery=1`·`failOnNoMatchingTests=true`.
+- 실제 외부 자원을 검증하므로 up-to-date/build cache를 끄고 결과/XML/JaCoCo 경로를 작업별로 분리한다. AUTO exec는 `build/jacoco/checkoutIncidentTest.exec`다.
+- 기존 `JacocoReport`에 O11·AUTO 이후 실행 순서를 지정한다. 공통 보고서의 잔여 exec 가능성은 별도 한계이므로 테스트 수·실패/skip·코드 기준·실행 시각을 함께 확인한다. 과거 Lab exec를 공통 수집 경로로 복사하거나 출처 불명 산출물을 삭제하지 않는다.
 
-- `IncidentMonitoringSupport.start(runDir, actualManagementPort, localImageIds, deadline)`은 새 프로젝트와 실제 published port를 반환한다. 시작 전후 자원을 즉시 소유 목록에 추가해 부분 기동 실패도 정리할 수 있어야 한다.
-- `awaitFreshSamples(expectedUnknown, phaseStableAt, deadline)`은 §7.3을 충족한 두 sample과 원문 위치를 반환한다. 호스트 phaseStableAt은 기록용이고 함수 내부에서 안정화 후 collector 기준 시각을 얻는다. 다른 instance/없는 값/NaN을 허용하지 않는다.
-- **(2026-11-23 단위D: OBSERVED 제외로 deadline 인자·명령 대기 삭제, 아래는 승인 당시 계약)** `IncidentCheckpoint.await(stage, immutableFacts, deadline)`은 ADVANCE 또는 취소 예외만 반환한다. 단순 시간 경과를 ADVANCE로 바꾸지 않는다.
-- `IncidentEvidenceWriter.writeStage(stage, immutableAllowedSnapshot)`, `sealFault()`, `verifyFaultUnchanged()`, `recordFailure(stage, failureClass, allowedContext)`는 §9의 원문·실패 의미를 따른다. JSON에서 비유한 gauge 값은 숫자0이나 비표준 숫자로 바꾸지 않고 원문의 `NaN` 문자열과 `finite=false`를 보존한다.
-- `CheckoutIncidentScenario.relayAndAwait(orderIds, deadline)`는 §8.4의 실제 eventId별 전달·receipt·consumer commit·행/수량 대조를 모두 완료해야 반환한다.
-
-OBSERVED의 안내는 해당 Gradle 작업의 `testLogging.showStandardStreams=true` 출력과 runDir의 `operator-guide.json`으로 제공한다. 새 runDir 확보 직후 고정 prefix `W10_LAB` 한 줄에 runId·runDir·안내 예정 절대경로·status=PREPARING을 내보낸다. 이 시점에는 안내 파일이 아직 없고 관찰/명령 입력을 시작하지 않는다. runDir는 이번 실행이 새로 생성해 단독 소유하며 `operator-guide.json`은 monitoring 준비를 조율하는 한 writer만 쓴다. 운영자/다른 helper는 안내 파일에 쓰지 않는다. 이 전제 안에서 collector/실제 Grafana URL·로그 위치·control 디렉터리 준비가 완료되면 안내 JSON 전체를 같은 디렉터리의 새 임시 파일에 완성하고 닫은 뒤, 기존 최종 파일이 없음을 확인해 atomic move로 `operator-guide.json`을 한 번만 공개한다. 프로그램은 최종 파일을 한 번만 공개하며 관측한 기존 파일/충돌·atomic move 미지원/실패는 준비 실패다. atomic move는 완성 파일을 한 번에 보이게 하는 수단이고, 존재 확인과 이동 사이에 제3자가 쓰는 상황까지 덮어쓰기 방지를 보장하는 no-replace 장치가 아니다. 단독 소유/단일 writer 전제가 깨진 동시 쓰기는 지원 범위 밖이다. hard link·동시 writer 지원을 추가하지 않는다. 공개 후 status=READY와 안내 경로를 출력하고 나서 첫 checkpoint에 진입한다. 각 ready 발행 때 stage/ready 절대경로를 같은 prefix로 알리고 nonce/만료/명령 예상경로는 그 ready에서 읽는다. 공유 latest 파일이나 안내 파일을 나중에 덮어쓰지 않는다. 비밀값은 출력하지 않으며 안내/주소/ready 생성 실패는 관찰 대기로 들어가기 전에 실패한다. AUTO에는 사람 대기/안내 요구를 추가하지 않는다.
+아래 시나리오·증거 의사코드는 처리 계약이며 실제 파일별 메서드 분할을 강제하지 않는다. `relayAndAwait(orderIds)`는 실제 eventId별 전달·receipt·consumer commit·활동 대조를 마쳐야 반환한다(§8.4).
 
 ### 6.2 준비
 
@@ -234,73 +230,33 @@ Docker·MySQL/Redis testcontainers·LocalKafkaTestSupport 실제 주소 준비
 streamer 시작 전 구매테이블 부재 확인/소유선언 → 실제자식 시작/assignment
 batch schema 준비child는 실제같은DB, 업무job미실행·테이블정의 확인
 사용자/상품/point/coupon/명단 준비, commit후 기준값 확보
-OBSERVED면 collector 시작·실제target/0 sample·Grafana 준비 확인
 ```
 
-LocalKafkaTestSupport는 공유broker를 종료하지 않으며 system property→환경변수→기존localhost:19092 순서를 유지한다. 다른 DB/Redis/Kafka를 조용히 대역으로 치환하거나 연결 실패를 skip하지 않는다. 실행 환경의 포트/이미지/운영자 이름은 입력값이며 새로운 제품 정책이 아니다. 없는 환경 입력/도구는 명확히 실패하고 해결 없이 실행 성공으로 진행하지 않는다.
+LocalKafkaTestSupport는 공유broker를 종료하지 않으며 system property→환경변수→기존localhost:19092 순서를 유지한다. 다른 DB/Redis/Kafka를 조용히 대역으로 치환하거나 연결 실패를 skip하지 않는다. 실행 환경의 포트·자원 주소는 입력값이며 새로운 제품 정책이 아니다. 없는 환경 입력/도구는 명확히 실패하고 해결 없이 실행 성공으로 진행하지 않는다.
 
-## 7. 실제 수집·Grafana·로그 연결 계약
+## 7. 실제 health·Prometheus 수집과 보조 화면
 
-> **2026-11-23 범위 변경:** 실행별 collector·Grafana·fresh sample 판정(§7.1의 OBSERVED 부분, §7.2, §7.3)은 제외됐다(§1). AUTO의 port·health 상세·직접 GET 규칙과 opt-in 관찰 port만 유효하다.
+### 7.1 포트와 노출
 
-### 7.1 포트와 실행 소유
+API port는 loopback의 빈 port를 사전 선택하고 callback URL과 함께 기동 전에 주입한다. 선택과 bind 사이의 경쟁은 남으므로 bind 실패·실제 API port/callback 불일치는 준비 실패다. 기동 뒤 callback URL을 바꾸거나 다른 서비스에 요청하지 않는다.
 
-API 업무 port는 기존 FlowTest처럼 loopback ServerSocket으로 임의 port를 예약·확인한 뒤 닫고 그 값을 기동 인자로 전달한다. callback도 동일한 API port를 기동 전에 주입한다. release와 bind 사이의 경쟁은 남으므로 실제 bind 실패는 실패로 기록하며 다른 서비스에 요청하지 않는다. `management.server.port=0`, 두 주소는 모두127.0.0.1로 두고 실제 management port를 Boot의 management context/LocalManagementPort에서 얻는다. 설정 문자열0·가정8081을 실제 port로 쓰지 않는다. 테스트의 `management.endpoint.health.show-details=never`를 명시해 실제 health 상태 원문에 연결 비밀/상세 예외가 섞이지 않게 한다. 상태/기본 component 이름은 조작하지 않는다. 기동 후 실제 API port와 callback/manifest가 일치하는지도 검증한다. callback 주소를 기동 후 변경하는 새 제품 기능은 추가하지 않는다. **2026-11-23 결정:** Gradle 속성 `w10ObservePort`가 있으면 AUTO는 그 값을 management port로 쓰고 실제 bind된 port가 요청값과 같은지 확인한다. 주소는 127.0.0.1을 유지하며 외부 노출 fallback은 없다. 포트 충돌·공유 수집 미도달은 테스트 통과·실패와 별개로 화면에서만 드러난다.
+management는 기본 `management.server.port=0`으로 기동하고 Boot가 알려 준 실제 port를 읽는다. API·management 주소는 모두 `127.0.0.1`이다. `management.endpoint.health.show-details=never`를 명시하고 health·prometheus만 기존 설정대로 노출한다. 설정값 0이나 가정한 8081을 실제 port로 쓰지 않으며 env·heapdump·외부 공개 fallback을 추가하지 않는다.
 
-기존 공유 `docker/monitoring-compose.yml`·prometheus.yml·datasource를 덮어쓰거나 공유stack을 restart하지 않는다. OBSERVED전용으로 runDir 아래 config를 생성하고 `w10-<runId>` 프로젝트에 Prometheus/Grafana2개만 띄운다. container_name은고정하지않고Dockerlabels/project/실제containerID를소유목록에기록한다. 호스트공개port는127.0.0.1에동적할당해9090/3000충돌을피하고 `docker compose port` 결과를검증해실제browser/API주소로저장한다.
+### 7.2 직접 수집과 로그
 
-이미지는 기존 compose의 `prom/prometheus`, `grafana/grafana`와 호환되는 로컬 이미지 ID를 실행 전 해석해 고정하고 버전/ID를 metadata에 남긴다. 이미지 부재 시 자동으로 임의버전 설치/기존stack교체를 하지 않고 준비 실패로 보고한다. 필요한 이미지 준비는 실행 승인 범위에서 별도로 확인한다. version/도구/실제 port 가용성은 문서작성만으로 검증되지 않았다.
+각 단계의 업무 TX·전달·활동이 안정된 뒤 실제 management 주소의 `/actuator/health`와 `/actuator/prometheus`를 직접 GET한다. 각 응답을 받으면 assertion 전에 `<endpoint>-response.txt`에 본문을, `<endpoint>-response.json`에 HTTP 상태·수신 시각·본문 존재 여부를 write-once로 저장한다. 본문이 없으면 빈 파일과 `bodyPresent=false`로 구분한다. health 검사에서 실패하면 다음 조회는 하지 않으며, 뒤 조회가 통신 실패해도 앞서 받은 원문은 유지한다. 저장 실패도 전파해 진행을 중단한다. 성공 시 기존 결합 원문 `direct-observation.txt`도 유지하며 다음을 assertion으로 확인한다.
 
-Grafana datasource는 프로젝트 내부 `http://prometheus:9090`으로 고정하고 외부계정은 연결하지 않는다. 로그인은 기존 로컬실습 기본계정으로만 사용하며 인증값을 evidence·로그·프롬프트에 복사하지 않는다. datasource/dashboard 설정·이미지명·port·컨테이너목록은 합성/비밀아닌 값만 내보낸다. 실행용 설정파일 전체를 제출 증거로 자동복사하지 않는다.
+- health HTTP 200·UP.
+- Prometheus HTTP 200, UNKNOWN gauge 표본 하나와 finite 기대값 BASELINE 0·FAULT 3·RECOVERY 0. 없는 표본·NaN을 0으로 채우지 않는다.
+- 지표는 DB 전체의 UNKNOWN을 세므로 전용 DB·배경 UNKNOWN 부재를 전제로 한다(§2~3).
 
-### 7.2 수집 설정과 준비 판정
+관측 client의 connect/read 제한은 각각 3초다. 직접 GET은 collector의 scrape 성공·신선도나 Grafana 화면 수집을 입증하지 않는다. 로그는 전용 capture와 실행 소유 streamer/batch 파일에서 읽으며, 개별 식별자·호출·TX를 연결한다(§4·§9).
 
-run별 prometheus.yml:
+### 7.3 공유 Prometheus·Grafana
 
-```yaml
-global:
-  scrape_interval: 5s
-  scrape_timeout: 3s
-scrape_configs:
-  - job_name: checkout-incident
-    metrics_path: /actuator/prometheus
-    honor_timestamps: false
-    static_configs:
-      - targets: ['host.docker.internal:<actualManagementPort>']
-```
+선택 속성 `-Pw10ObservePort=<port>`로 AUTO management port를 고정할 수 있다. 실제 bind port가 요청값과 같은지 검사하며 충돌은 준비 실패다. 공유 수집 대상은 `docker/monitoring-compose.yml`의 `host.docker.internal:8081`이므로 그 화면을 볼 때는 8081을 선택한다.
 
-target에는runId/orderId label을추가하지않는다. macOS Docker Desktop의host.docker.internal로loopback management에실제로도달하는지target준비에서확인한다. 실패시bind를0.0.0.0으로넓히거나관리endpoint를외부공개하는fallback을추가하지않는다. endpoint 직접 GET 성공과container도달성은별개이며실패 원문을보존한다. 환경차이로다른연결이필요하면그부분을멈추고영향/대안을확인한다.
-
-시작 준비는60초 이내에Prometheus `/-/ready`,Grafana `/api/health`, 해당실제target의 `up=1`·빈lastError·정상scrape 및 finite UNKNOWN0을 확인한다. health/metric 노출은health/prometheus만유지하며env/heapdump를열지않는다. directendpoint와collector가서로다른API에붙지않도록metadata의actualport와targetlabel을비교한다.
-
-Prometheus의 **예정 간격으로 sample timestamp를 정렬하는 보정**은 endpoint timestamp 존중 여부와 다른 기능이다. OBSERVED 실행 전 고정한 로컬 이미지 버전의 `scrape.adjust-timestamps` 지원을 확인하고, 이 실행 전용 collector 시작 인자에 `--scrape.adjust-timestamps=false`를 명시한다. 고정 이미지의 inspect 결과에서 Entrypoint와 기본 Cmd 인자 전체를 확인한다. 기존 Entrypoint를 유지하고, 실행 전용 compose command에는 기본 Cmd의 순서/인자(설정 파일·storage 경로 등)를 모두 보존한 목록을 전달한다. 그 목록에 scrape.adjust-timestamps가 있으면 해당 항목만 false로 교체하고, 없으면 false 항목을 추가해 중복 플래그를 만들지 않는다. config 파일 경로는 실행별 생성 설정의 mount 위치와 기존 인자가 일치하게 한다. 기본 Cmd나 Entrypoint를 해석/보존할 수 없으면 준비 실패이며 짧은 command 한 줄로 이미지의 다른 기본 인자를 지우지 않는다. evidence에는 이 실행에서 사용한 허용된 인자/설정만 기록하고 inspect 전체·환경/비밀값을 복사하지 않는다. 기동 후 같은 collector의 `/api/v1/status/flags`에서 실제 `scrape.adjust-timestamps=false`를 확인해 버전/이미지 ID·인자/유효값의 허용 부분을 evidence에 남긴다. 지원 부재·유효값 미노출·조회 실패·값 불일치는 준비 실패다. 기본값에 의존하거나 임의 오차 여유로 통과시키지 않는다. 공유 collector 인자는 바꾸지 않는다.
-
-확인 근거: Prometheus v2.53.3의 cmd/prometheus/main.go에는 위 보정 옵션 기본 true와 timestamp-tolerance 기본2ms가 있고, scrape/scrape.go의 scrapeLoop.run은 수집 시각을 예정 간격의 시각으로 보정할 수 있다. 이는 소스 확인 사실이며 현재 로컬 이미지 버전/지원/적용의 실행 증거가 아니다. `honor_timestamps=false`만으로 이 보정을 끌 수 없다. 비활성화를 선택한 이유는 S>C가 안정화 이후 scrape 시작이라는 전제를 직접 유지하기 위해서다. tolerance를 확인해 여유를 더하는 대안은 버전별 오차 정책을 추가로 관리해야 하므로 이번에는 채택하지 않는다.
-
-### 7.3 각 단계의 fresh sample과 화면
-
-각 단계는 업무commit/relay활동안정화 후 호스트 `phaseStableAt`을 기록한다. 이것은 실행·화면 대응용이며 Docker collector의 sample 시각과 직접 대소 비교하지 않는다. 정상 confirm 중의 일시 UNKNOWN과 단계 안정값을 구분한다. 신선도는 같은 Prometheus의 시각 안에서 다음 순서로 판정한다.
-
-```text
-호스트 monotonic 기준 20초 예산 시작 (기준시각 조회도 예산에 포함)
-업무 안정화 이후 같은 collector의 instant query time() 호출
-  명시적인 과거 time 파라미터/캐시 없이 실제 응답의 scalar 값 C 확보
-  요청 시작/종료 호스트 시각·C·collector 주소를 원문에 기록
-이후 같은 job/실제 instance의 gauge와 up을 같은 raw sample 조회 응답에서 읽음
-  실제 sample 시각 S > C인 표본만 후보; S <= C는 과거/진행 중 scrape로 보존하고 대기
-  같은 S의 up=1과 gauge 기대값0/3/0을 짝지음; 서로 다른 S 두 쌍 확인
-  C 이후 up=0 또는 up=1인데 같은 S의 gauge 누락/NaN/불일치면 실패
-  매 poll의 time()도 보존; 관측된 collector 시각 후퇴/미래 sample 모순이면 실패
-  남은 예산 안에서 두 표본을 얻지 못하면 timeout 실패
-```
-
-collector 설정은 `honor_timestamps: false`를 명시해 endpoint가 준 시각이 아닌 collector의 scrape 시각을 사용한다. sample 시각은 실제 scrape 시작 기준이고 완료/조회 시각과 구분한다. 따라서 C 이전에 시작해 이후 끝난 scrape를 새 표본으로 인정하지 않는다. 구현에서는 채택한 로컬 Prometheus 버전의 이 timestamp 의미와 실제 원문 연결을 확인한다. 호스트와 VM의 절대 시각이 같다는 가정이나 임의 1초 오차 한도는 추가하지 않는다. 관측 사이의 모든 시계 급변까지 검출한다고 보장하지 않으며 시각 불연속이 드러나면 수치를 보정해 통과시키지 않고 중단한다.
-
-표본 대응은 instant query API의 range-vector 식 `{__name__=~"commerce_payment_unknown|up",job="checkout-incident",instance="<target>"}[20s]`로 두 metric의 raw timestamp/value 배열을 한 응답에서 읽어 수행한다. 이것은 query_range의 step별 평가 결과나 instant-vector 응답의 바깥 평가 timestamp가 아니다. 실제 sample timestamp S를 기준으로 두 metric을 대응하며, 동일 metric의 series가 여러 개면 실패한다. 기존 application 등 유한 tag는 원문에 보존하되 job/instance가 같은 target인지 확인한다. C 이후 실제 up sample이 아직 없으면 준비 중으로만 기록해 남은20초 안에서 기다린다. 신선한 up=0, 또는 up=1인데 같은 S의 gauge가 없거나 비유한/기대값불일치이면 즉시 실패한다. 뒤 성공으로 덮지 않는다. `timestamp(gauge)`를 보조로 조회할 수 있지만 그 값과 raw S를 구분하고 평가시각만으로 신선도를 판정하지 않는다.
-
-`/api/v1/targets`의 lastScrape·health·lastError는 각 HTTP 요청 시작/종료시각과 함께 별도로 저장한다. targets 응답은 더 나중 scrape의 정보일 수 있으므로 S의 성공/실패 판정을 그 값으로 덮어쓰지 않는다. S의 수집 성공 근거는 같은 S의 up=1이다. target 식별/주소 불일치는 준비 오류로 실패한다. 각 raw sample/targets/query 원문을 순번파일에 남기고 고정 sleep이나 수집 주기 하나를 더 기다린 사실로 신선도를 대신하지 않는다.
-
-Grafana는위datasource의해당job/instance UNKNOWN시계열을5초refresh로보는단일기본panel을준비한다. 업무자료를더넣은대시보드/알림은추가하지않는다. 화면관찰은명시checkpoint동안이뤄지고run의실제시작/종료범위와phase시각을함께본다. 캡처는부가자료이며직접원문/동일ID/효과 assertion을대체하지않는다. 앱로그는run별로그capture와streamer/batch자식파일로읽는다. Grafana에로그검색backend가구성돼있다고가정하지않는다.
+공유 설정·datasource·컨테이너를 수정·재기동하지 않는다. container에서 management로 도달 가능한지는 직접 GET과 별개이며, 공유 수집 누락은 AUTO 통과 근거로 사용하지 않는다. Grafana는 보조 화면이고 캡처는 원문·동일 ID·업무 효과 assertion을 대체하지 않는다. 로그 검색 backend나 분산 추적이 구성됐다고 가정하지 않는다.
 
 ## 8. 단계 진행·진단·복구·후속 결과
 
@@ -316,7 +272,7 @@ BASELINE:
   같은사용자 reconcile 실제HTTP → 권위조회/내부최종확정 확인
   각eventId를실제relay.runEvent로전달하고receipt/consumercommit/활동 확인
   새DB조회·PGstate·create수·point/coupon·health·Prometheus원문검증/저장
-  OBSERVED fresh sample0 확인 → BASELINE_READY
+  assertion 뒤 BASELINE 진행 기록
 
 FAULT:
   F/U명단 고정기록 완료 확인
@@ -327,15 +283,15 @@ FAULT:
   각U CLOSED_EARLY/거래SUCCESS/create1 확인
   확정17개만실제relay/활동안정화; U Outbox0/활동0 확인
   F7/UNKNOWN3/PG10·전체값표·지표3·healthUP·TX로그대조
-  진단용PG읽기·TX로그/가설대조 완료, OBSERVED fresh sample3 원문도 확보
-  필수 fault원문·diagnosis를 write-once 저장/봉인 → FAULT_READY
+  진단용 PG 읽기·TX 로그/가설 대조 완료
+  필수 fault 원문·diagnosis를 write-once 저장/봉인 → FAULT 진행 기록
 ```
 
 PG 지연/응답 유실/내부 반영 실패별예상·실제·판정(지지/배제/미확정)·근거파일을 `diagnosis.json`에 쓴다. U의진단은기존계정으로proxy baseUrl을통한PG목록/거래GET을사용하며commerce결과적용을호출하지않는다. HTTP진단 조회후commerceUNKNOWN/예약/Outbox가그대로인지새조회로확인한다. fixture.state조회와HTTP권위조회는출처를구분하며이진단 조회도lookup횟수에포함한다. 가설표를자동으로“주입코드가그러므로응답 유실”로채우지않는다.
 
-AUTO는수집된경계결과/거래/DB/실제 TX종료가일치하는지명시assert하고가설대조표를생성한뒤승인된고정U/기존reconcile만진행한다. OBSERVED는사람이이를읽고판정/조치범위를확인한후명시 신호를발행한다. 같은두관찰을만드는다른가설을배제할근거가없으면미확정으로남기고복구 전진행을멈춘다.
+AUTO는 수집된 경계 결과·거래·DB·실제 TX 종료의 일치를 assert하고 가설 대조표를 생성한 뒤 승인된 고정 U의 기존 reconcile만 진행한다. 가설을 구분할 근거가 부족하면 미확정으로 남기고 복구 전에 중단한다. 이는 통제된 테스트 절차이며 운영 자동 복구 정책이 아니다.
 
-### 8.1.1 예상·자동 판정·사람 판단의 분리
+### 8.1.1 사전 예상과 증거 기반 자동 판정
 
 예상 파일은 아래 세 가설의 범위와 필수 증거를 고정한다. `diagnosis.json`은 예상 파일 hash, U별 실제 증거 경로/식별자/callId/observationId, 자동 판정과 reason을 저장한다. fixture plan 이름을 판정 입력으로 쓰지 않는다. journal은 실제 전송 경계 관찰로 다른 증거와 대조하며 단독 정답으로 쓰지 않는다.
 
@@ -347,29 +303,27 @@ AUTO는수집된경계결과/거래/DB/실제 TX종료가일치하는지명시as
 
 공통: ID/금액/거래·호출 대응, START→RESULT/ERROR와 실제 TX 종료의 완결성부터 검사한다. **2026-11-23 사용자 결정:** callId와 observationId는 서로 다른 UUID이므로, U별로 providerOrderId가 같은 CREATE START/RESULT 쌍과 orderId가 같은 `APPLY_OBSERVATION`(source=CREATE)을 찾고, fault 구간에서 각각 정확히 1개이며 로그 순서가 RESULT→APPLY일 때만 같은 생성 호출로 연결한다. 0개·복수·순서 역전은 미확정이다. 누락/UNKNOWN/진단 실패/예상 밖 추가 적용은 자동 판정 미확정 및 진단 실패이며 복구 전 중단한다. 각 판정은 이 실행의 포착 범위에만 적용한다. §4.4의 모든 U 조합이 성립하고 유실 가설 지지·나머지 두 가설의 해당 범위 배제가 확인돼야 AUTO가 기존 reconcile로 진행한다. 세 가지 모든 장애를 새로 주입하는 범위는 추가하지 않는다.
 
-**(2026-11-23 제외, §1 — 아래 OBSERVED 사람 판단 파일 계약은 구현하지 않으며 단위D에서 관련 코드를 삭제했다)** OBSERVED의 코드 판정/실제 증거는 FAULT_READY 전에 봉인한다. 운영자는 ready 뒤 이를 읽고 별도 `control/operator-review.json`을 완성해 atomic move로 공개한다. schemaVersion1/runId/stage=FAULT/ready nonce/operator/createdAt, 봉인 diagnosis의 상대경로·SHA-256, 현재 U 목록, 가설별 판단(지지/배제/미확정)·근거 상대경로·비어 있지 않은 이유, decision=PROCEED 또는STOP을 포함한다. 사람 판단이 자동 판정을 덮어쓰지 않는다. PROCEED는 모든 U에 대해 위 진행 조건과 일치할 때만 가능하며 이견/미확정이면 STOP/CANCEL로 남긴다. CANCEL을 소비할 때 제출된 STOP 판단 파일이 있으면 검증해 hash를 함께 보존하되, 파일이 없다는 이유로 취소 자체를 막지 않는다. 자동 실패를 사람 판단으로 우회하지 않는다. 자동 판정의 한계와 이견을 보존하고 후속 설계 토론으로 넘긴다.
+### 8.2 AUTO 진행 기록
 
-사람 파일은 §8.2의 runDir 내부/비 symlink/32KiB/형식·시각·nonce/operator 검사와 같은 정책을 적용한다. accepted 기록 전에 읽은 bytes의 hash를 저장해 소비 후 수정도 확인한다. 이 기록은 사람이 어떤 근거로 판단했는지를 남기며 판단의 진실성·운영자 인증을 자동 증명하지 않는다. AUTO는 사람 판단 파일을 합성하지 않는다.
+각 단계의 업무·증거 assertion 뒤 `IncidentCheckpoint.await(stage, facts)`를 호출한다. `facts`에는 단계 원문 상대경로·summary를 두고 FAULT에는 봉인 diagnosis 경로·SHA-256·현재 U 목록·`autoProceed`를 추가한다.
 
-### 8.2 명령파일 계약
+```text
+await(stage, facts):
+  FAULT 자동 판정이 진행 불허이면:
+    AUTO_JUDGMENT_FAILED 실패를 기록하고 Aborted 전파
+    정상 반환·skip·자동 복구로 변환하지 않음
+  control/accepted/<stage>.json에 CREATE_NEW로 기록
+    schemaVersion / runId / stage / action=AUTO_ADVANCE / factsSha256 / acceptedAt
+  같은 단계 재기록·쓰기 실패는 실패로 전파
+```
 
-> **2026-11-23 범위 변경:** ready·명령·판단 파일·nonce·poll·5분/30분 한도는 OBSERVED 전용이라 제외됐고 단위D에서 코드도 삭제했다. 현재 유효한 것은 아래 마지막 항목의 AUTO accepted 기록과 중단 예외를 skip/정상으로 바꾸지 않는 규칙이다.
-
-`IncidentCheckpoint.await(stage, facts, deadline)`은업무/증거assertion이끝난뒤에만호출한다. runDir/control은실행 전용이고외부서버/제품제어API를추가하지않는다.
-
-- ready파일: schemaVersion1, runId, stage(BASELINE/FAULT/RECOVERY), 임의UUIDnonce, createdAt, expiresAt, evidence상대경로, 다음허용조치. `ready/<stage>.json`을CREATE_NEW로기록한다.
-- 실행담당은 사용자관찰/판단과이미승인된조치범위를확인한뒤 `commands/<stage>-<nonce>.json`을임시파일에완성하고atomic move로공개한다. payload는schemaVersion/runId/stage/nonce/action=ADVANCE 또는CANCEL/operator/createdAt이며, FAULT ADVANCE에는 diagnosis와 operator-review의 상대경로·SHA-256을 추가한다. CANCEL은 사람 판단 파일 없이도 가능하다. operator는실행 전정한한사람/도구표기이며계정 비밀이아니다.
-- 파서는기대파일만읽고정규화경로가runDir밖으로나가거나symlink이면거절한다. schema/형식/32KiB상한/nonce/단계/runId/action을검증하고현재ready시각이후·만료이전인지확인한다. 불일치·손상명령은진행신호로간주하지않고실패기록후취소/정리한다. 무한재시도하지않는다.
-- FAULT ADVANCE는 현재U목록과 §4.4·§8.1.1 대조를 담은 봉인 diagnosis 및 ready 이후 별도 사람 판단 PROCEED 파일을 참조하고, 원문 hash/nonce/operator/목록/진행 조건 일치를 모두 검증해야 한다. fixture정답/그래프3만으로복구허가를대체하지않는다. 코드가사람의판단진실성을증명하지는못하며누가무슨근거로진행했는지기록한다.
-- 소비결과는 `accepted/<stage>.json`에CREATE_NEW로남기며소비한명령을다른단계/실행에재사용하지않는다. 실행 시작 metadata에 고정한 단일 operator만 명령/사람 판단 파일을 발행하며 두 파일의 operator가 metadata와 일치해야 한다. 로컬 HANDOFF를 구현 계약이나 런타임 입력으로 읽지 않는다. 이 문자열 일치 검사는 인증/동시 writer 잠금이 아니며 실행 담당을 한 명으로 제한하는 운영 전제를 기록한다. accepted에는 소비한 명령/판단 파일 hash를 남긴다. 중복명령은새조치를만들지않고기존소비기록과대조해오류로남긴다.
-- 각checkpoint 최대5분, 전체 실습30분. 남은전체시간이더짧으면그 한도가우선. poll간격200ms,monotonicdeadline,interrupt는flag복원후취소처리. timeout/CANCEL은ADVANCE나자동복구가아니다. STOP 판단은 복구를 허용하지 않고 CANCEL 또는 남은 한도 내 timeout으로 종료한다. STOP/CANCEL/timeout/interrupt는 wrapper에서 중단 예외를 정상 반환·JUnit assumption/aborted/skip으로 변환하지 않으며, 실습 미완료 실패로 기록하고 finally 정리를 수행한다. AUTO/OBSERVED 모두 완료 assertion 전 중단은 통과가 아니다. AUTO는사람명령파일을발행하지않으며같은assertion뒤진행한다.
-- **2026-11-23 구현 세부 사용자 결정:** AUTO는 ready·command를 만들지 않고 `accepted/<stage>.json`에 action=AUTO_ADVANCE와 입력 사실 hash만 남긴다. OBSERVED에서 commands/에 현재 기대 파일 외의 파일이 있거나 소비한 명령·판단 파일의 bytes가 accepted hash와 달라지면 내용을 읽지 않고 파일명만 실패로 기록한 뒤 취소한다. control 파일은 `runDir/control/` 아래 `ready/`·`commands/`·`accepted/`·`operator-review.json`이며 운영자 임시 파일은 `control/tmp/`에서 완성해 atomic move한다.
+사람 명령·ready·nonce·판단 파일은 생성하지 않는다. 시간 경과를 성공으로 바꾸지 않으며 업무 전체 기한은 wrapper와 deadline으로 제한한다(§6.1·§9.2).
 
 ### 8.3 복구와 반복 적용
 
 ```text
 RECOVERY:
-  fault봉인/진단/명시허가(OBSERVED) 완료 확인
+  fault 봉인·증거 기반 자동 진단과 진행 조건 충족 확인
   U3개이외조정대상없음, §5의 진행 요청/콜백/미해제gate0·세 주입 소비·추가 등록0 확인
   복구 시작 journal 순번/CREATE20 고정
   각U 본인 POST /api/v1/orders/{id}/payment/reconcile 실제호출
@@ -394,42 +348,43 @@ RECOVERY:
 
 기존batch child.startNew로해당주의새snapshot1개를만들고JobExplorer COMPLETED·publicationOutcome PUBLISHED·input_count40·결과2상품·API A40/B20 순위를확인한다. 기존공개본을UPDATE하지않고W9고정입력/새revision규칙을사용한다. W10에는fault추가snapshot·chunk실패를섞지않으며기존W9회귀를별도로실행한다.
 
-복구원문·point/coupon·실제health/metric0·fresh sample0·랭킹응답을저장하고fault원문hash불변을검증한뒤RECOVERY_READY에서관찰한다. 이ready다음ADVANCE는추가결제가아니라정상종료/정리다.
+복구 원문·point/coupon·실제 health/metric 0·랭킹 응답을 저장하고 fault 원문 hash 불변을 확인한 뒤 RECOVERY 진행 기록을 남기고 종료·정리한다.
 
 ## 9. 원문·실패·정리·재진입
 
 ### 9.1 write-once evidence
 
-`IncidentEvidenceWriter.openRun(root,codeReference,mode)`는root밑에충돌하지않는새runDir를생성하고metadata를CREATE_NEW로쓴다. 기본 root는API build/checkout-incident-runs이다. runId,HEAD/작업diff기준과hash,실제시작UTC시각,합성Clock,mode,operator(실행입력),소유DB/PG/프로세스/topic/group/collectorID·이미지·실제 port를허용필드로기록한다. 비밀번호/헤더/카드/전체환경·실행명령전체는저장하지않는다. 코드 기준은 HEAD와 tracked diff hash뿐 아니라 실행에 영향을 주는 미추적 소스/빌드설정 파일의 repo-relative 경로·SHA-256 manifest도 포함한다. 새 구현 파일이 아직 untracked일 수 있으므로 git diff만으로 같은 코드라고 판정하지 않는다. 로컬 주차 운영 문서·인증/실행 비밀은 이 코드 manifest 대상에서 제외한다.
+`IncidentEvidenceWriter.openRun(root, codeReference, mode, operator, syntheticClock)`는root밑에충돌하지않는새runDir를생성하고metadata를CREATE_NEW로쓴다. 기본 root는API build/checkout-incident-runs이다. runId,HEAD/작업diff기준과hash,실제시작UTC시각,합성Clock,mode,operator(실행입력),소유 DB/PG/프로세스/topic/group·실제 port를허용필드로기록한다. 비밀번호/헤더/카드/전체환경·실행명령전체는저장하지않는다. 코드 기준은 HEAD와 tracked diff hash뿐 아니라 실행에 영향을 주는 미추적 소스/빌드설정 파일의 repo-relative 경로·SHA-256 manifest도 포함한다. 새 구현 파일이 아직 untracked일 수 있으므로 git diff만으로 같은 코드라고 판정하지 않는다. 로컬 주차 운영 문서·인증/실행 비밀은 이 코드 manifest 대상에서 제외한다.
 
-**2026-11-23 구현 세부 사용자 결정:** `metadata.json`은 openRun 시점에 아는 값만 CREATE_NEW로 한 번 쓴다. baseline 전 고정하는 예상 파일의 hash는 `metadata-expectations.json`, 준비 중에 알게 되는 소유 자원(실제 port·topic/group·자식·collector)은 `resources/<순번>-<종류>.json`으로 각각 CREATE_NEW 추가하며 어느 파일도 덮어쓰지 않는다. tracked diff는 `git diff HEAD --binary`(staged+unstaged) 전체의 hash이고, untracked manifest는 `git ls-files --others --exclude-standard` 중 `apps|modules|supports/*/src/` 아래와 `*.gradle.kts`·`gradle.properties`·`gradle/` 아래 파일이며 `docs/`는 제외한다. git 실행 실패는 준비 실패다. 단계 원문은 `baseline|fault|recovery/` 아래 이름별 파일로 두고, 구조 데이터는 JSON(비유한 값은 원문 문자열과 `finite=false`), HTTP 본문 원문은 바이트 그대로 저장한다.
+**2026-11-23 구현 세부 사용자 결정:** `metadata.json`은 openRun 시점에 아는 값만 CREATE_NEW로 한 번 쓴다. baseline 전 고정하는 예상 파일의 hash는 `metadata-expectations.json`, 준비 중에 알게 되는 소유 자원(실제 port·topic/group·자식)은 `resources/<순번>-<종류>.json`으로 각각 CREATE_NEW 추가하며 어느 파일도 덮어쓰지 않는다. tracked diff는 `git diff HEAD --binary`(staged+unstaged) 전체의 hash이고, untracked manifest는 `git ls-files --others --exclude-standard` 중 `apps|modules|supports/*/src/` 아래와 `*.gradle.kts`·`gradle.properties`·`gradle/` 아래 파일이며 `docs/`는 제외한다. git 실행 실패는 준비 실패다. 단계 원문은 `baseline|fault|recovery/` 아래 이름별 파일로 두고, 구조 데이터는 JSON(비유한 값은 원문 문자열과 `finite=false`), HTTP 본문 원문은 바이트 그대로 저장한다.
 
-`writeStage(stage,AllowedSnapshot)`는다음 필수 항목을write-once로남긴다.
+`writeStage(stage, StageSnapshot)`는다음 필수 항목을write-once로남긴다.
 
 - 실제주문/cohort/attempt/providerOrder/검증한합성계정참조/금액/거래/상태/확인시각 대응표.
 - 주문·결제·예약/재고·Outbox·활동·point/coupon·랭킹의읽기쿼리/조회범위·시작/종료시각·허용row값.
 - PG fixture.state/journal/count와실제권위HTTP진단응답(합성허용필드),baseline/fault/recovery실제health·Prometheus응답의상태/본문/시각.
-- 직접수집/실제collectorAPI/그래프캡처의출처구분,각신선sample의실제 시각,진단가설/예상/관찰/판정/조치.
+- 직접 수집 원문의 출처·관찰 시각과 진단 가설/예상/관찰/판정/조치. 보조 화면은 직접 수집 증거와 구분한다.
 - parent의허용경계로그·streamer/batch자식로그위치/내용과결과,assertion실패·중단·정리결과.
 
-로그capture는전용logger에test ListAppender/파일appender를부착하고실행끝에정확히자기appender만분리한다. 기존공유root설정·다른 실행로그를지우지않는다. 자식로그는실행소유경로로저장하고원본을임의편집하지않는다. SQLbind/rawrequest/카드가새원문에섞이지않도록출력구성을확인한다. 스크린샷도관리자로그인/계정 비밀을담지않는다.
+로그capture는전용logger에test ListAppender/파일appender를부착하고실행끝에정확히자기appender만분리한다. 기존공유root설정·다른 실행로그를지우지않는다. 자식로그는실행소유경로로저장하고원본을임의편집하지않는다. SQLbind/rawrequest/카드가새원문에섞이지않도록출력구성을확인한다. 보조 화면에도 로그인·계정 비밀을 담지 않는다.
 
-`sealFault()`는 필수파일/내용 assertion 성공 후 fault의 SHA-256목록과 코드 진단원문·예상 파일 hash를 봉인한다. ready 뒤 작성하는 operator-review/진행 명령/accepted는 봉인 fault 파일을 수정하지 않고 별도로 저장하며 소비 hash로 대응한다. `verifyFaultUnchanged()`는복구 뒤기존파일바이트hash를비교한다. 파일존재/hash일치만으로상태/효과를통과시키지않는다. 실패 원문은별도순번/시각파일에append방식으로추가하며기존파일에덮어쓰지않는다. 증거파일쓰기실패면특히복구 전진행을중단한다. 오류기록도실패하면원래오류를가리지않고suppressed/별도실패로알린다.
+`sealFault()`는 필수파일/내용 assertion 성공 후 fault의 SHA-256목록과 코드 진단원문·예상 파일 hash를 봉인한다. accepted 진행 기록은 봉인 fault 파일과 별도로 저장한다. `verifyFaultUnchanged()`는복구 뒤기존파일바이트hash를비교한다. 파일존재/hash일치만으로상태/효과를통과시키지않는다. 실패 원문은별도순번/시각파일에append방식으로추가하며기존파일에덮어쓰지않는다. 증거파일쓰기실패면특히복구 전진행을중단한다. 오류기록도실패하면원래오류를가리지않고suppressed/별도실패로알린다.
 
-build는ignore대상이므로성공/실패 원문보존과Git제출을구분한다. 승인후선별한실행의허용원문/metadata/가설/검증범위·재현명령만 `docs/week10/verification/evidence/<runId>/`에바이트그대로복사하고원본hash와대조한다. 이실제증거디렉터리는제출선별대상이며현재없다. 로컬scenario-review·HANDOFF·프롬프트를필수근거로링크하지않는다. stage/ignore변경은자동수행하지않는다.
+build는ignore대상이므로성공/실패 원문보존과Git제출을구분한다. 승인후선별한실행의허용원문/metadata/가설/검증범위·재현명령만 `docs/week10/verification/evidence/<runId>/`에바이트그대로복사하고원본hash와대조한다. 2026-11-23 실행 `20261123T124038Z-670e178c`의 사본·manifest를 해당 경로에 보존했다. Git 포함 여부·최종 제출 판단은 별도이며 현재 untracked다. 로컬scenario-review·HANDOFF·프롬프트를필수근거로링크하지않는다. stage/ignore변경은자동수행하지않는다.
 
 ### 9.2 제한 시간과 정리
 
 |구간|한도/정책|
 |---|---|
-|AUTO wrapper|420초. 기존W9@Test420초도유지|
-|OBSERVED wrapper|30분,각ready5분. 업무I/O한도는AUTO와동일|
-|직접health/Prometheus/collectorAPI|connect/read각3초. 호출전체의수학적3초상한이라고쓰지않음|
-|phasefreshsample/DB활동안정화|20초,실제조건poll. collector기동준비60초|
+|AUTO wrapper / 업무 예산|420초 / 360초. 기존 W9의 420초 한도는 유지|
+|직접 health/Prometheus|connect/read 각각 3초. 호출 전체의 수학적 3초 상한이 아님|
+|DB 활동 안정화|20초, 실제 조건 poll|
 |batch child1회|최대120초와남은전역시간중작은값|
 |기존relay PG/DB/child 종료|기존 계약을유지하되전체남은시간과정리예산구분. log에실제소요/종료여부기록|
 
-cleanup은전역실행한도와별도로기존§11.6의유한종료대기를수행해자식이살아있는데종료성공이라고쓰지않는다. timeout이모든DB/프로세스를동시에취소한다는보장은아니다.
+cleanup은 전역 실행 한도와 별도로 주간 랭킹 검증 설계 §11.6의 유한 종료 대기를 수행한다. 자식이 살아 있는데 종료 성공이라고 쓰지 않는다. timeout이모든DB/프로세스를동시에취소한다는보장은아니다.
+
+데이터 정리는 활성 API의 정리 bean을 사용하므로 API 종료 전에 수행한다. 기존 `OrderOutboxE2eLifecycleSupport.release()`의 순서를 재사용하며, relay idle·자식 종료를 확인하지 못하면 해당 데이터는 보존하고 종료 실패를 보고한다. API/PG 종료 등 독립적인 자원 정리는 계속한다.
 
 ```text
 try:
@@ -439,17 +394,19 @@ catch original:
 finally:
   이번run이향후등록할주입/콜백호출중지,등록gate가있으면자기것해제
   relay진입중단/idle대기
-  자기collector정지·로그/상태 보존,그프로젝트의컨테이너/네트워크만정리
-  batch/streamer자식종료확인
-  API/PG context/fixture종료,자기appender분리
-  자식종료가확인된경우에만소유테스트데이터/topic/group정리
+  소유 topic 설정을 변경했다면 복원
+  batch/streamer 자식 종료 확인
+  relay idle·자식 종료가 확인된 경우에만 활성 API로 소유 API/Redis 데이터 정리
+  자기 appender 분리 → API context 종료 → PG fixture 종료
+  relay idle·자식 종료가 확인된 경우에만 이번 실행 소유 구매 테이블 정리
+  topic 관리 client 종료 → 자식 종료가 확인된 경우에만 소유 Kafka topic/group 정리
   공유broker/로컬Redis/다른DB/다른compose/모든컨테이너일괄종료금지
   정리 실패는별도기록하고통과로변환하지않음
 ```
 
-baseline→fault→recovery사이에cleanup/truncate/PGreset을호출하지않는다. 기존W7 cleanup helper를재사용하되collector정리와실패 원문저장을추가하고기존자식생존시데이터보존규칙을유지한다. 랭킹/Batch테이블은기존W9§11.6처럼테스트컨테이너수명에맡긴다. 물리테스트DB/PG는프로세스종료시사라질수있고이설계는완료/취소후그DB를재접속해복구를이어가는기능을보장하지않는다.
+baseline→fault→recovery사이에cleanup/truncate/PGreset을호출하지않는다. 기존 W7 cleanup helper와 실패 원문 기록을 사용하고 자식 생존 시 데이터 보존 규칙을 유지한다. 랭킹/Batch테이블은기존W9§11.6처럼테스트컨테이너수명에맡긴다. 물리테스트DB/PG는프로세스종료시사라질수있고이설계는완료/취소후그DB를재접속해복구를이어가는기능을보장하지않는다.
 
-재진입은유효시간내현재checkpoint·같은실행에서만가능하다. 만료/종료후에는남은원문을보존하고새runDir/새 주문으로처음부터재현하며이전실행의미확정상태를성공으로덮지않는다. 실행중조회가불확실하면state를보존하고중단하는의미와프로세스종료뒤DB를영구보존한다는의미를혼동하지않는다.
+현재 AUTO에는 종료·실패한 실행의 재개 기능이 없다. 남은 원문을 보존하고 새 runDir·새 테스트 주문으로 처음부터 재현하며 이전 실행의 미확정 상태를 성공으로 덮지 않는다. 실행 중 조회가 불확실하면 상태를 보존하고 중단한다는 의미와 종료 뒤 테스트 DB를 영구 보존한다는 의미를 혼동하지 않는다. 상태가 남은 환경에서 같은 주문을 다시 진단하는 판단 순서와 운영 미검증 범위는 runbook §4에서 구분한다.
 
 ## 10. 검증 대응·완료 근거
 
@@ -459,12 +416,12 @@ baseline→fault→recovery사이에cleanup/truncate/PGreset을호출하지않�
 |I2|UNKNOWN집계/상태제외/commit뒤변화/수집시조회/NaN/참조수명|실제DB·registry·Actuator,예외경계대역은별도표시|
 |I3|PG분류·TXcommit/rollback/unknown/충돌별도TX/비밀미출력|기존probe/실제DB/로그capture+단위대조|
 |I4|B10/F10/U고정/정상PENDING후조회/FAULT7·3·10|단계별동일ID/DB/PG원문과assertion|
-|I5|사전 예상/규칙·자동/사람판정 분리·진단읽기전용/복구 전보존|판정 helper의 필수증거 누락/모순/미확정 단위대조, 실제HTTP·경계/TX로그·전후상태·봉인/판단hash|
+|I5|사전 예상/규칙·증거 기반 자동 판정·진단 읽기 전용·복구 전 보존|판정 helper의 누락/모순/미확정 단위 대조, 실제 HTTP·경계/TX 로그·전후 상태·봉인 hash|
 |I6|본인복구10·0·10/create증가0/소유권/반복callback|실제controller/adapter/DB/PG/예약/Outbox|
 |I7|point/coupon불변과비어있지않은대조군|잔액/기록·쿠폰목록/필드/campaign전후값|
 |I8|실제relay/Kafka/consumer중복/활동40·A40/B20/배치/API|receipt/offset/commit·DB·snapshot/JobExplorer/API|
-|I9|**(2026-11-23 제외, §1)** OBSERVEDtarget실제 port/보정OFF·동일시각up대응/fresh0→3→0/그래프+명시진행|유효flags·time()기준·raw S/up·진행중scrape제외·helper의시각/누락/targets갱신경쟁대조·원문·ready/accepted/화면/진단|
-|I10|잘못된nonce/단계/runId/operator/경로·판단/hash/손상명령/중복/timeout/cancel|진행helper의파일/유한가짜시계단위검증,자동복구없음|
+|I9|제외：OBSERVED 직접 관찰·실행별 collector·명시 진행(§1)|AUTO 통과를 I9 완료로 기록하지 않음|
+|I10|AUTO 진행 기록·판정 불허 시 중단·같은 단계 재기록 거절|IncidentCheckpointTest 3건의 검증 대상. 제외된 명령 파일 검증을 요구하지 않음|
 |I11|중간실패/증거쓰기실패/fault불변/정리소유/자식생존|수집helper·기존정리회귀·실제종료기록,강제미실행분기는명시|
 |I12|누적기능·lint·ArchUnit·W9restart/revision|현재코드의새검사결과,0건/skip/중단/접속실패별도|
 
@@ -472,13 +429,13 @@ I9는 제외됐으며 AUTO 통과를 I9 완료로 쓰지 않는다. I10/I11의�
 
 누적 회귀는상품/브랜드/좋아요/관리자·캐시·과거주문보존,Point/PG단일시도/예약/조회조정,Outbox발행gap/소비중복,쿠폰총량/중복/수용/본인목록,랭킹실제입력/동일instance재시작/revision/공개API를기능별로보고한다. API의기존check가O11을포함하는것을보존하고streamer/batch/PG변경모듈의check·관련회귀도포함한다. 기존W8opt-in8건은명시실행여부를구분하며skip을통과나이번새필수장애실험으로기록하지않는다.
 
-코드/검증명령의최종클래스명과작업은구현후실재여부를확인한뒤실행한다. 설계시점의예정작업 `:apps:commerce-api:checkoutIncidentTest`·`checkoutIncidentLab`를현재실행가능하다고쓰지않는다. 구현진척/실행 시각/실패·skip/한계는실행기록에남긴다.
+AUTO 전용 작업은 `:apps:commerce-api:checkoutIncidentTest`이며 `check`에 연결되어 있다. 실제 실행 명령·코드 기준·시각·실패/skip·한계는 실행 기록과 runbook에서 구분한다. 삭제된 Lab 작업을 재현 명령으로 제시하지 않는다.
 
 ## 11. Runbook·제출·선택의 한계
 
-`docs/runbook/week10.md`는구현/실습 작업에서실제명령·주소취득법을검증한후작성한다. 증상,명단고정,복구 전원문,읽기전용진단질의,경쟁가설,본인reconcile의전제/한도,중단조건,효과/후속결과,진행명령·취소·재진입과자기자원정리를포함한다. FAULT의 기존5분 한도 안에서 수행할 ready/nonce 확인 → 봉인 diagnosis 읽기 → 사람 판단 JSON 완성 → 두 파일 SHA-256 취득 → 명령 JSON atomic 공개 순서와 STOP/CANCEL 예시를 포함한다. 파일 생성/검증/hash 계산 절차는 도구로 보조할 수 있지만 가설 판단·근거·PROCEED를 자동으로 대신 작성하지 않는다. 이번 보완으로 새 진행 도구를 구현하거나 한도를 늘리지 않는다. 현재이경로의runbook이완성됐다고주장하지않는다.
+`docs/runbook/week10.md`에는 증상·명단 고정·복구 전 보존·읽기 전용 진단·경쟁 가설·본인 reconcile의 전제/중단 조건·복구/후속 결과 확인·재진입·소유 자원 정리를 기록한다. AUTO 재현은 실행 기록을 따르고, 상태가 남은 주문의 수동 운영 재진단은 미검증 판단 순서로 구분한다. 실제 SQL 수동 실행·운영 자동 복구를 검증한 것으로 쓰지 않는다.
 
-Git제출후보는관측/fixture/연결테스트코드와설정·이기준설계세트·runbook·선별실행원문·기능별검증범위/남은위험·기술글이다. HTML기술글/WIL은사용자형식선택이고개인경험/감정은만들지않는다. 주차운영문서·로컬시나리오리뷰는필수 제출근거로삼지않는다.
+원문 제출 항목은 관측·작은 fixture·연결 테스트 코드와 PR, 사고 증거, runbook, 기능별 검증 범위/남은 위험, 기술 글이다. 설계 문서는 원문이 별도 요구한 제출물이 아니라 협업의 구현 기준이며 Git 포함 후보로 관리한다. 기술 글/WIL의 HTML은 사용자 형식 선택이다. 최종 파일·증거의 Git 포함과 제출 판단은 사용자에게 있으며 자동 stage/커밋하지 않는다. 주차 운영 문서·로컬 시나리오 리뷰는 필수 제출 근거가 아니다.
 
 선택/대안/재검토조건:
 
@@ -486,8 +443,9 @@ Git제출후보는관측/fixture/연결테스트코드와설정·이기준설계
 - UNKNOWN한정gauge는사고3→0을명확히하지만PENDING0/업무전체완료는별도검증해야한다. 미종결전체가운영질문이면label분리와관찰범위를재검토한다.
 - 직접COUNT는freshness를단순하게하지만수집부하/DB지연에민감하다. 현재선택을운영규모보장으로쓰지않는다.
 - afterCompletion은실제 TX결과와시도로그를분리하지만시작실패/프로세스종료/로그장애를모두설명하지못한다. 누락·UNKNOWN이면미확정,추가근거없이원인을확정하지않는다.
-- 자동/명시wrapper가동일scenario를공유해검증차이를줄인다. 명시진행/collector의코드는추가비용이나사용자의실시간관찰요구에필요한범위다. 운영자동복구기능으로제공하지않는다.
 - 두상품/다른수량은품목별후속효과를보지만동점·숨김·주경계·부하·재시작을이번사고에모두섞지않는다. 해당기존 회귀와이번미검증범위를구분한다.
 - host.docker.internal/이미지/포트의가용성은실행 전확인이다. 도달실패를외부노출/공유설정변경으로자동해결하지않는다. 해당환경에서실행불가하면한계를보고하고연결대안을먼저검토한다.
 
-공식계약확인출처는URL없이문서명/버전/절로남긴다: Spring Framework6.2 TransactionSynchronization API의afterCompletion/STATUS_*; Micrometer1.14 Reference의Gauges(관측시평가·대상참조수명); Prometheus Configuration의scrape_interval/scrape_timeout/static_configs/honor_timestamps 및HTTP API Querying(range-vector raw samples)/Targets/Status Flags; Prometheus v2.53.3 cmd/prometheus/main.go의scrape.adjust-timestamps/scrape.timestamp-tolerance와scrape/scrape.go scrapeLoop.run의timestamp 정렬. 참고페이지의patch버전과프로젝트의실제해석의존버전이같다고가정하지않고구현시확인한다. Spring Boot는저장소설정3.4.4,Java는21이다. 이출처확인은이번코드실행검증이아니다.
+공식 계약 확인 출처: Spring Framework 6.2 TransactionSynchronization API의 afterCompletion/STATUS_*; Micrometer 1.14 Reference의 Gauges(관측 시 평가·대상 참조 수명). 출처 확인은 실행 검증이 아니며 참고 patch 버전과 실제 해석 의존 버전의 일치를 가정하지 않는다.
+
+저장소 설정은 Spring Boot 3.4.4·Java 21이다.

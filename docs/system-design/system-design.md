@@ -6,7 +6,7 @@
 
 ## 현재 상태
 
-- **W10 사고 관측·연결 전체 설계 사용자 승인(2026-11-23):** [결제 사고 관측·동일 주문 복구·후속 결과 연결](features/checkout-incident.md)과 [PG fixture의 W10 조합](features/pg-simulator/fixture-contract.md#w10-success-저장-후-생성-응답-유실)에 UNKNOWN 수집 시 DB 조회, PG/적용/실제 TX 종료 로그, 동일20주문 baseline→fault→recovery, 실제 Outbox/Kafka/활동/랭킹, 명시 관찰 진행·실행별 원문·실패/정리 계약을 기록했다. Claude 전체 검토·보완 재확인에서 필수 문제를 해소한 뒤 사용자가 전체 설계를 최종 승인했다. 작은 구현 단위별 착수·코드/테스트·실습 실행은 별도 승인 전이며, 실제 환경/컴파일/수집·시간 예산은 미검증이다.
+- **W10 구현·AUTO 검증·문서 보강 완료(2026-11-24):** [결제 사고 관측·동일 주문 복구·후속 결과 연결](features/checkout-incident.md)과 [PG fixture W10 조합](features/pg-simulator/fixture-contract.md#w10-success-저장-후-생성-응답-유실)은 2026-11-23 전체 설계 승인 후 작은 단위로 구현했다. UNKNOWN 지표·PG/TX 로그·동일20주문 baseline→fault→recovery·Outbox/Kafka/활동/랭킹을 AUTO로 검증했고 최종 단일 check가 통과했다. OBSERVED Lab·실행별 collector·사람 명령 파일 진행은 사용자 결정으로 제외했다. 실행 기준·수량·미실행·OOM 대응 한계는 실행 기록(`docs/verification/checkout-incident.md`), 재현·진단·복구 순서는 `docs/runbook/week10.md`를 따른다. 운영 배포·실계정·부하·모든 장애 검증은 완료 범위가 아니다. 제출 후보의 Git 포함·커밋·최종 제출과 PR은 별도다.
 
 - **주간 랭킹 전체 설계 사용자 승인(2026-11-17):** [주간 랭킹 설계](features/weekly-ranking.md)를 진입 문서로 두고 `features/weekly-ranking/`의 입력·실행 복구·계산 공개·API·검증 상세 5개로 나눴다. 승인된 계약과 기존 절 번호는 유지하며 전체 읽기 순서와 절 위치는 진입 문서에서 안내한다. 사용자 선택으로 원본 confirmed_at 인덱스(§9.11), 테스트 SQL 준비(§11.3.1), 최소 자식 실행(§11.5), native JDBC UTC(§9.12), 조건부 Job 등록(§4.11), 공통 시작 경로(§4.12)를 보완했다. 추가 DB 날짜 범위 guard·새 scheduler·batch ArchUnit은 추가하지 않는다. 후속 검토의 R1/R2/R3도 사용자 선택으로 batch 테스트의 update 기본값·인덱스 이름 일치·Flow 공유 테이블 보존으로 반영했다. Claude의 후속 확인에서 새 구현 전 필수 결함 없음 의견을 받은 뒤 사용자가 전체 설계를 최종 승인했다. 구현/실행 검증은 아직 전이며 작은 구현 단위 착수는 별도다.
 - **쿠폰 승인 설계(2026-11-11):** [쿠폰 상세설계](features/coupons.md)와 [판단 근거](decisions/coupons.md)에 모델·API·DB/TX·Redis 수용·제어 API·수동 재개·준비 코드·검증 기준을 기록했다. 일곱 차례 Claude 정적 검토와 합의한 보완을 마친 전체 설계를 사용자가 최종 승인했다. Q9·Q10은 기존 로컬 Redis를 명시 실행으로 검증하고 Q9의 연결 ID·서버 run_id 및 후속 응답을 확인해 자기 token을 정리한다. 실패 테스트의 파일 기록·사후 자기 점유 정리·새 정리 연결 순서 보완본의 최종 정적 검토에서 필수 수정·계약 공백·문서 모순은 발견되지 않았다. TX 미시작/종료 불명, 정상 첫 반환 0/반복 정리, 보유 목록의 저장된 발급 시각, 전 프로필 제어·C 기본값, 명시 준비 코드와 공유 Redis 장애/DB 대역 검증을 구분했다. Map·전역 진행 수/불명 추적·재개용 Java 잠금은 제외한다. 구현 1단계(DB 저장·조회 계약), 2단계(Redis 수용 Lua·저장소·수용 서비스·수용량 설정), 3단계(Facade·고객 발급/목록·제어 API), 4단계(직접 실행용 준비 코드), 5단계(실제 HTTP 응답 유실·timeout·시간 경과와 명시 실행 로컬 Redis 장애 Q9·Q10)의 실행 기록과 Q1~Q16 대조·남은 한계는 [쿠폰 실행 기록](verification/coupons.md)에 있다. 기본 구현의 최종 전체 검사 결과도 같은 실행 기록을 따른다. 구현 단위별 착수 승인은 별도다.
@@ -55,7 +55,7 @@
 |---|---|
 | 판단 이유·대안·비용·재검토 조건 | [공통 도메인·API A.1~A.15](decisions/domain-and-api.md) · [상품 캐시 A.16](decisions/product-cache.md) · [PG 결제 A.17~A.32](decisions/payment.md) · [PG 앱 A.33](decisions/pg-simulator.md) · [이벤트 W6 A.34·A.35/W7 A.36 이후](decisions/order-events.md) |
 | 현재 검증 기준 | 기능별 검증 절. PG 전환 표처럼 기준/결과가 혼합된 기존 자료는 [PG 전환 기록](verification/pg-simulator.md)에서 함께 보존 |
-| 날짜별 실제 실행·한계 | [기존 기능](verification/core-features.md) · [PG 결제](verification/payment.md) · [PG 앱 전환](verification/pg-simulator.md) · [주문 이벤트](verification/order-events.md) · [쿠폰](verification/coupons.md) |
+| 날짜별 실제 실행·한계 | [기존 기능](verification/core-features.md) · [PG 결제](verification/payment.md) · [PG 앱 전환](verification/pg-simulator.md) · [주문 이벤트](verification/order-events.md) · [쿠폰](verification/coupons.md) · 결제 사고 W10(`docs/verification/checkout-incident.md`) |
 | 쿠폰 선택·대안·비용 | [쿠폰 CQ1~CQ16](decisions/coupons.md). 선택·대안·비용과 검증 한계이며 실행 통과 기록이 아님 |
 | 과거 계약·승인·진척 | [이전 POINT 설계·검증](verification/legacy-point.md) · [설계 변경 이력](verification/design-history.md) |
 

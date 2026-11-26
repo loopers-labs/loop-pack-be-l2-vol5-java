@@ -770,10 +770,10 @@ final class CheckoutIncidentScenario {
 
     /** 실제 management port 의 health·Prometheus 를 직접 GET 하고 gauge 가 기대값인지 본다. 없는 표본을 0 으로 채우지 않는다. */
     private String assertDirectObservation(int expectedUnknown) {
-        ResponseEntity<String> health = get("/actuator/health");
+        ResponseEntity<String> health = getAndPreserve("health");
         assertThat(health.getStatusCode().value()).isEqualTo(200);
         assertThat(health.getBody()).contains("\"status\":\"UP\"");
-        ResponseEntity<String> prometheus = get("/actuator/prometheus");
+        ResponseEntity<String> prometheus = getAndPreserve("prometheus");
         assertThat(prometheus.getStatusCode().value()).isEqualTo(200);
         List<String> samples = prometheus.getBody().lines().filter(line -> line.startsWith("commerce_payment_unknown{")).toList();
         assertThat(samples).as("UNKNOWN gauge 표본 하나").hasSize(1);
@@ -781,6 +781,17 @@ final class CheckoutIncidentScenario {
         assertThat(IncidentEvidenceWriter.GaugeValue.of(raw)).as("UNKNOWN gauge")
             .isEqualTo(new IncidentEvidenceWriter.GaugeValue(raw, true, (double) expectedUnknown));
         return "health " + Instant.now() + "\n" + health.getBody() + "\n\n" + prometheus.getBody();
+    }
+
+    /** 검사 실패 때도 받은 응답의 상태·시각·본문이 남도록 먼저 저장한다. */
+    private ResponseEntity<String> getAndPreserve(String endpoint) {
+        ResponseEntity<String> response = get("/actuator/" + endpoint);
+        String body = response.getBody();
+        writer.writeStage(stage, StageSnapshot.of(
+            new StageSnapshot.Json(endpoint + "-response", Map.of("status", response.getStatusCode().value(),
+                "receivedAt", Instant.now().toString(), "bodyPresent", body != null)),
+            new StageSnapshot.Raw(endpoint + "-response.txt", body == null ? new byte[0] : body.getBytes(StandardCharsets.UTF_8))));
+        return response;
     }
 
     private void writeStageEvidence(IncidentStage target, Map<String, Object> summary, String directObservation) {

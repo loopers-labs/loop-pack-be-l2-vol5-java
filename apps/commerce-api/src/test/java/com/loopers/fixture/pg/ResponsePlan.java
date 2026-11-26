@@ -56,10 +56,7 @@ public final class ResponsePlan {
         return new ResponsePlan(null, ReplyMode.CLOSE_EARLY, 0, null, 0, null, null);
     }
 
-    /**
-     * CREATE 전용(W10). PG 가 SUCCESS 거래를 저장해 완성한 응답을 {@link #closeEarly()} 와 같은 방식으로 일부만 보내고 닫는다.
-     * 거래 저장이 응답 유실보다 먼저이며, 유실 뒤 상태를 바꾸는 방식과 다르다. CREATE 외 등록은 enqueuePlan 이 거절한다.
-     */
+    /** CREATE 전용. PG에 SUCCESS 거래를 저장한 뒤 응답 본문 일부만 보내고 연결을 닫는다. */
     public static ResponsePlan successThenCloseEarly() {
         return new ResponsePlan(CreateOutcome.SUCCESS, ReplyMode.CLOSE_EARLY, 0, null, 0, null, null);
     }
