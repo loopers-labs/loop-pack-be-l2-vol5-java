@@ -558,7 +558,7 @@ class RefundTrackingServiceTest {
     }
 
     @Test
-    @DisplayName("조회 뒤 잠금 아래 다시 읽은 확인 중 대상의 담당이 사람으로 바뀌었으면 SUCCESS가 보여도 취소를 보내지 않는다")
+    @DisplayName("조회 뒤 잠금 아래 다시 읽은 확인 중 대상의 담당이 사람으로 바뀌었으면 SUCCESS가 보여도 취소를 보내지 않고 조회 결과도 반영하지 않는다")
     void doesNotCancelWhenOwnerChangedDuringLookup() {
         refundCases.put(tracking(1, PG_A, "TR-1"));
         when(gatewayA.verifyOrder(anyString(), any())).thenAnswer(invocation -> {
@@ -569,8 +569,12 @@ class RefundTrackingServiceTest {
         service.trackDueCases();
 
         verify(gatewayA, never()).cancel(any());
-        assertThat(refundCases.get(1).getRefundRequestedAt()).isNull();
-        assertThat(refundCases.get(1).getOwner()).isEqualTo(Owner.PERSON);
+        RefundCase refundCase = refundCases.get(1);
+        assertThat(refundCase.getRefundRequestedAt()).isNull();
+        assertThat(refundCase.getOwner()).isEqualTo(Owner.PERSON);
+        assertThat(refundCase.getMoneyStatus()).isEqualTo(MoneyStatus.CHECKING);
+        assertThat(refundCase.getCheckAttempts()).isZero();
+        assertThat(refundCase.getNextCheckAt()).isEqualTo(OPENED_AT);
     }
 
     @Test
