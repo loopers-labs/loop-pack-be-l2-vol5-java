@@ -1,5 +1,6 @@
 package com.loopers.domains.payment.app;
 
+import com.loopers.domains.payment.app.port.LookupJitter;
 import com.loopers.domains.payment.app.port.PaymentCancelCommand;
 import com.loopers.domains.payment.app.port.PaymentCancelResult;
 import com.loopers.domains.payment.app.port.PaymentLookupCircuitState;
@@ -37,16 +38,19 @@ public class RefundTrackingService {
     private final TransactionTemplate transactionTemplate;
     private final Clock clock;
     private final RefundOutcomeRecorder refundOutcomeRecorder;
+    private final LookupJitter lookupJitter;
 
     public RefundTrackingService(PaymentRefundCaseRepository paymentRefundCaseRepository,
         PaymentGatewayRegistry paymentGatewayRegistry, PaymentLookupCircuitState paymentLookupCircuitState,
-        TransactionTemplate transactionTemplate, Clock clock, RefundOutcomeRecorder refundOutcomeRecorder) {
+        TransactionTemplate transactionTemplate, Clock clock, RefundOutcomeRecorder refundOutcomeRecorder,
+        LookupJitter lookupJitter) {
         this.paymentRefundCaseRepository = paymentRefundCaseRepository;
         this.paymentGatewayRegistry = paymentGatewayRegistry;
         this.paymentLookupCircuitState = paymentLookupCircuitState;
         this.transactionTemplate = transactionTemplate;
         this.clock = clock;
         this.refundOutcomeRecorder = refundOutcomeRecorder;
+        this.lookupJitter = lookupJitter;
     }
 
     public void trackDueCases() {
@@ -103,7 +107,7 @@ public class RefundTrackingService {
             return null;
         }
         if (paymentLookupCircuitState.blocksLookup(refundCase.getProviderId())) {
-            refundCase.postponeCheck(now);
+            refundCase.postponeCheck(now, refundCase.postponeCheckCeiling());
             paymentRefundCaseRepository.save(refundCase);
             return null;
         }
@@ -130,33 +134,33 @@ public class RefundTrackingService {
     // 환불 요청 뒤 상태(REFUND_REQUESTED·REFUND_UNKNOWN)는 조회만 한다. 요청이 나갔을 수 있으므로 어떤 경우에도 다시 보내지 않는다.
     private PaymentCancelCommand applyLookup(RefundCase snapshot, PaymentTransactionsLookup lookup) {
         Optional<RefundCase> found = paymentRefundCaseRepository.findByOrderIdForUpdate(snapshot.getOrderId());
-        if (found.isEmpty() || found.get().getStatus() != snapshot.getStatus() || found.get().isConcluded()) {
+        if (found.isEmpty() || found.get().getMoneyStatus() != snapshot.getMoneyStatus() || found.get().isConcluded()) {
             return null;
         }
         RefundCase refundCase = found.get();
         Instant now = clock.instant();
-        boolean tracking = refundCase.getStatus() == RefundCase.Status.TRACKING;
+        boolean tracking = refundCase.getMoneyStatus() == RefundCase.MoneyStatus.CHECKING;
         PaymentCancelCommand cancelCommand = null;
         switch (lookup) {
-            case PaymentTransactionsLookup.NotCalled notCalled -> refundCase.postponeCheck(now);
-            case PaymentTransactionsLookup.Failed failed -> refundCase.recordInconclusiveCheck(now);
+            case PaymentTransactionsLookup.NotCalled notCalled -> refundCase.postponeCheck(now, refundCase.postponeCheckCeiling());
+            case PaymentTransactionsLookup.Failed failed -> recordInconclusive(refundCase, now);
             case PaymentTransactionsLookup.Found result -> {
                 List<PaymentTransaction> transactions = result.transactions();
                 if (transactions.isEmpty()) {
-                    refundCase.recordInconclusiveCheck(now);
+                    recordInconclusive(refundCase, now);
                 } else if (transactions.size() > 1 || !matches(refundCase, transactions.get(0))) {
                     String reason = transactions.size() > 1 ? RefundCase.MULTIPLE_TRANSACTIONS : RefundCase.TRANSACTION_MISMATCH;
                     if (tracking) {
                         handOff(refundCase, reason, now);
                         return null;
                     }
-                    refundCase.recordInconclusiveCheck(now);
+                    recordInconclusive(refundCase, now);
                 } else if (tracking) {
                     cancelCommand = applyTrackingResult(refundCase, transactions.get(0), now);
                 } else if (transactions.get(0).status() == PaymentTransactionStatus.CANCELED) {
                     conclude(refundCase, Outcome.REFUNDED, now);
                 } else {
-                    refundCase.recordInconclusiveCheck(now);
+                    recordInconclusive(refundCase, now);
                 }
             }
         }
@@ -167,14 +171,19 @@ public class RefundTrackingService {
     private PaymentCancelCommand applyTrackingResult(RefundCase refundCase, PaymentTransaction transaction, Instant now) {
         switch (transaction.status()) {
             case SUCCESS -> {
-                refundCase.requestRefund(transaction.transactionKey(), now);
+                refundCase.recordCharged(transaction.transactionKey());
+                refundCase.requestRefund(now, RefundCase.FIRST_CHECK_DELAY);
                 return new PaymentCancelCommand(refundCase.getProviderOrderId(), refundCase.getTransactionKey(),
                     refundCase.getAmount());
             }
             case FAILED, CANCELED -> conclude(refundCase, Outcome.CLOSED_NO_CHARGE, now);
-            case PENDING -> refundCase.recordInconclusiveCheck(now);
+            case PENDING -> recordInconclusive(refundCase, now);
         }
         return null;
+    }
+
+    private static void recordInconclusive(RefundCase refundCase, Instant now) {
+        refundCase.recordInconclusiveCheck(now, refundCase.inconclusiveCheckCeiling());
     }
 
     private static boolean matches(RefundCase refundCase, PaymentTransaction transaction) {
@@ -186,10 +195,10 @@ public class RefundTrackingService {
     // NotSent도 결과 모름으로 둔다. 요청 전 기록이 이미 commit됐으므로 "한 번만" 원칙상 다시 보내지 않고 조회로만 확인한다(PL P11-1).
     private void applyCancelResult(long orderId, PaymentCancelResult result) {
         Optional<RefundCase> found = paymentRefundCaseRepository.findByOrderIdForUpdate(orderId);
-        if (found.isEmpty() || found.get().getStatus() != RefundCase.Status.REFUND_REQUESTED) {
+        if (found.isEmpty() || found.get().getMoneyStatus() != RefundCase.MoneyStatus.REFUND_REQUESTED) {
             // 응답을 기다리는 사이 다른 인스턴스의 회차가 기한 이관·조회 결론을 냈다. 사람이 볼 수 있게 결과 종류만 남긴다.
-            log.warn("상태가 이미 바뀐 대상에 늦게 온 취소 결과를 반영하지 않습니다. orderId={}, status={}, cancelResult={}", orderId,
-                found.map(RefundCase::getStatus).orElse(null), result.getClass().getSimpleName());
+            log.warn("상태가 이미 바뀐 대상에 늦게 온 취소 결과를 반영하지 않습니다. orderId={}, moneyStatus={}, cancelResult={}",
+                orderId, found.map(RefundCase::getMoneyStatus).orElse(null), result.getClass().getSimpleName());
             return;
         }
         RefundCase refundCase = found.get();
@@ -199,14 +208,17 @@ public class RefundTrackingService {
                 conclude(refundCase, Outcome.REFUNDED, now);
                 paymentRefundCaseRepository.save(refundCase);
             }
-            case PaymentCancelResult.RejectedNoEffect rejected -> handOff(refundCase, RefundCase.REFUND_REJECTED, now);
+            case PaymentCancelResult.RejectedNoEffect rejected -> {
+                refundCase.markRefundRejected(now, RefundCase.PERSON_CHECK_DELAY);
+                paymentRefundCaseRepository.save(refundCase);
+            }
             case PaymentCancelResult.Unknown unknown -> markUnknown(refundCase, result, now);
             case PaymentCancelResult.NotSent notSent -> markUnknown(refundCase, result, now);
         }
     }
 
     private void markUnknown(RefundCase refundCase, PaymentCancelResult result, Instant now) {
-        refundCase.markRefundUnknown(now);
+        refundCase.markRefundUnknown(now, RefundCase.FIRST_CHECK_DELAY);
         paymentRefundCaseRepository.save(refundCase);
         log.warn("환불 결과를 알 수 없어 다시 보내지 않고 조회로 확인합니다. orderId={}, cancelResult={}", refundCase.getOrderId(),
             result.getClass().getSimpleName());
@@ -222,7 +234,7 @@ public class RefundTrackingService {
     }
 
     private void handOff(RefundCase refundCase, String reason, Instant now) {
-        refundCase.handOff(reason, now);
+        refundCase.assignPerson(reason, now, RefundCase.PERSON_CHECK_DELAY);
         paymentRefundCaseRepository.save(refundCase);
         long orderId = refundCase.getOrderId();
         afterCommit(() -> {

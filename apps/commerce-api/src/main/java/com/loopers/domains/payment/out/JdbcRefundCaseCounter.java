@@ -6,10 +6,10 @@ import java.util.Map;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
-// (status, next_check_at) 인덱스의 선두 컬럼으로 상태별 수를 센다.
+// (money_status, next_check_at) 인덱스의 선두 컬럼으로 돈의 상태별 수를 센다.
 @Repository
 public class JdbcRefundCaseCounter implements RefundCaseCounter {
-    private static final String COUNT_SQL = "select status, count(*) from payment_refund_cases group by status";
+    private static final String COUNT_SQL = "select money_status, count(*) from payment_refund_cases group by money_status";
 
     private final JdbcTemplate jdbcTemplate;
 

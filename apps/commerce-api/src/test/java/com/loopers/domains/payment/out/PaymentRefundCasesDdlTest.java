@@ -21,7 +21,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class PaymentRefundCasesDdlTest {
     private static final String SCRIPT = "sql/create-payment-refund-cases.sql";
     private static final String TABLE = "payment_refund_cases";
-    private static final String INDEX = "idx_payment_refund_cases_status_next_check";
+    private static final String INDEX = "idx_payment_refund_cases_money_status_next_check";
 
     @Autowired private DataSource dataSource;
     @Autowired private JdbcTemplate jdbcTemplate;
@@ -43,7 +43,7 @@ class PaymentRefundCasesDdlTest {
     }
 
     @Test
-    @DisplayName("테이블이 없을 때 스크립트를 실행하면 엔티티와 같은 열·타입·NULL 여부와 order_id 기본 키·(status, next_check_at) 인덱스가 생긴다")
+    @DisplayName("테이블이 없을 때 스크립트를 실행하면 엔티티와 같은 열·타입·NULL 여부와 order_id 기본 키·(money_status, next_check_at) 인덱스가 생긴다")
     void createsTableLikeEntity() {
         run();
 
@@ -54,9 +54,10 @@ class PaymentRefundCasesDdlTest {
     @DisplayName("스크립트를 두 번 실행해도 오류 없이 한 번 실행한 결과와 같고 이미 있던 대상 행을 지우지 않는다")
     void rerunKeepsSameResult() {
         run();
-        jdbcTemplate.update("insert into payment_refund_cases(order_id, provider_id, provider_order_id, amount, status, opened_at,"
-            + " handoff_at, promise_at, check_attempts) values (1, 'test-pg', 'LP-ORD-0000000001', 1000, 'TRACKING',"
-            + " '2026-10-21 00:02:00', '2026-10-23 00:02:00', '2026-10-25 00:02:00', 0)");
+        assertSameAsEntity();
+        jdbcTemplate.update("insert into payment_refund_cases(order_id, provider_id, provider_order_id, amount, money_status, owner,"
+            + " opened_at, handoff_at, promise_at, check_attempts) values (1, 'test-pg', 'LP-ORD-0000000001', 1000, 'CHECKING',"
+            + " 'AUTO', '2026-10-21 00:02:00', '2026-10-23 00:02:00', '2026-10-25 00:02:00', 0)");
 
         run();
 
@@ -68,7 +69,7 @@ class PaymentRefundCasesDdlTest {
     private void assertSameAsEntity() {
         assertThat(columns()).isEqualTo(entityColumns);
         assertThat(indexColumns("PRIMARY", 0)).containsExactly("order_id");
-        assertThat(indexColumns(INDEX, 1)).containsExactly("status", "next_check_at");
+        assertThat(indexColumns(INDEX, 1)).containsExactly("money_status", "next_check_at");
     }
 
     private void run() {

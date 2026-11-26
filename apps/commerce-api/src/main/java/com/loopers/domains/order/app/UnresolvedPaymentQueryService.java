@@ -4,7 +4,6 @@ import com.loopers.common.error.InvalidValueException;
 import com.loopers.domains.order.app.port.UnresolvedPaymentFinder;
 import com.loopers.domains.order.app.port.UnresolvedRefundCaseFinder;
 import com.loopers.domains.payment.domain.PaymentRecord.ProviderStatus;
-import com.loopers.domains.payment.domain.RefundCase;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -21,8 +20,8 @@ public class UnresolvedPaymentQueryService {
     private static final Set<String> UNRESOLVED_STATUSES = Stream.of(ProviderStatus.SEND_STARTED, ProviderStatus.PENDING,
         ProviderStatus.UNKNOWN, ProviderStatus.NEEDS_REVIEW).map(Enum::name).collect(Collectors.toUnmodifiableSet());
     // 사람 조치가 필요한 환불 확인 대상 상태다(P7). 원천이 달라 한 페이지로 섞을 수 없으므로 결제 대기 상태와 함께 받지 않는다.
-    private static final Set<String> REFUND_CASE_STATUSES = Stream.of(RefundCase.Status.HANDED_TO_HUMAN,
-        RefundCase.Status.REFUND_UNKNOWN).map(Enum::name).collect(Collectors.toUnmodifiableSet());
+    // 5b 두 축 모델로 바뀌기 전 계약이다. 필터를 refundOwner·refundMoneyStatus로 바꾸는 작업은 다음 단계(계획 5절)다.
+    private static final Set<String> REFUND_CASE_STATUSES = Set.of("HANDED_TO_HUMAN", "REFUND_UNKNOWN");
 
     private final UnresolvedPaymentFinder unresolvedPaymentFinder;
     private final UnresolvedRefundCaseFinder unresolvedRefundCaseFinder;

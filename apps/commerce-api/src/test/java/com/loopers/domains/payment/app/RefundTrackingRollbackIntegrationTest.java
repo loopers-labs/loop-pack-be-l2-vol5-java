@@ -8,6 +8,8 @@ import com.loopers.common.domain.Money;
 import com.loopers.domains.payment.app.port.PaymentRefundCaseRepository;
 import com.loopers.domains.payment.domain.PaymentRecord;
 import com.loopers.domains.payment.domain.RefundCase;
+import com.loopers.domains.payment.domain.RefundCase.MoneyStatus;
+import com.loopers.domains.payment.domain.RefundCase.Owner;
 import com.loopers.domains.payment.out.PaymentRefundCasePersistenceAdapter;
 import com.loopers.domains.payment.out.TestPgServer;
 import com.loopers.support.pg.MutablePaymentClock;
@@ -81,30 +83,35 @@ class RefundTrackingRollbackIntegrationTest {
         cleanup.truncateAllTables();
     }
 
-    @ParameterizedTest(name = "장면={0} → 실패한 결론={1}")
-    @CsvSource({"failed, CLOSED_NO_CHARGE, closed_no_charge", "deadline, HANDED_TO_HUMAN, handed_to_human"})
-    @DisplayName("결론 저장이 flush되고 셈 등록까지 지난 뒤 commit 직전에 실패해 rollback되면 대상은 TRACKING 그대로이고 결론 counter는 늘지 않으며 건별 실패만 ERROR로 남는다")
-    void doesNotCountRolledBackConclusion(String scene, RefundCase.Status failingStatus, String result) {
+    @ParameterizedTest(name = "장면={0} → 실패한 저장={1}/{2}")
+    @CsvSource({"failed, NO_CHARGE, AUTO, closed_no_charge", "deadline, CHECKING, PERSON, handed_to_human"})
+    @DisplayName("청구 없음·사람 담당 저장이 flush되고 셈 등록까지 지난 뒤 commit 직전에 실패해 rollback되면 대상은 확인 중·자동 담당 그대로이고 counter는 늘지 않으며 건별 실패만 ERROR로 남는다")
+    void doesNotCountRolledBackConclusion(String scene, MoneyStatus failingMoney, Owner failingOwner, String result) {
         failingRefundCases.save(RefundCase.restore(ORDER_ID, TestPgFixture.PROVIDER_ID, PROVIDER_ORDER_ID, new Money(1000),
-            RefundCase.Status.TRACKING, PaymentRecord.ProviderStatus.PENDING, null, NOW, NOW.plus(RefundCase.HANDOFF_AFTER),
-            NOW.plus(RefundCase.PROMISE_AFTER), NOW, 0, null, null, null));
+            MoneyStatus.CHECKING, null, Owner.AUTO, null, null, null, null, PaymentRecord.ProviderStatus.PENDING, null, NOW,
+            NOW.plus(RefundCase.HANDOFF_AFTER), NOW.plus(RefundCase.PROMISE_AFTER), NOW, 0, null, null));
         server.addTransaction(PROVIDER_ORDER_ID, 1000, "deadline".equals(scene) ? "PENDING" : "FAILED");
         if ("deadline".equals(scene)) {
             clock.set(NOW.plus(Duration.ofDays(2)));
         }
         double before = outcome(result);
-        failingRefundCases.failOnSaveOf(failingStatus);
+        failingRefundCases.failOnSaveOf(failingMoney, failingOwner);
 
         refundTracking.trackDueCases();
 
-        assertThat(failingRefundCases.stateBeforeFailure()).as("실패 직전 DB에 나간 상태").isEqualTo(failingStatus.name());
-        assertThat(jdbc.queryForObject("select status from payment_refund_cases where order_id = ?", String.class, ORDER_ID))
-            .isEqualTo("TRACKING");
-        assertThat(jdbc.queryForObject("select concluded_at is null from payment_refund_cases where order_id = ?", Boolean.class,
-            ORDER_ID)).isTrue();
+        assertThat(failingRefundCases.stateBeforeFailure()).as("실패 직전 DB에 나간 상태")
+            .isEqualTo(failingMoney.name() + "/" + failingOwner.name());
+        assertThat(state(ORDER_ID)).isEqualTo("CHECKING/AUTO");
+        assertThat(jdbc.queryForObject("select concluded_at is null and owner_changed_at is null from payment_refund_cases"
+            + " where order_id = ?", Boolean.class, ORDER_ID)).isTrue();
         assertThat(outcome(result) - before).isZero();
         assertThat(logs.list.stream().filter(event -> event.getLevel() == Level.ERROR).toList()).singleElement()
             .satisfies(event -> assertThat(event.getFormattedMessage()).contains("causeType=IllegalStateException"));
+    }
+
+    private String state(long orderId) {
+        return jdbc.queryForObject("select concat(money_status, '/', owner) from payment_refund_cases where order_id = ?",
+            String.class, orderId);
     }
 
     private double outcome(String result) {
@@ -132,7 +139,7 @@ class RefundTrackingRollbackIntegrationTest {
         private final PaymentRefundCaseRepository delegate;
         private final EntityManager entityManager;
         private final JdbcTemplate jdbcTemplate;
-        private final AtomicReference<RefundCase.Status> failingStatus = new AtomicReference<>();
+        private final AtomicReference<String> failingState = new AtomicReference<>();
         private final AtomicReference<String> stateBeforeFailure = new AtomicReference<>();
 
         FailingRefundCases(PaymentRefundCaseRepository delegate, EntityManager entityManager, JdbcTemplate jdbcTemplate) {
@@ -141,13 +148,13 @@ class RefundTrackingRollbackIntegrationTest {
             this.jdbcTemplate = jdbcTemplate;
         }
 
-        void failOnSaveOf(RefundCase.Status status) {
+        void failOnSaveOf(MoneyStatus moneyStatus, Owner owner) {
             stateBeforeFailure.set(null);
-            failingStatus.set(status);
+            failingState.set(moneyStatus.name() + "/" + owner.name());
         }
 
         void disarm() {
-            failingStatus.set(null);
+            failingState.set(null);
         }
 
         String stateBeforeFailure() {
@@ -157,11 +164,11 @@ class RefundTrackingRollbackIntegrationTest {
         @Override
         public RefundCase save(RefundCase refundCase) {
             RefundCase saved = delegate.save(refundCase);
-            if (refundCase.getStatus() == failingStatus.get()) {
+            if ((refundCase.getMoneyStatus().name() + "/" + refundCase.getOwner().name()).equals(failingState.get())) {
                 entityManager.flush();
-                stateBeforeFailure.set(jdbcTemplate.queryForObject("select status from payment_refund_cases where order_id = ?",
-                    String.class, refundCase.getOrderId()));
-                failingStatus.set(null);
+                stateBeforeFailure.set(jdbcTemplate.queryForObject("select concat(money_status, '/', owner)"
+                    + " from payment_refund_cases where order_id = ?", String.class, refundCase.getOrderId()));
+                failingState.set(null);
                 TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                     @Override
                     public void beforeCommit(boolean readOnly) {

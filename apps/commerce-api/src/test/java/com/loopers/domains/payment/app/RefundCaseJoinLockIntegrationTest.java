@@ -6,6 +6,8 @@ import com.loopers.domains.brand.app.BrandApplicationService;
 import com.loopers.domains.order.app.OrderApplicationService;
 import com.loopers.domains.payment.app.port.PaymentRefundCaseRepository;
 import com.loopers.domains.payment.domain.RefundCase;
+import com.loopers.domains.payment.domain.RefundCase.MoneyStatus;
+import com.loopers.domains.payment.domain.RefundCase.Owner;
 import com.loopers.domains.payment.out.PaymentRefundCasePersistenceAdapter;
 import com.loopers.domains.payment.out.TestPgServer;
 import com.loopers.domains.payment.out.TestPgServer.CreateBehavior;
@@ -52,7 +54,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 // 늦은 성공 합류와 환불 추적이 같은 대상을 함께 바꾸는 순서를 테스트 설정의 저장소 훅으로 고정한다(버그 재현, PL P11-2).
 // 합류 트랜잭션이 대상을 읽은 직전에, 다른 스레드의 환불 회차가 REFUND_REQUESTED를 commit하려 한다(취소 직전 중단 주입).
-// 잠금이 없으면 회차가 먼저 끝나고 합류가 읽어 둔 TRACKING으로 덮어 "요청했을 수 있음" 기록이 사라진다.
+// 잠금이 없으면 회차가 먼저 끝나고 합류가 읽어 둔 확인 중(CHECKING)으로 덮어 "요청했을 수 있음" 기록이 사라진다.
 // 잠금이 있으면 회차는 합류 commit까지 기다린다. 훅은 회차가 끝나거나 대상 행 잠금 SELECT에서 멈춘 것을 제한 시간 안에서 확인한 뒤 넘어간다.
 // 늦은 성공 합류가 행 없는 대상을 FOR UPDATE로 읽으면 gap lock을 잡아, 서로 다른 두 주문의 INSERT가 데드락(1213)이 된다(QA 재현).
 // 전용 테스트 설정이라 캐시에 남으면 DB 연결을 계속 붙잡는다(전체 검사에서 Too many connections). 클래스가 끝나면 닫는다.
@@ -101,7 +103,7 @@ class RefundCaseJoinLockIntegrationTest {
     }
 
     @Test
-    @DisplayName("합류가 대상을 읽은 뒤 환불 회차가 REFUND_REQUESTED를 commit하려 해도 합류가 그 상태를 TRACKING으로 덮지 않고 다음 회차도 취소를 보내지 않는다")
+    @DisplayName("합류가 대상을 읽은 뒤 환불 회차가 환불 요청함을 commit하려 해도 합류가 그 상태를 확인 중으로 덮지 않고 다음 회차도 취소를 보내지 않는다")
     void joinDoesNotOverwriteRefundRequested() throws Exception {
         server.createBehavior(CreateBehavior.ACCEPT_PENDING);
         orders.confirm(1, orderId, TestPgFixture.command());
@@ -128,19 +130,19 @@ class RefundCaseJoinLockIntegrationTest {
         assertThatThrownBy(() -> tracking.get().get(FINISH_SECONDS, TimeUnit.SECONDS))
             .as("회차는 REFUND_REQUESTED commit 뒤 취소 전에 멈춤")
             .hasCauseInstanceOf(TestPgFixture.InjectedCrash.class);
-        assertThat(status()).isEqualTo(RefundCase.Status.REFUND_REQUESTED);
+        assertThat(status()).isEqualTo(MoneyStatus.REFUND_REQUESTED);
         assertThat(pg.cancelCalls(providerOrderId())).isZero();
 
         pg.resumeCancel();
         clock.advance(Duration.ofMinutes(5));
         refundTracking.trackDueCases();
 
-        assertThat(status()).isEqualTo(RefundCase.Status.REFUND_REQUESTED);
+        assertThat(status()).isEqualTo(MoneyStatus.REFUND_REQUESTED);
         assertThat(pg.cancelCalls(providerOrderId())).as("요청했을 수 있는 대상에 취소를 다시 보내지 않음").isZero();
     }
 
     @Test
-    @DisplayName("결제 실패한 서로 다른 두 주문에 늦은 성공이 동시에 합류해 대상 행이 없는 채로 읽어도 데드락 없이 둘 다 RESULT_REVERSED로 사람에게 넘긴다")
+    @DisplayName("결제 실패한 서로 다른 두 주문에 늦은 성공이 동시에 합류해 대상 행이 없는 채로 읽어도 데드락 없이 둘 다 청구 확인·사람 담당(RESULT_REVERSED)이 된다")
     void joinsLateSuccessesOfDifferentOrdersWithoutDeadlock() throws Exception {
         server.createBehavior(CreateBehavior.ACCEPT_FAILED);
         long otherOrderId = orders.create(1, List.of(new OrderApplicationService.ItemRequest(productId, 1))).id();
@@ -186,8 +188,9 @@ class RefundCaseJoinLockIntegrationTest {
         assertThat(succeeded).isEqualTo(2);
         for (long joinedOrderId : orderIds) {
             RefundCase refundCase = refundCases.findByOrderId(joinedOrderId).orElseThrow();
-            assertThat(refundCase.getStatus()).isEqualTo(RefundCase.Status.HANDED_TO_HUMAN);
-            assertThat(refundCase.getReason()).isEqualTo(RefundCase.RESULT_REVERSED);
+            assertThat(refundCase.getMoneyStatus()).isEqualTo(MoneyStatus.CHARGED);
+            assertThat(refundCase.getOwner()).isEqualTo(Owner.PERSON);
+            assertThat(refundCase.getOwnerReason()).isEqualTo(RefundCase.RESULT_REVERSED);
         }
     }
 
@@ -243,8 +246,8 @@ class RefundCaseJoinLockIntegrationTest {
         return description.toString();
     }
 
-    private RefundCase.Status status() {
-        return refundCases.findByOrderId(orderId).orElseThrow().getStatus();
+    private MoneyStatus status() {
+        return refundCases.findByOrderId(orderId).orElseThrow().getMoneyStatus();
     }
 
     private String providerOrderId() {

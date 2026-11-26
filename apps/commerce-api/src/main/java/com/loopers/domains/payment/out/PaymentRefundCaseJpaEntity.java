@@ -10,10 +10,10 @@ import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import java.time.Instant;
 
-// 스케줄러는 결론 전 상태에서 다음 조회 시각이 지난 대상을 찾는다. 그 조회를 (status, next_check_at) 인덱스로 받는다.
+// 스케줄러는 돈의 상태가 끝나지 않은 대상 중 다음 조회 시각이 지난 것을 찾는다(담당 무관). 그 조회를 (money_status, next_check_at) 인덱스로 받는다.
 @Entity
 @Table(name = "payment_refund_cases",
-    indexes = @Index(name = "idx_payment_refund_cases_status_next_check", columnList = "status, next_check_at"))
+    indexes = @Index(name = "idx_payment_refund_cases_money_status_next_check", columnList = "money_status, next_check_at"))
 public class PaymentRefundCaseJpaEntity {
     @Id
     private long orderId;
@@ -24,7 +24,17 @@ public class PaymentRefundCaseJpaEntity {
     @Column(nullable = false, updatable = false)
     private long amount;
     @Column(nullable = false, length = 30)
-    private String status;
+    private String moneyStatus;
+    @Column(length = 20)
+    private String refundActor;
+    @Column(nullable = false, length = 20)
+    private String owner;
+    @Column(length = 500)
+    private String ownerReason;
+    private Instant ownerChangedAt;
+    private Instant ownerClosedAt;
+    @Column(length = 100)
+    private String ownerClosedBy;
     @Column(updatable = false, length = 30)
     private String priorProviderStatus;
     @Column(length = 100)
@@ -40,8 +50,6 @@ public class PaymentRefundCaseJpaEntity {
     private int checkAttempts;
     private Instant refundRequestedAt;
     private Instant concludedAt;
-    @Column(length = 500)
-    private String reason;
 
     protected PaymentRefundCaseJpaEntity() {
     }
@@ -59,18 +67,25 @@ public class PaymentRefundCaseJpaEntity {
     }
 
     void update(RefundCase refundCase) {
-        status = refundCase.getStatus().name();
+        moneyStatus = refundCase.getMoneyStatus().name();
+        refundActor = refundCase.getRefundActor() == null ? null : refundCase.getRefundActor().name();
+        owner = refundCase.getOwner().name();
+        ownerReason = refundCase.getOwnerReason();
+        ownerChangedAt = refundCase.getOwnerChangedAt();
+        ownerClosedAt = refundCase.getOwnerClosedAt();
+        ownerClosedBy = refundCase.getOwnerClosedBy();
         transactionKey = refundCase.getTransactionKey();
         nextCheckAt = refundCase.getNextCheckAt();
         checkAttempts = refundCase.getCheckAttempts();
         refundRequestedAt = refundCase.getRefundRequestedAt();
         concludedAt = refundCase.getConcludedAt();
-        reason = refundCase.getReason();
     }
 
     RefundCase toRefundCase() {
-        return RefundCase.restore(orderId, providerId, providerOrderId, new Money(amount), RefundCase.Status.valueOf(status),
+        return RefundCase.restore(orderId, providerId, providerOrderId, new Money(amount),
+            RefundCase.MoneyStatus.valueOf(moneyStatus), refundActor == null ? null : RefundCase.RefundActor.valueOf(refundActor),
+            RefundCase.Owner.valueOf(owner), ownerReason, ownerChangedAt, ownerClosedAt, ownerClosedBy,
             priorProviderStatus == null ? null : PaymentRecord.ProviderStatus.valueOf(priorProviderStatus), transactionKey,
-            openedAt, handoffAt, promiseAt, nextCheckAt, checkAttempts, refundRequestedAt, concludedAt, reason);
+            openedAt, handoffAt, promiseAt, nextCheckAt, checkAttempts, refundRequestedAt, concludedAt);
     }
 }

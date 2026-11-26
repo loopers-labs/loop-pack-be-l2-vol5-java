@@ -15,9 +15,9 @@ public interface PaymentRefundCaseJpaRepository extends JpaRepository<PaymentRef
     @Query("select c from PaymentRefundCaseJpaEntity c where c.orderId = :orderId")
     Optional<PaymentRefundCaseJpaEntity> findForUpdate(@Param("orderId") long orderId);
 
-    // 결론 상태는 고르지 않는다. (status, next_check_at) 인덱스로 상태별 범위를 읽는다.
+    // 골격(Red): 돈의 상태 비종결·AUTO 우선 선택은 Green에서 채운다.
     @Query("select c.orderId from PaymentRefundCaseJpaEntity c"
-        + " where c.status in ('TRACKING', 'REFUND_REQUESTED', 'REFUND_UNKNOWN') and c.nextCheckAt <= :now"
+        + " where c.moneyStatus in ('CHECKING', 'REFUND_REQUESTED', 'REFUND_UNKNOWN') and c.nextCheckAt <= :now"
         + " order by c.nextCheckAt, c.orderId")
     List<Long> findDue(@Param("now") Instant now, Pageable pageable);
 }
