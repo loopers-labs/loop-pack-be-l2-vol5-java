@@ -1,5 +1,7 @@
 package com.loopers.interfaces.api.order;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.loopers.application.brand.BrandFacade;
 import com.loopers.application.product.ProductFacade;
 import com.loopers.domain.common.Quantity;
@@ -29,11 +31,15 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -51,6 +57,7 @@ class CheckoutIncidentTest {
     private static final String ORDERS = "/api/v1/orders";
     private static final Long USER = 1L;
     private static final int STOCK = 25;
+    private static final String CARD_NUMBER = "0000-0000-0000-0000";
     private static final PgFixture PG = PgFixture.shared();
     private static final ParameterizedTypeReference<ApiResponse<OrderV1Dto.OrderResponse>> ORDER =
         new ParameterizedTypeReference<>() {};
@@ -63,6 +70,7 @@ class CheckoutIncidentTest {
     private final ProductService productService;
     private final PaymentRepository paymentRepository;
     private final JdbcTemplate jdbcTemplate;
+    private final ObjectMapper objectMapper;
     private final DatabaseCleanUp databaseCleanUp;
 
     @LocalManagementPort
@@ -73,13 +81,14 @@ class CheckoutIncidentTest {
     @Autowired
     CheckoutIncidentTest(TestRestTemplate testRestTemplate, BrandFacade brandFacade, ProductFacade productFacade,
                          ProductService productService, PaymentRepository paymentRepository,
-                         JdbcTemplate jdbcTemplate, DatabaseCleanUp databaseCleanUp) {
+                         JdbcTemplate jdbcTemplate, ObjectMapper objectMapper, DatabaseCleanUp databaseCleanUp) {
         this.testRestTemplate = testRestTemplate;
         this.brandFacade = brandFacade;
         this.productFacade = productFacade;
         this.productService = productService;
         this.paymentRepository = paymentRepository;
         this.jdbcTemplate = jdbcTemplate;
+        this.objectMapper = objectMapper;
         this.databaseCleanUp = databaseCleanUp;
     }
 
@@ -100,6 +109,17 @@ class CheckoutIncidentTest {
     @Test
     @DisplayName("PG 는 성공했는데 응답이 timeout 되거나 끊겨 잃은 세 주문은 UNKNOWN 으로 남고, 같은 세 주문을 reconcile 하면 PG 생성 호출을 더 보내지 않고 확정된다")
     void lostResponsesStayUnknownUntilTheSameOrdersAreReconciled(CapturedOutput output) {
+        IncidentEvidence evidence = IncidentEvidence.start();
+        String[] phase = {"baseline"};
+        try {
+            runIncident(output, evidence, phase);
+        } catch (RuntimeException | Error failure) {
+            evidence.recordFailure(phase[0], failure);
+            throw failure;
+        }
+    }
+
+    private void runIncident(CapturedOutput output, IncidentEvidence evidence, String[] phase) {
         assertThat(PG.willDropNextCreateResponse()).isFalse();
         List<Long> baseline = placeOrders(10);
         baseline.forEach(this::confirm);
@@ -115,7 +135,10 @@ class CheckoutIncidentTest {
         assertThat(productService.getStock(coat)).isEqualTo(Quantity.of(STOCK - 10));
         assertThat(health()).isEqualTo("UP");
         assertThat(unresolvedUnknownSettlesAt(0)).isEqualTo(0);
+        evidence.record("baseline", facts(baseline, List.of(), output.getOut()));
+        evidence.recordRaw("baseline-prometheus.txt", scrape());
 
+        phase[0] = "fault";
         int faultStart = output.getOut().length();
         List<Long> fault = placeOrders(10);
         List<Long> timedOut = List.of(fault.get(2), fault.get(8));
@@ -164,7 +187,11 @@ class CheckoutIncidentTest {
         });
         assertThat(linesWith(faultLog, "error=")).isEmpty();
         assertThat(linesWith(faultLog, "from=UNKNOWN")).isEmpty();
+        evidence.record("fault", facts(baseline, fault, faultLog));
+        evidence.recordRaw("fault-prometheus.txt", scrape());
+        String faultRecordHash = evidence.sha256("fault.json");
 
+        phase[0] = "recovery";
         assertThat(PG.willDropNextCreateResponse()).isFalse();
         int recoveryStart = output.getOut().length();
         lost.forEach(this::reconcile);
@@ -190,6 +217,28 @@ class CheckoutIncidentTest {
                 .singleElement().asString().contains("source=reconcile", "from=UNKNOWN", "to=SUCCESS"));
         assertThat(linesWith(recoveryLog, "from=")).hasSize(3);
         assertThat(linesWith(recoveryLog, "error=")).isEmpty();
+        Map<String, Object> recovered = facts(baseline, fault, recoveryLog);
+        recovered.put("faultRecordSha256", faultRecordHash);
+        evidence.record("recovery", recovered);
+        evidence.recordRaw("recovery-prometheus.txt", scrape());
+
+        JsonNode faultRecord = evidence.read("fault");
+        JsonNode recoveryRecord = evidence.read("recovery");
+        assertThat(evidence.sha256("fault.json")).isEqualTo(faultRecordHash);
+        assertThat(recoveryRecord.get("faultRecordSha256").asText()).isEqualTo(faultRecordHash);
+        assertThat(recorded(faultRecord, "fault", "orderId")).isEqualTo(recorded(recoveryRecord, "fault", "orderId"))
+            .containsExactlyElementsOf(fault.stream().map(String::valueOf).toList());
+        assertThat(recorded(faultRecord, "fault", "transactionKeys"))
+            .isEqualTo(recorded(recoveryRecord, "fault", "transactionKeys"));
+        assertThat(recordedWithStatus(faultRecord, "UNKNOWN"))
+            .containsExactlyElementsOf(lost.stream().map(String::valueOf).toList());
+        assertThat(recordedWithStatus(recoveryRecord, "UNKNOWN")).isEmpty();
+        assertThat(recordedWithStatus(recoveryRecord, "SUCCESS")).hasSize(20);
+        assertThat(recoveryRecord.get("pgCreateCount").asInt()).isEqualTo(faultRecord.get("pgCreateCount").asInt())
+            .isEqualTo(20);
+        assertThat(faultRecord.get("unresolvedMetricLines").toString()).contains("status=\\\"unknown\\\"} 3.0");
+        assertThat(recoveryRecord.get("boundaryLogLines")).hasSize(3);
+        assertThat(evidence.contents()).allSatisfy(content -> assertThat(content).doesNotContain(CARD_NUMBER));
         assertThat(PG.createCount()).isEqualTo(20);
         assertThat(productService.getStock(coat)).isEqualTo(Quantity.of(STOCK - 20));
     }
@@ -213,7 +262,7 @@ class CheckoutIncidentTest {
     private void confirm(Long orderId) {
         testRestTemplate.exchange(ORDERS + "/" + orderId + "/confirm", HttpMethod.POST,
             new HttpEntity<>(Map.of("paymentAttemptKey", "attempt-" + orderId, "cardType", "TEST",
-                "cardNo", "0000-0000-0000-0000"), headers()), Object.class);
+                "cardNo", CARD_NUMBER), headers()), Object.class);
     }
 
     private void confirmWhilePgWithholdsTheResponse(Long orderId) {
@@ -249,15 +298,84 @@ class CheckoutIncidentTest {
 
     private List<Long> confirmedOrders(List<Long> orderIds) {
         return orderIds.stream()
-            .filter(orderId -> "CONFIRMED".equals(
-                testRestTemplate.exchange(ORDERS + "/" + orderId, HttpMethod.GET, new HttpEntity<>(null, headers()), ORDER)
-                    .getBody().data().status()))
+            .filter(orderId -> "CONFIRMED".equals(orderStatus(orderId)))
             .toList();
     }
 
+    private Map<String, Object> facts(List<Long> baseline, List<Long> fault, String log) {
+        Map<String, Object> facts = new LinkedHashMap<>();
+        facts.put("baselineOrderIds", baseline);
+        facts.put("faultOrderIds", fault);
+        facts.put("orders", Stream.concat(
+            baseline.stream().map(orderId -> orderFacts("baseline", orderId)),
+            fault.stream().map(orderId -> orderFacts("fault", orderId))).toList());
+        facts.put("pgCreateCount", PG.createCount());
+        facts.put("pgTransactionCount", PG.transactionCount());
+        facts.put("stock", productService.getStock(coat).value());
+        facts.put("health", healthBody());
+        facts.put("unresolvedMetricLines", scrape().lines()
+            .filter(line -> line.startsWith("payment_unresolved{")).toList());
+        facts.put("boundaryLogLines", log.lines()
+            .filter(line -> Stream.of("cause=", "result=", "from=", "error=").anyMatch(line::contains)).toList());
+        return facts;
+    }
+
+    private Map<String, Object> orderFacts(String set, Long orderId) {
+        Payment payment = paymentOf(orderId);
+        List<PgFixture.Transaction> transactions = PG.transactionsOf(payment.getProviderOrderId().value());
+        Map<String, Object> facts = new LinkedHashMap<>();
+        facts.put("set", set);
+        facts.put("orderId", orderId);
+        facts.put("paymentAttemptKey", payment.getAttemptKey().value());
+        facts.put("providerOrderId", payment.getProviderOrderId().value());
+        facts.put("amount", payment.getAmount().amount());
+        facts.put("paymentStatus", payment.getStatus().name());
+        facts.put("orderStatus", orderStatus(orderId));
+        facts.put("transactionKeys", transactions.stream().map(PgFixture.Transaction::transactionKey).toList());
+        facts.put("transactionStatuses", transactions.stream().map(transaction -> transaction.status().name()).toList());
+        facts.put("transactionAmounts", transactions.stream().map(PgFixture.Transaction::amount).toList());
+        return facts;
+    }
+
+    private List<String> recorded(JsonNode record, String set, String field) {
+        List<String> values = new ArrayList<>();
+        record.get("orders").forEach(order -> {
+            if (set.equals(order.get("set").asText())) {
+                values.add(order.get(field).isValueNode() ? order.get(field).asText() : order.get(field).toString());
+            }
+        });
+        return values;
+    }
+
+    private List<String> recordedWithStatus(JsonNode record, String paymentStatus) {
+        List<String> orderIds = new ArrayList<>();
+        record.get("orders").forEach(order -> {
+            if (paymentStatus.equals(order.get("paymentStatus").asText())) {
+                orderIds.add(order.get("orderId").asText());
+            }
+        });
+        return orderIds;
+    }
+
     private String health() {
-        Map<?, ?> body = testRestTemplate.getForObject(management("/actuator/health"), Map.class);
-        return String.valueOf(body.get("status"));
+        try {
+            return objectMapper.readTree(healthBody()).get("status").asText();
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    private String healthBody() {
+        return testRestTemplate.getForObject(management("/actuator/health"), String.class);
+    }
+
+    private String scrape() {
+        return testRestTemplate.getForObject(management("/actuator/prometheus"), String.class);
+    }
+
+    private String orderStatus(Long orderId) {
+        return testRestTemplate.exchange(ORDERS + "/" + orderId, HttpMethod.GET, new HttpEntity<>(null, headers()), ORDER)
+            .getBody().data().status();
     }
 
     private int unresolvedUnknownSettlesAt(int expected) {
@@ -271,7 +389,7 @@ class CheckoutIncidentTest {
     }
 
     private int unresolvedUnknown() {
-        String scrape = testRestTemplate.getForObject(management("/actuator/prometheus"), String.class);
+        String scrape = scrape();
         return scrape.lines()
             .filter(line -> line.startsWith("payment_unresolved{"))
             .filter(line -> line.contains("status=\"unknown\""))
