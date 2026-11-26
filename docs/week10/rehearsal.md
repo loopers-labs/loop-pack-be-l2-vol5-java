@@ -78,3 +78,89 @@
 | 기본 로그 경로 `logs/commerce-api.json` 생성 | 리허설 때 기본 `bootRun`에서 실패(B1) → 수정 후 override 없이 생성 확인(23:55). 수정 뒤 Loki 수집까지 다시 돌리지는 않았다 |
 | PaymentAbandonedPiling(만료) 경로 | 미검증. 이번 리허설은 만료를 멈췄다 |
 | Grafana MCP 질의 | 미검증(토큰 생성 승인 필요) |
+
+## 6단계 2회차(2026-11-26)
+
+- 일시: 2026-11-26 12:13~12:32 UTC (21:13~21:32 KST), 1회. 맥북에어 로컬. 로컬·테스트 환경 리허설이며 운영 완료가 아니다.
+- 기록 원본: `docs/week10/evidence/20261126T121317Z-965d8579/README.md`(캡처·`SHA256SUMS` 포함). 아래 숫자는 그 README 값을 그대로 옮겼다.
+- 사전 실행 `docs/week10/evidence/20261126T113318Z-6d788078/`(11:33~11:50 UTC)은 PL 지시로 중단했다. 그 실행에서 B1 수정(override 없이 기본 `bootRun` 로그가 Loki에 들어감)을 확인했다. 제출 근거는 이 2회차다.
+- 설정은 1회차와 같다(리허설 규칙·오버레이·Alertmanager 운영 값). 다른 점: 장면 B·C는 `rehearsal.sh app` 대신 스케줄러를 켠 `bootRun`(`--commerce.payment.unresolved-metric.refresh-interval=5s`)과 `test-pg.sh lookup-behavior ERROR_500`(B5 도구)을 썼다.
+- 사람 조치는 미리 쓴 명령 묶음(`act.sh`)으로 실행했다. "알림 수신 → 사람 조치 시작"은 명령 실행 시간이며 사람 판단 시간이 아니다.
+
+### 측정값
+
+장면 A — 응답 유실 4건 → PaymentUnresolvedPiling → 목록 고정 → 일괄 확정(1회차 재측정)
+
+| 측정 | 값 |
+| --- | --- |
+| 사고 시작 → 근거 붙은 알림 수신 | 12:14:12 → 12:16:11 = 1m59s |
+| 알림 수신 → 수신 확인 / 사람 조치 시작 | 2s / 7s (1회차 3m16s는 셸 오류였다) |
+| 조치 시작 → 일괄 확정 완료 | 1s. 4건 `RESOLVED`/`VERIFIED` |
+| 일괄 확정 완료 → 지표 0 / Prometheus 해제 | ≤4s / ≤7s (5s scrape 해상도) |
+| Prometheus 해제 → Slack 자리 resolved | 4m45s (group_interval 5m) |
+| test-pg createCalls / lookupCalls / cancelCalls | 7 → 7(증가 0) / 0 → 4 / 0 |
+
+장면 B — 스케줄러 켠 채 재조회 실패(`lookup-behavior ERROR_500`) → 멈춤 → 재진입
+
+| 측정 | 값 |
+| --- | --- |
+| 사고 시작 → 첫 근거 붙은 알림 수신 | 12:22:25 → 12:26:11 = 3m46s. 받은 알림은 PaymentAbandonedPiling. PaymentUnresolvedPiling은 Prometheus에서 12:23:57~12:24:41(44s) firing이었으나 Slack 자리에 오지 않음(B6) |
+| 알림 수신 → 수신 확인 / 사람 조치 시작 | 5s / 11s |
+| 조치 시작 → 멈춤 판단 | 0s. 일괄 확정 503(회로 OPEN), 처리 0건 |
+| PG 회복(12:26:29) → 회로 미호출 마지막 줄 / 자동 확정 | 6s / 7s (Loki `source=AUTOMATIC, result=Verified`) |
+| 재진입 한 건 목록(12:27:00) | 503·`LOOKUP_NOT_CALLED` 없음. 결과 `ALREADY_CLOSED`(B7) |
+| 목록 다시 고정 / 같은 명령 재실행 | 0건 / 3건 `ALREADY_CLOSED` |
+| createCalls | 기준 1 + 유실 7 = 8. 멈춤·재진입·재실행 동안 증가 0 |
+
+장면 C — 만료 4건 → 환불 확인 대상 → 늦은 SUCCESS → 환불 요청 1회 → REFUNDED
+
+- "늦은 SUCCESS"는 test-pg 거래 상태를 바꾼 것이 아니다. 유실 지정 거래는 처음부터 SUCCESS로 저장되고, 조회 실패가 풀린 뒤 환불 추적 조회가 그것을 처음 본 것이다.
+
+| 측정 | 값 |
+| --- | --- |
+| 만료(12:24:26~12:24:35) → 환불 확인 대상 CHECKING 4 | ≤8s (5s gauge 해상도) |
+| 조회 실패 동안 환불 추적 | `refund_check` pg_error 5·pg_unreachable 4, `lastCheckOutcome=PG_UNREACHABLE` |
+| PG 회복 → 첫 REFUNDED / 4건 REFUNDED | 24s / 54s (환불 추적 회차 30s 간격) |
+| test-pg cancelCalls | 0 → 4. 주문별 `환불을 요청합니다` 줄 각 1 |
+| createCalls(환불 추적 동안) | 8 → 8 |
+| 최종(12:31:19) | refunded 4, 나머지 0. 사람 담당 0건 |
+| PaymentAbandonedPiling 수신 / resolved 수신 | 12:26:11 / 12:31:11 |
+
+### runbook 조건 대조
+
+| 장면 | runbook 조건 | 관찰 | 따름 |
+| --- | --- | --- | --- |
+| A | Diagnosis 3 대상 고정 `minAgeSeconds=300` | 0건. 리허설 목록(minAge 없음)으로 4건 고정 | 부분(B8) |
+| A | Diagnosis 4 P99 알림 동시 여부 | 확인하지 않음 | 미확인 |
+| A | 멈출 때: 503·`SKIPPED`·`STOPPED` / create 증가 / H1 아님(반영 ERROR) | 없음 / 7 → 7 / ERROR 30분 0줄 | 해당 없음 |
+| A | 해소: 결과 모름 기준 미만, 알림 해제 | 0, 해제, resolved 수신 | 따름 |
+| B | Diagnosis 1 Unresolved 동시 여부 | Prometheus firing 있음, Slack 자리 없음 | 부분(B6) |
+| B | Diagnosis 2·3 조회 판정 `kind`·`reason`, `refundMoneyStatus=CHECKING` | `LOOKUP_FAILED`·`HTTP 500` / 4건 `PG_UNREACHABLE` | 따름 |
+| B | 만료된 주문은 손대지 않음 | 주문 2~5를 일괄 확정에 넣지 않음 | 따름 |
+| B | **멈출 때:** 503(회로 OPEN) | 12:26:22 503, 처리 0건 → 멈춤 | 따름 |
+| B | 멈출 때: create 증가 / H1 아님 | 8 → 8 / ERROR 30분 0줄 | 해당 없음 |
+| B | **다시 들어갈 때** ① 회로 CLOSED 간접 확인 | 31s 뒤 한 건 목록이 503·`LOOKUP_NOT_CALLED` 없음. 다만 `ALREADY_CLOSED`라 PG를 부르지 않았다. 닫힘 근거는 Loki(미호출 줄 끝 12:26:35, 자동 Verified 12:26:36) | 부분 |
+| B | 다시 들어갈 때 ② PG 조회 1건 수동 성공(`RESOLVED`) | 자동 재조회가 7s 만에 먼저 확정 | 따르지 못함(B7) |
+| B | 다시 들어갈 때 ③ 목록 다시 고정 / ④ 같은 명령 재실행 | 0건 / `ALREADY_CLOSED` ×3, create 증가 0 | 따름 |
+| C | 만료 주문은 환불 추적에 맡김, 재결제·환불 재요청 금지 | 사람 조치 0. 주문당 취소 1회 | 따름 |
+| C | 사람 담당 알림(PaymentRefundNeedsPerson 등) | 사람 담당 0건 | 해당 없음 |
+
+### 못 한 것
+
+- 장면 B 재진입의 "PG 조회 1건 수동 성공"(`RESOLVED`): 스케줄러가 먼저 확정했다(B7).
+- 장면 B에서 PaymentUnresolvedPiling을 Slack 자리로 받기(B6).
+- 장면 C의 `REFUND_REQUESTED` 상태 관찰: test-pg 취소(NORMAL)가 바로 CANCELED를 줘 같은 회차에 REFUNDED로 넘어갔다. 5s gauge·목록에 잡히지 않았다.
+- 취소 응답 유실(`lose-cancel`) 장면: 하지 않았다.
+- PaymentApiLatencyP99High 동시 여부 확인(장면 A Diagnosis 4).
+- 사람 판단 시간: 조치는 미리 쓴 묶음으로 실행했다.
+- Grafana MCP 질의: Viewer 서비스 계정 토큰 생성은 승인 대상이라 범위 밖.
+
+### 발견(B6~)
+
+| ID | 발견 | 원인 | 이번 처리 | 고칠 곳(판단 필요) |
+| --- | --- | --- | --- | --- |
+| B6 | 같은 알림이 resolved 통지 뒤 다시 울리면 Slack 통지가 늦거나, 그 사이 풀리면 빠진다. 장면 B에서 사람은 다른 알림(PaymentAbandonedPiling)으로 사고를 알았다(3m46s) | Alertmanager는 `alertname`·`severity`로 묶고 같은 그룹은 `group_interval` 5m마다 통지한다(`group_wait` 30s, critical `repeat_interval` 1h). 장면 A의 Unresolved resolved 통지(12:21:11) 뒤 다음 통지 시점은 12:26:11이었다. 장면 B의 Unresolved는 12:23:57 firing, 12:24:41 해제(2분 만료가 결과 모름을 치움)라 그 전에 끝났다. 원인은 설정 값과 시각으로 맞춘 설명이다 | Prometheus에서 firing 이력을 직접 봤다 | runbook에 "알림이 늦거나 안 오면 Prometheus/Grafana에서 firing 이력을 본다" 추가(반영). 운영 값(for 10m > 만료 2m)에서도 같은 일이 생기는지, `group_interval` 조정 여부는 판단 필요 |
+| B7 | 스케줄러가 켜져 있으면 "다시 들어갈 때"의 수동 성공 1건이 `ALREADY_CLOSED`로 끝나 `RESOLVED`를 볼 수 없다 | 회로 반열림 직후 자동 재조회가 1s 안에 대상을 모두 확정했다 | 회로 닫힘은 Loki 줄로 간접 확인 | runbook "관리자 도구"에 "`ALREADY_CLOSED`면 자동이 먼저 처리한 것(정상), 다음 단계로" 추가(반영) |
+| B8 | runbook Diagnosis 3의 `minAgeSeconds=300` 목록이 리허설에서 0건이다 | 리허설 규칙은 창 5m·for 1m이라 알림 때 주문이 5분 미만이다. 운영 규칙(for 10m)과 값이 다르다 | `rehearsal.sh unresolved`(minAge 없음)로 고정 | 리허설 절차에서만 minAge 없는 목록을 쓴다. runbook은 운영 값 그대로 |
+| B9 | Loki 질의·가이드 메시지 집계에 이전 실행 줄이 섞인다 | 저장소 `logs/commerce-api.json`이 실행 사이에 남아 새 Loki가 다시 읽는다. 주문 번호가 앱 재기동마다 1부터라 `orderId="4"` 같은 질의에 1회차·사전 실행 줄이 함께 나온다. Abandoned 가이드의 `result=Unknown` 13줄도 여러 실행의 합이다 | 시각으로 걸러 읽었다 | 리허설 시작 전 로그 파일을 비우거나 옮길지(리허설 절차) |
+| B10 | 앱만 재기동하면 test-pg에 같은 PG 주문 번호 거래가 남아 조회 결과가 두 건이 된다 | test-pg는 거래를 메모리에 두고, 앱 DB는 `ddl-auto create`로 비워져 `LP-ORD-0000000001`…이 겹친다 | 첫 시도(12:21:30~)를 중단하고 앱·test-pg를 함께 재기동 | 리허설 절차: 앱을 재기동하면 test-pg도 재기동한다 |

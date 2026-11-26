@@ -884,7 +884,7 @@ REFUNDED일 때만 값이 있다. **우리가 본 경로**로 정한다.
 | --- | --- | --- | --- |
 | 1 | `docs/week10/rehearsal.md`(2026-11-25, 로컬 1회) | 응답 유실 → 알림 → 가이드 → 대시보드 → Loki → 관리자 목록 → 일괄 확정 → 알림 해제 | 성공. 막힌 지점 B1·B3·B4 수정, B2·B5 기록 |
 | 6단계 1회차(중단된 사전 실행) | `docs/week10/evidence/20261126T113318Z-6d788078/` | 응답 유실 → 알림 → 일괄 확정(중간에 중단) | 중단. 측정값만 남김: 사고→알림 1m52s, 일괄 확정 4건, createCalls 7→7(증가 0). 제출 근거는 2회차로 한다 |
-| 2 | `docs/week10/evidence/20261126T121317Z-965d8579/` | — | — |
+| 2 | `docs/week10/evidence/20261126T121317Z-965d8579/`(기록 `docs/week10/rehearsal.md` "6단계 2회차") | A 응답 유실 → Unresolved 알림 → 일괄 확정 / B 스케줄러 켠 채 조회 실패 → Abandoned 알림 → 503 멈춤 → 재진입 / C 만료 → 환불 추적 → REFUNDED | A: 사고→알림 1m59s, 수신→조치 시작 7s, 4건 RESOLVED, createCalls 7→7. B: 사고→알림 3m46s(Abandoned, Unresolved는 Slack 미수신), 503에서 멈춤, PG 회복 7s 뒤 자동 확정, 재진입 `ALREADY_CLOSED`, createCalls 8→8. C: 만료 4건 → 첫 REFUNDED 24s·4건 54s(PG 회복 기준), cancelCalls 0→4(주문당 1회). 못 함: 수동 성공 1건·Unresolved Slack 수신·`REFUND_REQUESTED` 관찰·`lose-cancel`·MCP. 발견 B6~B10 |
 
 ### 12-2. 증명하지 못한 것
 
@@ -902,8 +902,9 @@ REFUNDED일 때만 값이 있다. **우리가 본 경로**로 정한다.
 | 테이블 없는 DB의 v3 이전 SQL | `migrate-payment-refund-cases-v3.sql`을 `payment_refund_cases`가 없는 DB에서 돌려 보지 않았다 | v2 뒤에 실행 |
 | 다중 인스턴스 | 잠금·한 번만 규칙은 테스트 DB의 동시성 테스트로만 봤다. 여러 인스턴스 배포는 하지 않았다 | 행 잠금으로 직렬화 |
 | runbook 에스컬레이션 대상 역할 이름 | **[미정]** 팀 정의 사항이다. runbook은 "에스컬레이션 대상 [미정]"으로만 적었다 | 팀이 정하면 runbook만 고친다 |
+| Alertmanager 그룹 재통지 지연·누락 | 같은 그룹(`alertname`·`severity`)은 `group_interval` 5m마다 통지한다. 리허설 2회차에서 resolved 통지 뒤 다시 울린 PaymentUnresolvedPiling이 다음 통지 전에 풀려 Slack 자리에 오지 않았다(B6). 운영 값(for 10m > 만료 2m)에서도 생길 수 있는지는 확인하지 않았다 | runbook: 알림이 늦거나 안 오면 Prometheus·Grafana firing 이력을 본다. 운영 `group_interval` 값 확인 필요. 개선은 범위 밖 |
 | 실제 Slack·LLM·Grafana MCP | 연결·호출하지 않았다(9-8·10-8). Viewer 토큰 생성은 승인 대상 | 가짜 수신기, 결정적 요약 |
-| 만료 경로 리허설 | `PaymentAbandonedPiling`은 리허설하지 않았다(10-8) | promtool 테스트만 |
+| 만료 경로 리허설 | ~~`PaymentAbandonedPiling`은 리허설하지 않았다(10-8)~~ → 6단계 2회차 장면 B·C에서 로컬로 1회 따라 했다(evidence `20261126T121317Z-965d8579`). 운영 규모·반복 실행은 없다 | promtool 테스트 + 로컬 리허설 1회 |
 
 **그 밖에 남은 사실** (단계별 review "사실로 남기는 것" 중 HEAD에서 아직 유효한 것)
 

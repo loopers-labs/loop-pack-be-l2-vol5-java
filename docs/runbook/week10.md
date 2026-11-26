@@ -34,6 +34,8 @@ local·dev 전용. 셸에 `COMMERCE_ADMIN_USERNAME`·`COMMERCE_ADMIN_PASSWORD`�
 - 일괄 확정은 **PG 조회만** 한다. 결제를 다시 만들지 않는다. 같은 목록을 다시 보내도 `ALREADY_CLOSED`로 끝난다.
   - `outcome`: `RESOLVED` 확정됨 / `STOPPED` 멈춤(`reason` 참고) / `ALREADY_CLOSED` 이미 끝남 / `NOT_APPLICABLE` 대상 아님 / `SKIPPED` 연속 실패 3건으로 중단.
   - HTTP 503 = PG 조회 회로가 열림. 하나도 처리하지 않았다. 몇 분 뒤 같은 목록으로 다시 보낸다.
+  - "다시 들어갈 때"의 한 건 목록이 `RESOLVED`가 아니라 `ALREADY_CLOSED`면 자동 재조회가 먼저 확정한 것이다. 정상이다. 다음 단계(목록 다시 고정)로 간다.
+- 알림이 Slack에 늦게 오거나 안 오면 Prometheus(`scripts/ops/rehearsal.sh alerts`)·Grafana에서 firing 이력을 직접 본다. 같은 알림이 resolved 뒤 5분(group_interval) 안에 다시 울리면 통지가 늦고, 그 사이 풀리면 통지가 빠질 수 있다. 다른 알림(예: PaymentAbandonedPiling)으로 먼저 알게 될 수 있다.
 - 목록의 `orderId`는 사람이 고정한다. 알림·AI 요약의 숫자로 대상을 정하지 않는다.
 
 ## PaymentUnresolvedPiling
@@ -76,7 +78,7 @@ local·dev 전용. 셸에 `COMMERCE_ADMIN_USERNAME`·`COMMERCE_ADMIN_PASSWORD`�
 - 이미 만료된 주문은 손대지 않는다. 환불 추적이 조회·환불을 맡는다. 재결제·환불 재요청 금지.
 - PG가 2일[임시] 동안 결론을 못 주면 담당이 사람으로 넘어온다(PaymentRefundNeedsPerson).
 - 해소: 10분 만료 증가가 5건 아래.
-- 주의: 이 경로는 리허설에서 아직 확인하지 않았다(부록 A).
+- 이 경로는 리허설 2회차(로컬)에서 따라 했다. 결과 모름 알림은 Slack에 오지 않고 이 알림으로 먼저 알았다(위 "관리자 도구"의 알림 지연 안내).
 - **멈출 때:** 일괄 확정이 503(회로 OPEN)이거나 `SKIPPED`(연속 실패 3건)·`STOPPED`가 나온다 / 조치 뒤 create 줄이 새로 생긴다(create 증가) / 원인이 H1(응답 유실)이 아니다(반영 ERROR가 있음) — 일괄 확정을 멈추고 에스컬레이션.
 - **다시 들어갈 때:** 회로 CLOSED 확인(회로 지표는 없다. 열림 대기 30s[임시]가 지난 뒤 한 건 목록 일괄 확정이 503·`LOOKUP_NOT_CALLED` 없이 끝나는지로 본다) → PG 조회 1건 수동 성공 → 아직 결제 대기인 건으로 목록 다시 고정(만료된 주문은 넣지 않는다) → 같은 명령 재실행. 일괄 확정은 PG 조회만 하고(create 없음) 이미 끝난 주문은 `ALREADY_CLOSED`로 건너뛰므로 같은 목록을 다시 보내도 결제가 다시 만들어지지 않는다.
 
@@ -376,8 +378,8 @@ PG 미발송 종결 · warning · 패널 "종결 결과별 증가(10분)"
 
 | B | 막힌 것 | 지금 runbook 어디 | 풀림 |
 | --- | --- | --- | --- |
-| B1 | 기본 `bootRun` 로그가 `apps/commerce-api/logs/`에 쌓여 Loki에 안 들어감 | "주문 번호로 경계 로그 찾기" 첫 줄(저장소 루트 `logs/commerce-api.json`) | 풀림. 원인은 빌드 설정에서 고쳤다(override 불필요). 수정 뒤 Loki 수집까지는 리허설 재실행으로 확인할 일 |
+| B1 | 기본 `bootRun` 로그가 `apps/commerce-api/logs/`에 쌓여 Loki에 안 들어감 | "주문 번호로 경계 로그 찾기" 첫 줄(저장소 루트 `logs/commerce-api.json`) | 풀림. 원인은 빌드 설정에서 고쳤다(override 불필요). 6단계 사전 실행에서 override 없이 Loki 수집 확인 |
 | B2 | `logs/` 폴더가 앱 기동 전부터 있어 로그 생성 근거로 착각 | "주문 번호로 경계 로그 찾기" 첫 줄(폴더가 아니라 파일로 확인) | 풀림(문서 안내) |
 | B3 | 주문에 필요한 사용자를 만들 API가 없음 | 해당 없음(온콜 대응이 아니라 리허설 준비). local 시드가 사용자 1명을 만든다 | 풀림(시드). runbook 대상 아님 |
 | B4 | runbook 링크가 상대 경로라 Grafana·Slack에서 안 열림 | 머리말 링크 안내. 알림·대시보드 링크는 GitHub 웹 주소이고 `check-alerting.sh`가 앵커를 검사한다 | 부분. 머지 전에는 열리지 않을 수 있다 |
-| B5 | 자동 재조회를 켜면 "재조회 실패" 사고가 재현되지 않음 | 해당 없음(재현 도구). `scripts/ops/test-pg.sh lookup-behavior ERROR_500`으로 조회 실패를 켜고 `NORMAL`로 되돌린다 | 풀림(도구). 이 도구로 리허설을 다시 돌리지는 않았다 |
+| B5 | 자동 재조회를 켜면 "재조회 실패" 사고가 재현되지 않음 | 해당 없음(재현 도구). `scripts/ops/test-pg.sh lookup-behavior ERROR_500`으로 조회 실패를 켜고 `NORMAL`로 되돌린다 | 풀림(도구). 리허설 2회차 장면 B에서 이 도구로 재현했다 |
