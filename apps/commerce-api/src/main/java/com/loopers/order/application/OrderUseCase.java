@@ -27,6 +27,8 @@ import io.github.resilience4j.retry.RetryConfig;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.OptimisticLockException;
 import org.hibernate.StaleObjectStateException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.OptimisticLockingFailureException;
@@ -34,14 +36,17 @@ import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
-import java.time.ZonedDateTime;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
 public class OrderUseCase {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(OrderUseCase.class);
 
     private static final Retry PAYMENT_LOOKUP_RETRY = Retry.of("payment-key-lookup",
         RetryConfig.<PaymentGateway.ApprovalResult>custom()
@@ -158,7 +163,10 @@ public class OrderUseCase {
         if (payment == null || payment.getMethod() != PaymentMethod.PG) {
             throw new CoreException(ErrorCode.INVALID_REQUEST);
         }
+        PaymentStatus paymentStatusBefore = payment.status();
         if (payment.status() != PaymentStatus.PENDING && payment.status() != PaymentStatus.UNKNOWN) {
+            logReconciliation(order, payment, paymentStatusBefore, paymentStatusBefore,
+                "stored_terminal", "unchanged", null, null);
             return order;
         }
 
@@ -166,21 +174,93 @@ public class OrderUseCase {
         try {
             result = paymentGateway.findByPaymentKey(payment.paymentKey());
         } catch (RuntimeException exception) {
+            logReconciliation(order, payment, paymentStatusBefore, paymentStatusBefore,
+                "unavailable", "unchanged", null, null);
             return order;
         }
-        if (result == null || result instanceof PaymentGateway.Unknown) {
+        if (result == null) {
+            logReconciliation(order, payment, paymentStatusBefore, paymentStatusBefore,
+                "unavailable", "unchanged", null, null);
+            return order;
+        }
+        if (result instanceof PaymentGateway.Unknown) {
+            logReconciliation(order, payment, paymentStatusBefore, paymentStatusBefore,
+                "unknown", "unchanged", null, null);
             return order;
         }
         if (result instanceof PaymentGateway.ProviderError providerError && providerError.httpStatus() != 200) {
+            logReconciliation(order, payment, paymentStatusBefore, paymentStatusBefore,
+                "unavailable", "unchanged", null, null);
             return order;
         }
-        if (result instanceof PaymentGateway.Approved approved
-            && (!payment.paymentKey().equals(approved.paymentKey())
-                || !payment.getProviderOrderId().equals(approved.providerOrderId())
-                || payment.getAmount() != approved.amount())) {
-            return order;
+        Boolean amountMatched = null;
+        if (result instanceof PaymentGateway.Approved approved) {
+            amountMatched = payment.getAmount() == approved.amount();
+            boolean identityMatched = payment.paymentKey().equals(approved.paymentKey())
+                && payment.getProviderOrderId().equals(approved.providerOrderId());
+            if (!identityMatched || !amountMatched) {
+                logReconciliation(order, payment, paymentStatusBefore, paymentStatusBefore,
+                    identityMatched ? "amount_mismatch" : "identity_mismatch", "unchanged", amountMatched, null);
+                return order;
+            }
         }
-        return paymentTransactionService.recordResult(orderId, result);
+        try {
+            Order appliedOrder = paymentTransactionService.recordResult(orderId, result);
+            logReconciliation(order, payment, paymentStatusBefore, appliedOrder.getPayment().status(),
+                pgOutcome(result), "applied", amountMatched, null);
+            return appliedOrder;
+        } catch (RuntimeException exception) {
+            logReconciliation(order, payment, paymentStatusBefore, paymentStatusBefore,
+                pgOutcome(result), "rolled_back", amountMatched, exception.getClass().getSimpleName());
+            throw exception;
+        }
+    }
+
+    private void logReconciliation(
+        Order order,
+        Payment payment,
+        PaymentStatus paymentStatusBefore,
+        PaymentStatus paymentStatusAfter,
+        String pgOutcome,
+        String applicationOutcome,
+        Boolean amountMatched,
+        String applicationFailure
+    ) {
+        Instant observedAt = Instant.now();
+        var logEvent = LOGGER.atInfo()
+            .addKeyValue("orderId", order.getId())
+            .addKeyValue("paymentAttemptKey", payment.paymentAttemptKey())
+            .addKeyValue("providerOrderId", payment.getProviderOrderId())
+            .addKeyValue("paymentStatusBefore", paymentStatusBefore.name())
+            .addKeyValue("paymentStatusAfter", paymentStatusAfter.name())
+            .addKeyValue("pgOperation", "lookup")
+            .addKeyValue("pgOutcome", pgOutcome)
+            .addKeyValue("amountMatched", amountMatched)
+            .addKeyValue("applicationOutcome", applicationOutcome)
+            .addKeyValue("observedAt", observedAt.toString());
+        if (applicationFailure != null) {
+            logEvent.addKeyValue("applicationFailure", applicationFailure);
+        }
+        logEvent.log(
+            "Payment reconciliation boundary: orderId={} paymentAttemptKey={} providerOrderId={} "
+                + "paymentStatusBefore={} paymentStatusAfter={} pgOperation={} pgOutcome={} "
+                + "amountMatched={} applicationOutcome={} observedAt={}",
+            order.getId(), payment.paymentAttemptKey(), payment.getProviderOrderId(),
+            paymentStatusBefore.name(), paymentStatusAfter.name(), "lookup", pgOutcome,
+            amountMatched, applicationOutcome, observedAt);
+    }
+
+    private String pgOutcome(PaymentGateway.ApprovalResult result) {
+        if (result instanceof PaymentGateway.Approved) {
+            return "success";
+        }
+        if (result instanceof PaymentGateway.ProviderError) {
+            return "failed";
+        }
+        if (result instanceof PaymentGateway.Unknown) {
+            return "unknown";
+        }
+        return "unavailable";
     }
 
     private Order confirmWithPaymentGateway(Long buyerId, Long orderId, String paymentKey, String paymentAttemptKey) {
