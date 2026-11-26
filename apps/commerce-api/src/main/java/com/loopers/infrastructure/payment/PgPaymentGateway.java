@@ -80,6 +80,7 @@ class PgPaymentGateway implements PaymentGateway {
         String cause = e.getCause() instanceof SocketTimeoutException ? "timeout" : "connection_lost";
         String providerOrderId = creation.providerOrderId().value();
         log.atWarn()
+            .addKeyValue("event", "payment_create_no_response")
             .addKeyValue("providerOrderId", providerOrderId)
             .addKeyValue("cause", cause)
             .log("PG 생성 호출의 응답을 받지 못했다: providerOrderId={}, cause={}", providerOrderId, cause);
@@ -91,6 +92,7 @@ class PgPaymentGateway implements PaymentGateway {
         String providerOrderId = creation.providerOrderId().value();
         int status = response.getStatusCode().value();
         log.atWarn()
+            .addKeyValue("event", "payment_create_unexpected_response")
             .addKeyValue("providerOrderId", providerOrderId)
             .addKeyValue("cause", "unexpected_response")
             .addKeyValue("status", status)

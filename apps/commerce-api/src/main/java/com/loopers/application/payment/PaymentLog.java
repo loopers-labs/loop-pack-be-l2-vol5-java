@@ -17,13 +17,13 @@ public class PaymentLog {
         }
         String result = CreateResult.nameOf(observation);
         if (observation instanceof CreateObservation.CreateUnknown) {
-            about(log.atWarn(), payment)
+            about(log.atWarn(), "payment_create_unknown", payment)
                 .addKeyValue("result", result)
                 .log("PG 생성 호출의 결과를 모른다. 다시 보내지 않고 조회로 확인한다: paymentId={}, orderId={}, result={}",
                     payment.getId(), payment.getOrderId(), result);
             return;
         }
-        about(log.atInfo(), payment)
+        about(log.atInfo(), "payment_create_not_accepted", payment)
             .addKeyValue("result", result)
             .log("PG 생성 호출이 접수되지 않았다: paymentId={}, orderId={}, result={}",
                 payment.getId(), payment.getOrderId(), result);
@@ -35,7 +35,7 @@ public class PaymentLog {
             return;
         }
         boolean conflict = to == PaymentStatus.CONFLICT;
-        about(conflict ? log.atWarn() : log.atInfo(), payment)
+        about(conflict ? log.atWarn() : log.atInfo(), conflict ? "payment_conflict" : "payment_status_changed", payment)
             .addKeyValue("source", source)
             .addKeyValue("from", from.name())
             .addKeyValue("to", to.name())
@@ -46,17 +46,18 @@ public class PaymentLog {
 
     void applyFailed(Payment payment, String source, Exception e) {
         String error = e.getClass().getSimpleName();
-        about(log.atWarn(), payment)
+        about(log.atWarn(), "payment_apply_failed", payment)
             .addKeyValue("source", source)
             .addKeyValue("error", error)
-            .setCause(e)
             .log("조회 결과를 결제에 반영하지 못했다: paymentId={}, orderId={}, source={}, error={}",
                 payment.getId(), payment.getOrderId(), source, error);
     }
 
-    private static LoggingEventBuilder about(LoggingEventBuilder line, Payment payment) {
+    private static LoggingEventBuilder about(LoggingEventBuilder line, String event, Payment payment) {
         return line
+            .addKeyValue("event", event)
             .addKeyValue("paymentId", payment.getId())
-            .addKeyValue("orderId", payment.getOrderId());
+            .addKeyValue("orderId", payment.getOrderId())
+            .addKeyValue("providerOrderId", payment.getProviderOrderId().value());
     }
 }

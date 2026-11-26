@@ -888,6 +888,85 @@ class PaymentFacadeIntegrationTest {
             }
         }
 
+        @DisplayName("결제의 줄은 무슨 일인지를 가리키는 이름과, adapter 의 줄과 이어지는 PG 주문 식별자를 필드로 갖는다")
+        @Test
+        void carriesEventNameAndProviderOrderId() {
+            Order order = place(2);
+            String[] providerOrderId = new String[1];
+
+            List<ILoggingEvent> events = paymentLogDuring(() -> {
+                PG.dropNextCreateResponse();
+                Payment payment = confirm(order.getId(), "attempt-1");
+                providerOrderId[0] = payment.getProviderOrderId().value();
+                PG.changeStatus(PG.transactionsOf(providerOrderId[0]).get(0).transactionKey(), PgFixture.Status.SUCCESS);
+                paymentFacade.reconcile(USER, order.getId(), NOW.plusSeconds(10));
+            });
+
+            assertThat(events).hasSize(2);
+            assertThat(fieldsOf(events.get(0)))
+                .containsEntry("event", "payment_create_unknown")
+                .containsEntry("providerOrderId", providerOrderId[0]);
+            assertThat(fieldsOf(events.get(1)))
+                .containsEntry("event", "payment_status_changed")
+                .containsEntry("providerOrderId", providerOrderId[0]);
+        }
+
+        @DisplayName("거절된 생성 호출의 줄은 접수되지 않았다는 이름을 갖는다")
+        @Test
+        void namesNotAcceptedCreate() {
+            Order order = place(2);
+
+            List<ILoggingEvent> events = paymentLogDuring(() -> {
+                PG.rejectNextCreate();
+                confirm(order.getId(), "attempt-1");
+            });
+
+            assertThat(events).singleElement().satisfies(event ->
+                assertThat(fieldsOf(event)).containsEntry("event", "payment_create_not_accepted"));
+        }
+
+        @DisplayName("반영하지 못한 줄은 그 이름과 오류 종류를 필드로 갖고, 같은 실패가 몰릴 때 줄이 불어나지 않게 stack trace 는 싣지 않는다")
+        @Test
+        void namesFailedApplyWithoutStackTrace() throws Exception {
+            Order order = place(2);
+            PG.dropNextCreateResponse();
+            Payment payment = confirm(order.getId(), "attempt-1");
+            PG.changeStatus(
+                PG.transactionsOf(payment.getProviderOrderId().value()).get(0).transactionKey(), PgFixture.Status.SUCCESS);
+
+            List<ILoggingEvent> events;
+            try (Connection holder = dataSource.getConnection()) {
+                holder.setAutoCommit(false);
+                lockOrder(holder, order.getId());
+                events = paymentLogDuring(() ->
+                    assertThatThrownBy(() -> paymentFacade.reconcile(USER, order.getId(), NOW.plusSeconds(10)))
+                        .isInstanceOf(DataAccessException.class));
+                holder.rollback();
+            }
+
+            assertThat(events).singleElement().satisfies(event -> {
+                assertThat(fieldsOf(event))
+                    .containsEntry("event", "payment_apply_failed")
+                    .containsEntry("providerOrderId", payment.getProviderOrderId().value())
+                    .containsEntry("source", "reconcile")
+                    .containsKey("error");
+                assertThat(event.getThrowableProxy()).isNull();
+            });
+        }
+
+        private List<ILoggingEvent> paymentLogDuring(Runnable action) {
+            Logger paymentLogger = (Logger) LoggerFactory.getLogger("com.loopers.application.payment.PaymentLog");
+            ListAppender<ILoggingEvent> events = new ListAppender<>();
+            events.start();
+            paymentLogger.addAppender(events);
+            try {
+                action.run();
+            } finally {
+                paymentLogger.detachAppender(events);
+            }
+            return events.list;
+        }
+
         private Map<String, Object> fieldsOf(ILoggingEvent event) {
             Map<String, Object> fields = new HashMap<>();
             if (event.getKeyValuePairs() != null) {

@@ -279,6 +279,28 @@ class PaymentProviderContractTest {
             }
         }
 
+        @DisplayName("원인을 남기는 줄은 응답을 못 받았는지 해석을 못 했는지를 가리키는 이름을 필드로 갖는다")
+        @Test
+        void carriesEventName() {
+            Logger gatewayLogger = (Logger) LoggerFactory.getLogger(
+                "com.loopers.infrastructure.payment.PgPaymentGateway");
+            ListAppender<ILoggingEvent> events = new ListAppender<>();
+            events.start();
+            gatewayLogger.addAppender(events);
+            try {
+                PG.dropNextCreateResponse();
+                gateway.create(creation(56L, 7000));
+                PG.respondNextCreateWith(500, "");
+                gateway.create(creation(57L, 7000));
+
+                assertThat(events.list).hasSize(2);
+                assertThat(fieldsOf(events.list.get(0))).containsEntry("event", "payment_create_no_response");
+                assertThat(fieldsOf(events.list.get(1))).containsEntry("event", "payment_create_unexpected_response");
+            } finally {
+                gatewayLogger.detachAppender(events);
+            }
+        }
+
         private Map<String, Object> fieldsOf(ILoggingEvent event) {
             Map<String, Object> fields = new HashMap<>();
             if (event.getKeyValuePairs() != null) {
