@@ -1,5 +1,8 @@
 package com.loopers.application.order.facade;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.loopers.application.order.dto.OrderInfo;
 import com.loopers.application.order.facade.OrderPaymentFacade.ConfirmCommand;
 import com.loopers.domain.brand.entity.Brand;
@@ -15,6 +18,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
@@ -56,6 +60,8 @@ class OrderConfirmTransactionTest {
     private DatabaseCleanUp databaseCleanUp;
 
     private final TestPgServer pg = TestPgServer.shared();
+    private final Logger facadeLogger = (Logger) LoggerFactory.getLogger(OrderPaymentFacade.class);
+    private final ListAppender<ILoggingEvent> facadeLogs = new ListAppender<>();
     private Product first;
     private Product second;
     private Order order;
@@ -63,6 +69,8 @@ class OrderConfirmTransactionTest {
     @BeforeEach
     void setUp() {
         pg.reset();
+        facadeLogs.start();
+        facadeLogger.addAppender(facadeLogs);
         transactionTemplate.executeWithoutResult(status -> {
             Brand brand = new Brand("브랜드", null);
             entityManager.persist(brand);
@@ -78,6 +86,7 @@ class OrderConfirmTransactionTest {
 
     @AfterEach
     void tearDown() {
+        facadeLogger.detachAppender(facadeLogs);
         databaseCleanUp.truncateAllTables();
     }
 
@@ -189,6 +198,18 @@ class OrderConfirmTransactionTest {
             () -> assertThat(paymentStateOf(order.getId())).isEqualTo(List.of("SUCCESS", "CONSUMED", 4_000L)),
             () -> assertThat(stockOf(first.getId())).isEqualTo(INITIAL_STOCK - 2),
             () -> assertThat(pg.createCount()).isEqualTo(1)
+        );
+        // 응답 유실과 가르는 근거: rollback 된 적용은 성공으로 찍히지 않고 실패 로그로만 남음 (10주차 D-200)
+        String providerOrderId = Payment.providerOrderIdOf(order.getId());
+        List<String> logs = facadeLogs.list.stream().map(ILoggingEvent::getFormattedMessage).toList();
+        assertAll(
+            () -> assertThat(logs).hasSize(3),
+            () -> assertThat(logs.get(0)).startsWith("결제 결과 적용. orderId=" + order.getId() + " ")
+                .endsWith("providerOrderId=" + providerOrderId + " source=CREATE before=REQUESTED after=PENDING effect=NONE"),
+            () -> assertThat(logs.get(1)).isEqualTo("결제 결과 적용 실패. orderId=" + order.getId()
+                + " providerOrderId=" + providerOrderId + " source=LOOKUP error=IllegalStateException"),
+            () -> assertThat(logs.get(2)).startsWith("결제 결과 적용. orderId=" + order.getId() + " ")
+                .endsWith("providerOrderId=" + providerOrderId + " source=LOOKUP before=PENDING after=SUCCESS effect=CONSUME")
         );
     }
 

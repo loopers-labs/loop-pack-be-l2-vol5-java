@@ -6,6 +6,7 @@ import com.loopers.domain.order.service.OrderService;
 import com.loopers.domain.payment.entity.Payment;
 import com.loopers.domain.payment.vo.PaymentCreateResult;
 import com.loopers.domain.payment.enums.PaymentErrorCode;
+import com.loopers.domain.payment.enums.PaymentStatus;
 import com.loopers.domain.payment.vo.PaymentLookupResult;
 import com.loopers.domain.payment.service.PaymentService;
 import com.loopers.domain.payment.enums.ReservationChange;
@@ -42,7 +43,10 @@ public class OrderPaymentSteps {
     ) {}
 
     /** restocked: 반환으로 품절이 풀린 상품 */
-    public record Applied(OrderInfo order, Set<Long> restockedBrandIds, Set<Long> restockedProductIds) {}
+    public record Applied(OrderInfo order, Transition transition, Set<Long> restockedBrandIds, Set<Long> restockedProductIds) {}
+
+    /** 잠금 아래에서 읽은 전이 전 상태라 동시 적용이 있어도 실제 전이와 같음. 적용 로그용 (10주차 D-200) */
+    public record Transition(Long paymentId, String providerOrderId, PaymentStatus before, PaymentStatus after, ReservationChange effect) {}
 
     public record Snapshot(OrderInfo order, String providerOrderId, boolean settled) {}
 
@@ -92,8 +96,9 @@ public class OrderPaymentSteps {
     public Applied applyCreateResult(Long orderId, PaymentCreateResult result) {
         Order order = orderService.getOrderForUpdate(orderId);
         Payment payment = paymentService.getByOrderId(orderId);
+        PaymentStatus before = payment.getStatus();
         ReservationChange change = paymentService.apply(payment, result);
-        return settle(order, payment, change);
+        return settle(order, payment, before, change);
     }
 
     /** 결제 시도가 없으면(DRAFT · 이전 POINT 주문) PAYMENT_NOT_FOUND */
@@ -117,12 +122,13 @@ public class OrderPaymentSteps {
     public Applied applyLookupResult(Long orderId, PaymentLookupResult result) {
         Order order = orderService.getOrderForUpdate(orderId);
         Payment payment = paymentService.getByOrderId(orderId);
+        PaymentStatus before = payment.getStatus();
         ReservationChange change = paymentService.apply(payment, result);
-        return settle(order, payment, change);
+        return settle(order, payment, before, change);
     }
 
     /** 결제 종결과 같은 TX 에서 후속 효과를 한 번만 일으킴 (D-59) */
-    private Applied settle(Order order, Payment payment, ReservationChange change) {
+    private Applied settle(Order order, Payment payment, PaymentStatus before, ReservationChange change) {
         Set<Long> restockedBrandIds = new LinkedHashSet<>();
         Set<Long> restockedProductIds = new LinkedHashSet<>();
         switch (change) {
@@ -142,7 +148,8 @@ public class OrderPaymentSteps {
             }
             case NONE -> { }
         }
-        return new Applied(OrderInfo.from(order, payment), restockedBrandIds, restockedProductIds);
+        Transition transition = new Transition(payment.getId(), payment.getProviderOrderId(), before, payment.getStatus(), change);
+        return new Applied(OrderInfo.from(order, payment), transition, restockedBrandIds, restockedProductIds);
     }
 
     private static List<Long> productIdsOf(Order order) {
