@@ -1,11 +1,11 @@
 {
-  "runId" : "20261126T140219Z-4ab238b7",
+  "runId" : "20261126T144605Z-80cbebb6",
   "stage" : "SUMMARY",
   "countDefinition" : {
-    "pgSuccess" : "test-pg 거래 중 status = SUCCESS (집합 주문의 providerOrderId 기준)",
     "confirmed" : "orders.status = CONFIRMED",
     "createCalls" : "test-pg가 받은 create 호출 수 합계 (집합 주문의 providerOrderId 기준)",
-    "unknown" : "payment_records.provider_status = UNKNOWN"
+    "unknown" : "payment_records.provider_status = UNKNOWN",
+    "pgSuccess" : "test-pg 거래 중 status = SUCCESS (집합 주문의 providerOrderId 기준)"
   },
   "sets" : {
     "fault-set" : {
