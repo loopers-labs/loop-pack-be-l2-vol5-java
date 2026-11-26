@@ -17,6 +17,7 @@ import com.loopers.batch.job.ranking.WeeklyRankingLauncher;
 import com.loopers.domains.brand.app.BrandApplicationService;
 import com.loopers.domains.order.app.OrderApplicationService;
 import com.loopers.domains.order.app.OrderOutboxRelay;
+import com.loopers.domains.order.app.PaymentApplyFailureRecorder;
 import com.loopers.domains.payment.app.port.PaymentTransaction;
 import com.loopers.domains.payment.app.port.PaymentTransactionStatus;
 import com.loopers.domains.payment.app.port.PaymentTransactionsLookup;
@@ -126,8 +127,12 @@ class CheckoutIncidentE2ETest {
     private static final List<String> UNRESOLVED_STATUSES = List.of("send_started", "pending", "unknown", "needs_review");
     private static final String SERVICE_LOGGER = OrderApplicationService.class.getName();
     private static final String ADAPTER_LOGGER = TestPgPaymentGateway.class.getName();
+    // 이상 기록 자체가 실패하면 기록기가 ERROR를 남긴다. errorLines에 함께 세려고 잡는다(수준은 바꾸지 않는다).
+    private static final String RECORDER_LOGGER = PaymentApplyFailureRecorder.class.getName();
     private static final String CREATE_RESULT = "PG 결제 생성 시도 결과";
     private static final String LOOKUP_JUDGMENT = "PG 조회 판정";
+    private static final String PAYMENT_START = "PG 결제를 시작했습니다";
+    private static final String APPLY_FAILED_SQL = "select count(*) from payment_anomalies where order_id = ? and kind = 'APPLY_FAILED'";
     private static final String CARD_DIGITS = TestPgFixture.CARD_NO.replace("-", "");
     private static final int FAILURE_MESSAGE_LIMIT = 500;
 
@@ -423,7 +428,8 @@ class CheckoutIncidentE2ETest {
 
     // S4 가설 판정: 읽기 전용 PG 조회(새 클라이언트로 verifyOrder 직접 호출)와 경계 로그만 쓴다. commerce 상태는 바뀌지 않아야 한다.
     // H1 응답 유실 = create Unknown WARN(HttpTimeoutException) 1 + 반영 ERROR 0 + PG SUCCESS·금액 일치.
-    // H2 내부 반영 실패 = 결과를 받았거나(Accepted) 조회 Verified INFO가 있고 반영 ERROR가 있어야 한다.
+    // H2 내부 반영 실패 = DB에 APPLY_FAILED 이상이 있거나, 결과를 받았거나(Accepted) 조회 Verified INFO가 있고 반영 ERROR가 있다.
+    // H2 기각은 로그 부재에만 기대지 않는다: APPLY_FAILED 0건(DB)과 같은 주문의 시작 INFO·Unknown WARN(로그 통로 생존)을 교차 확인한다.
     // H3 PG 실패·미발송 = PG 거래가 없거나 FAILED이거나 NotSent WARN이 있어야 한다.
     private void diagnose(String faultSha256) throws Exception {
         Map<Long, Map<String, Object>> before = ledger();
@@ -433,6 +439,8 @@ class CheckoutIncidentE2ETest {
         Map<String, Map<String, List<Long>>> verdict = new LinkedHashMap<String, Map<String, List<Long>>>();
         verdict.put("adopted", new LinkedHashMap<String, List<Long>>());
         verdict.put("rejected", new LinkedHashMap<String, List<Long>>());
+        assertApplyFailedQueryCounts();
+        assertThat(h2Holds(0, 0, 0, 1)).as("로그가 없어도 DB APPLY_FAILED가 있으면 H2를 채택한다").isTrue();
         for (TrackedOrder order : set("fault-lost")) {
             PaymentTransactionsLookup lookup = testPgFixture.newClient().verifyOrder(order.providerOrderId(), null);
             assertThat(lookup).isInstanceOf(PaymentTransactionsLookup.Found.class);
@@ -458,9 +466,16 @@ class CheckoutIncidentE2ETest {
                 .filter(event -> arguments(event).contains("Verified"))
                 .count();
             long notSent = createResults(orderLogs, "NotSent").size();
+            long applyFailedAnomalies = applyFailedAnomalies(order.orderId());
+            long paymentStartInfo = orderLogs.stream()
+                .filter(event -> event.getLoggerName().equals(SERVICE_LOGGER) && event.getLevel() == Level.INFO)
+                .filter(event -> event.getFormattedMessage().contains(PAYMENT_START))
+                .count();
+            boolean logChannelAlive = paymentStartInfo > 0 && !unknownWarns.isEmpty();
+            assertThat(logChannelAlive).as("로그 통로 생존(같은 주문 시작 INFO·Unknown WARN) order=%d", order.orderId()).isTrue();
 
             boolean h1 = unknownWarns.size() == 1 && timeoutUnknown == 1 && applyErrors == 0 && pgSuccessWithSameAmount;
-            boolean h2 = (accepted + verified) > 0 && applyErrors > 0;
+            boolean h2 = h2Holds(accepted, verified, applyErrors, applyFailedAnomalies);
             boolean h3 = pgFailedOrMissing || notSent > 0;
             assertThat(h1).as("H1 응답 유실 채택 order=%d", order.orderId()).isTrue();
             assertThat(h2).as("H2 내부 반영 실패 기각 order=%d", order.orderId()).isFalse();
@@ -484,10 +499,12 @@ class CheckoutIncidentE2ETest {
                     "create Unknown WARN(HttpTimeoutException) 1, 반영 ERROR 0, PG 조회 SUCCESS·금액 일치", h1, List.of(
                         "PG가 요청을 받고 응답을 보냈다는 것은 test-pg 내부 상태(createCalls·거래 SUCCESS)로만 봤다. 실제 PG 로그는 없다",
                         "응답이 어디서 끊겼는지 네트워크 계층(패킷·프록시·LB 로그)은 보지 않았다. 근거는 우리 쪽 HttpTimeoutException뿐이다")),
-                hypothesis("H2", "내부 반영 실패: PG 결과를 받거나 조회했지만 우리 DB 반영이 실패했다",
-                    "create Accepted INFO 또는 조회 Verified INFO가 있고 반영 ERROR가 있다", h2, List.of(
-                        "\"반영 ERROR 0\"은 MDC orderId로 거른 캡처 로그에 ERROR가 없다는 부재 판단이다. 로그 유실·MDC 누락이면 구분할 수 없다",
-                        "DB 쪽 오류 기록(MySQL error log·rollback 통계)은 보지 않았다")),
+                withCrossCheck(hypothesis("H2", "내부 반영 실패: PG 결과를 받거나 조회했지만 우리 DB 반영이 실패했다",
+                    "DB APPLY_FAILED 이상이 있거나, create Accepted INFO 또는 조회 Verified INFO가 있고 반영 ERROR가 있다", h2,
+                    List.of(
+                        "DB 쪽 오류 기록(MySQL error log·rollback 통계)은 보지 않았다",
+                        "APPLY_FAILED 이상 기록 자체가 실패하면 DB에는 남지 않고 기록기 ERROR만 남는다. 그 경우는 errorLines(로그)로만 보인다")),
+                    applyFailedAnomalies, paymentStartInfo, unknownWarns.size(), logChannelAlive),
                 hypothesis("H3", "PG 실패·미발송: 돈이 움직이지 않았다",
                     "PG 거래가 없거나 FAILED, 또는 create NotSent WARN", h3, List.of(
                         "돈이 움직였다는 근거는 PG 조회 SUCCESS·금액 일치뿐이다. PG 정산 파일·카드사 승인 내역 대조는 없다",
@@ -1161,6 +1178,40 @@ class CheckoutIncidentE2ETest {
         return Arrays.stream(arguments).map(String::valueOf).toList();
     }
 
+    private static boolean h2Holds(long accepted, long verified, long applyErrors, long applyFailedAnomalies) {
+        return applyFailedAnomalies > 0 || ((accepted + verified) > 0 && applyErrors > 0);
+    }
+
+    private long applyFailedAnomalies(long orderId) {
+        return jdbc.queryForObject(APPLY_FAILED_SQL, Long.class, orderId);
+    }
+
+    // 대조군: 진단 대상이 아닌 주문 ID로 APPLY_FAILED 한 행을 넣어 질의가 실제로 세는지 확인하고 바로 지운다.
+    // 대상 주문의 0건이 질의 고장(항상 0)이 아님을 보이려는 것이다.
+    private void assertApplyFailedQueryCounts() {
+        long controlOrderId = Long.MAX_VALUE;
+        jdbc.update("insert into payment_anomalies(order_id, kind, first_seen_at, last_seen_at, occurrences, last_summary)"
+            + " values (?, 'APPLY_FAILED', now(6), now(6), 1, 'control')", controlOrderId);
+        try {
+            assertThat(applyFailedAnomalies(controlOrderId)).as("APPLY_FAILED 질의 대조군").isEqualTo(1);
+        } finally {
+            jdbc.update("delete from payment_anomalies where order_id = ?", controlOrderId);
+        }
+    }
+
+    private static Map<String, Object> withCrossCheck(Map<String, Object> hypothesis, long applyFailedAnomalies,
+        long paymentStartInfo, long createUnknownWarn, boolean logChannelAlive) {
+        Map<String, Object> crossCheck = new LinkedHashMap<String, Object>();
+        crossCheck.put("applyFailedAnomalies", applyFailedAnomalies);
+        crossCheck.put("applyFailedAnomaliesSource", APPLY_FAILED_SQL);
+        crossCheck.put("paymentStartInfo", paymentStartInfo);
+        crossCheck.put("createUnknownWarn", createUnknownWarn);
+        crossCheck.put("logChannelAlive", logChannelAlive);
+        Map<String, Object> withCheck = new LinkedHashMap<String, Object>(hypothesis);
+        withCheck.put("crossCheck", crossCheck);
+        return withCheck;
+    }
+
     private static Map<String, Object> hypothesis(String id, String statement, String expectedEvidence, boolean holds,
         List<String> missingEvidence) {
         Map<String, Object> hypothesis = new LinkedHashMap<String, Object>();
@@ -1222,11 +1273,13 @@ class CheckoutIncidentE2ETest {
         logger(ADAPTER_LOGGER).setLevel(Level.INFO);
         logger(SERVICE_LOGGER).addAppender(logs);
         logger(ADAPTER_LOGGER).addAppender(logs);
+        logger(RECORDER_LOGGER).addAppender(logs);
     }
 
     private void detachLogCapture() {
         logger(SERVICE_LOGGER).detachAppender(logs);
         logger(ADAPTER_LOGGER).detachAppender(logs);
+        logger(RECORDER_LOGGER).detachAppender(logs);
         logger(SERVICE_LOGGER).setLevel(serviceLevel);
         logger(ADAPTER_LOGGER).setLevel(adapterLevel);
         logs.stop();
