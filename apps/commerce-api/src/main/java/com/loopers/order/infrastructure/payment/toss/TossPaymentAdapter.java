@@ -14,15 +14,20 @@ import io.github.resilience4j.bulkhead.Bulkhead;
 import io.github.resilience4j.bulkhead.BulkheadFullException;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
 import java.io.IOException;
+import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.Map;
 
 public final class TossPaymentAdapter implements PaymentGateway {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(TossPaymentAdapter.class);
 
     private final RestClient client;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -53,16 +58,23 @@ public final class TossPaymentAdapter implements PaymentGateway {
 
     @Override
     public ApprovalResult approve(ApprovalRequest request) {
+        ApprovalResult result;
+        String adapterFailure = "none";
         try {
-            return pgRequestBulkhead.executeSupplier(
+            result = pgRequestBulkhead.executeSupplier(
                 () -> approvalCircuitBreaker.executeSupplier(() -> approveOnce(request)));
         } catch (BulkheadFullException exception) {
-            return new DispatchRejected("PG 요청 처리 한도를 초과했습니다.");
+            result = new DispatchRejected("PG 요청 처리 한도를 초과했습니다.");
+            adapterFailure = "bulkhead_rejected";
         } catch (CallNotPermittedException exception) {
-            return new Unknown();
+            result = new Unknown();
+            adapterFailure = "circuit_open";
         } catch (RestClientException exception) {
-            return new Unknown();
+            result = new Unknown();
+            adapterFailure = "transport_error";
         }
+        logApprovalBoundary(request, result, adapterFailure);
+        return result;
     }
 
     @Override
@@ -102,6 +114,29 @@ public final class TossPaymentAdapter implements PaymentGateway {
                 }
                 return status == 200 ? approved(body) : providerError(status, body);
             });
+    }
+
+    private void logApprovalBoundary(
+        ApprovalRequest request,
+        ApprovalResult result,
+        String adapterFailure
+    ) {
+        String pgOutcome = result instanceof PaymentGateway.Approved ? "success"
+            : result instanceof ProviderError ? "failed"
+            : result instanceof DispatchRejected ? "rejected"
+            : "unknown";
+        Instant observedAt = Instant.now();
+        LOGGER.atInfo()
+            .addKeyValue("providerOrderId", request.providerOrderId())
+            .addKeyValue("paymentAttemptKey", request.idempotencyKey())
+            .addKeyValue("pgOperation", "approve")
+            .addKeyValue("pgOutcome", pgOutcome)
+            .addKeyValue("adapterFailure", adapterFailure)
+            .addKeyValue("observedAt", observedAt.toString())
+            .log("PG approval boundary: providerOrderId={} paymentAttemptKey={} pgOperation={} "
+                    + "pgOutcome={} adapterFailure={} observedAt={}",
+                request.providerOrderId(), request.idempotencyKey(), "approve", pgOutcome,
+                adapterFailure, observedAt);
     }
 
     private ApprovalResult findByPaymentKeyOnce(String paymentKey) {
