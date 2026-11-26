@@ -1,0 +1,284 @@
+{
+  "stage" : "BASELINE",
+  "observedAt" : "2026-11-25T07:49:28.631811Z",
+  "view" : {
+    "pgSuccess" : 10,
+    "awaiting" : 0,
+    "cumulativePgTransactions" : 10,
+    "confirmed" : 10
+  },
+  "health" : {
+    "status" : "UP",
+    "groups" : [ "liveness", "readiness" ]
+  },
+  "metricFromPrometheusFile" : {
+    "commerce_payment_awaiting" : {
+      "known" : 0.0,
+      "missing" : 0.0
+    },
+    "file" : "01-baseline.prom"
+  },
+  "faulted" : [ 13, 16, 19 ],
+  "orders" : [ {
+    "orderId" : 1,
+    "set" : "baseline",
+    "faulted" : false,
+    "status" : "CONFIRMED",
+    "paymentAttemptKey" : "attempt-1",
+    "transactionKey" : "pg-tx-9818eb26-4d82-4b84-94db-dcafd3a2c6f5",
+    "totalAmount" : 1000,
+    "paidAmount" : 1000,
+    "paymentStartedAt" : "2026-11-25 07:49:28.208837",
+    "confirmedAt" : "2026-11-16 01:00:00.000000",
+    "ledger" : [ "RESERVE" ],
+    "outbox" : [ {
+      "status" : "PENDING",
+      "eventId" : "order-confirmed:v1:1"
+    } ],
+    "pg" : {
+      "transactionKey" : "pg-tx-9818eb26-4d82-4b84-94db-dcafd3a2c6f5",
+      "userId" : "1",
+      "pgOrderId" : "ORDER-1",
+      "amount" : 1000,
+      "status" : "SUCCESS",
+      "createdAt" : "2026-11-25T07:49:28.244456Z",
+      "updatedAt" : "2026-11-25T07:49:28.260927Z"
+    },
+    "pgCreateCount" : 1
+  }, {
+    "orderId" : 2,
+    "set" : "baseline",
+    "faulted" : false,
+    "status" : "CONFIRMED",
+    "paymentAttemptKey" : "attempt-2",
+    "transactionKey" : "pg-tx-23daa641-80f9-402d-b2c9-1bc0a9fee9d8",
+    "totalAmount" : 1000,
+    "paidAmount" : 1000,
+    "paymentStartedAt" : "2026-11-25 07:49:28.295736",
+    "confirmedAt" : "2026-11-16 01:00:00.000000",
+    "ledger" : [ "RESERVE" ],
+    "outbox" : [ {
+      "status" : "PENDING",
+      "eventId" : "order-confirmed:v1:2"
+    } ],
+    "pg" : {
+      "transactionKey" : "pg-tx-23daa641-80f9-402d-b2c9-1bc0a9fee9d8",
+      "userId" : "1",
+      "pgOrderId" : "ORDER-2",
+      "amount" : 1000,
+      "status" : "SUCCESS",
+      "createdAt" : "2026-11-25T07:49:28.304912Z",
+      "updatedAt" : "2026-11-25T07:49:28.311004Z"
+    },
+    "pgCreateCount" : 1
+  }, {
+    "orderId" : 3,
+    "set" : "baseline",
+    "faulted" : false,
+    "status" : "CONFIRMED",
+    "paymentAttemptKey" : "attempt-3",
+    "transactionKey" : "pg-tx-7b8b09d5-8c81-4c01-b3f6-8948b1dc705f",
+    "totalAmount" : 1000,
+    "paidAmount" : 1000,
+    "paymentStartedAt" : "2026-11-25 07:49:28.325849",
+    "confirmedAt" : "2026-11-16 01:00:00.000000",
+    "ledger" : [ "RESERVE" ],
+    "outbox" : [ {
+      "status" : "PENDING",
+      "eventId" : "order-confirmed:v1:3"
+    } ],
+    "pg" : {
+      "transactionKey" : "pg-tx-7b8b09d5-8c81-4c01-b3f6-8948b1dc705f",
+      "userId" : "1",
+      "pgOrderId" : "ORDER-3",
+      "amount" : 1000,
+      "status" : "SUCCESS",
+      "createdAt" : "2026-11-25T07:49:28.333727Z",
+      "updatedAt" : "2026-11-25T07:49:28.339273Z"
+    },
+    "pgCreateCount" : 1
+  }, {
+    "orderId" : 4,
+    "set" : "baseline",
+    "faulted" : false,
+    "status" : "CONFIRMED",
+    "paymentAttemptKey" : "attempt-4",
+    "transactionKey" : "pg-tx-46ba3de7-6041-49fe-b051-e2f35c9422ee",
+    "totalAmount" : 1000,
+    "paidAmount" : 1000,
+    "paymentStartedAt" : "2026-11-25 07:49:28.352995",
+    "confirmedAt" : "2026-11-16 01:00:00.000000",
+    "ledger" : [ "RESERVE" ],
+    "outbox" : [ {
+      "status" : "PENDING",
+      "eventId" : "order-confirmed:v1:4"
+    } ],
+    "pg" : {
+      "transactionKey" : "pg-tx-46ba3de7-6041-49fe-b051-e2f35c9422ee",
+      "userId" : "1",
+      "pgOrderId" : "ORDER-4",
+      "amount" : 1000,
+      "status" : "SUCCESS",
+      "createdAt" : "2026-11-25T07:49:28.360459Z",
+      "updatedAt" : "2026-11-25T07:49:28.365825Z"
+    },
+    "pgCreateCount" : 1
+  }, {
+    "orderId" : 5,
+    "set" : "baseline",
+    "faulted" : false,
+    "status" : "CONFIRMED",
+    "paymentAttemptKey" : "attempt-5",
+    "transactionKey" : "pg-tx-dbd34422-2cc3-499d-be3e-0e00fd96bb0d",
+    "totalAmount" : 1000,
+    "paidAmount" : 1000,
+    "paymentStartedAt" : "2026-11-25 07:49:28.379871",
+    "confirmedAt" : "2026-11-16 01:00:00.000000",
+    "ledger" : [ "RESERVE" ],
+    "outbox" : [ {
+      "status" : "PENDING",
+      "eventId" : "order-confirmed:v1:5"
+    } ],
+    "pg" : {
+      "transactionKey" : "pg-tx-dbd34422-2cc3-499d-be3e-0e00fd96bb0d",
+      "userId" : "1",
+      "pgOrderId" : "ORDER-5",
+      "amount" : 1000,
+      "status" : "SUCCESS",
+      "createdAt" : "2026-11-25T07:49:28.388429Z",
+      "updatedAt" : "2026-11-25T07:49:28.394529Z"
+    },
+    "pgCreateCount" : 1
+  }, {
+    "orderId" : 6,
+    "set" : "baseline",
+    "faulted" : false,
+    "status" : "CONFIRMED",
+    "paymentAttemptKey" : "attempt-6",
+    "transactionKey" : "pg-tx-8eddb7a6-3825-4d7e-97f7-7c1eca04d081",
+    "totalAmount" : 1000,
+    "paidAmount" : 1000,
+    "paymentStartedAt" : "2026-11-25 07:49:28.410299",
+    "confirmedAt" : "2026-11-16 01:00:00.000000",
+    "ledger" : [ "RESERVE" ],
+    "outbox" : [ {
+      "status" : "PENDING",
+      "eventId" : "order-confirmed:v1:6"
+    } ],
+    "pg" : {
+      "transactionKey" : "pg-tx-8eddb7a6-3825-4d7e-97f7-7c1eca04d081",
+      "userId" : "1",
+      "pgOrderId" : "ORDER-6",
+      "amount" : 1000,
+      "status" : "SUCCESS",
+      "createdAt" : "2026-11-25T07:49:28.418306Z",
+      "updatedAt" : "2026-11-25T07:49:28.425379Z"
+    },
+    "pgCreateCount" : 1
+  }, {
+    "orderId" : 7,
+    "set" : "baseline",
+    "faulted" : false,
+    "status" : "CONFIRMED",
+    "paymentAttemptKey" : "attempt-7",
+    "transactionKey" : "pg-tx-e5198997-2679-437a-9690-6e1378b8d5c9",
+    "totalAmount" : 1000,
+    "paidAmount" : 1000,
+    "paymentStartedAt" : "2026-11-25 07:49:28.438718",
+    "confirmedAt" : "2026-11-16 01:00:00.000000",
+    "ledger" : [ "RESERVE" ],
+    "outbox" : [ {
+      "status" : "PENDING",
+      "eventId" : "order-confirmed:v1:7"
+    } ],
+    "pg" : {
+      "transactionKey" : "pg-tx-e5198997-2679-437a-9690-6e1378b8d5c9",
+      "userId" : "1",
+      "pgOrderId" : "ORDER-7",
+      "amount" : 1000,
+      "status" : "SUCCESS",
+      "createdAt" : "2026-11-25T07:49:28.446283Z",
+      "updatedAt" : "2026-11-25T07:49:28.451635Z"
+    },
+    "pgCreateCount" : 1
+  }, {
+    "orderId" : 8,
+    "set" : "baseline",
+    "faulted" : false,
+    "status" : "CONFIRMED",
+    "paymentAttemptKey" : "attempt-8",
+    "transactionKey" : "pg-tx-f99316ed-0de9-40c8-9ee3-b9f6ef17ac8f",
+    "totalAmount" : 1000,
+    "paidAmount" : 1000,
+    "paymentStartedAt" : "2026-11-25 07:49:28.465026",
+    "confirmedAt" : "2026-11-16 01:00:00.000000",
+    "ledger" : [ "RESERVE" ],
+    "outbox" : [ {
+      "status" : "PENDING",
+      "eventId" : "order-confirmed:v1:8"
+    } ],
+    "pg" : {
+      "transactionKey" : "pg-tx-f99316ed-0de9-40c8-9ee3-b9f6ef17ac8f",
+      "userId" : "1",
+      "pgOrderId" : "ORDER-8",
+      "amount" : 1000,
+      "status" : "SUCCESS",
+      "createdAt" : "2026-11-25T07:49:28.472676Z",
+      "updatedAt" : "2026-11-25T07:49:28.478079Z"
+    },
+    "pgCreateCount" : 1
+  }, {
+    "orderId" : 9,
+    "set" : "baseline",
+    "faulted" : false,
+    "status" : "CONFIRMED",
+    "paymentAttemptKey" : "attempt-9",
+    "transactionKey" : "pg-tx-43f5f4f6-0eb9-40c2-95af-1a04a9e541d8",
+    "totalAmount" : 1000,
+    "paidAmount" : 1000,
+    "paymentStartedAt" : "2026-11-25 07:49:28.492202",
+    "confirmedAt" : "2026-11-16 01:00:00.000000",
+    "ledger" : [ "RESERVE" ],
+    "outbox" : [ {
+      "status" : "PENDING",
+      "eventId" : "order-confirmed:v1:9"
+    } ],
+    "pg" : {
+      "transactionKey" : "pg-tx-43f5f4f6-0eb9-40c2-95af-1a04a9e541d8",
+      "userId" : "1",
+      "pgOrderId" : "ORDER-9",
+      "amount" : 1000,
+      "status" : "SUCCESS",
+      "createdAt" : "2026-11-25T07:49:28.500382Z",
+      "updatedAt" : "2026-11-25T07:49:28.505604Z"
+    },
+    "pgCreateCount" : 1
+  }, {
+    "orderId" : 10,
+    "set" : "baseline",
+    "faulted" : false,
+    "status" : "CONFIRMED",
+    "paymentAttemptKey" : "attempt-10",
+    "transactionKey" : "pg-tx-1e60511c-a8a3-4970-970e-7fda3f9f7206",
+    "totalAmount" : 1000,
+    "paidAmount" : 1000,
+    "paymentStartedAt" : "2026-11-25 07:49:28.518245",
+    "confirmedAt" : "2026-11-16 01:00:00.000000",
+    "ledger" : [ "RESERVE" ],
+    "outbox" : [ {
+      "status" : "PENDING",
+      "eventId" : "order-confirmed:v1:10"
+    } ],
+    "pg" : {
+      "transactionKey" : "pg-tx-1e60511c-a8a3-4970-970e-7fda3f9f7206",
+      "userId" : "1",
+      "pgOrderId" : "ORDER-10",
+      "amount" : 1000,
+      "status" : "SUCCESS",
+      "createdAt" : "2026-11-25T07:49:28.525689Z",
+      "updatedAt" : "2026-11-25T07:49:28.530904Z"
+    },
+    "pgCreateCount" : 1
+  } ],
+  "dropping" : false
+}

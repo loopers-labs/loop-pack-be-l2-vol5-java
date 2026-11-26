@@ -3,6 +3,7 @@ package com.loopers.support;
 import com.loopers.application.order.PaymentGateway;
 import com.loopers.application.order.PaymentGatewayResult;
 import com.loopers.application.order.PaymentGatewayResult.Outcome;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 
@@ -14,7 +15,9 @@ import java.util.function.Function;
  * 테스트용 PaymentGateway. @Primary 라 모든 @SpringBootTest 에서 PgClient 대신 주입된다 (HTTP 없음).
  * 기본: 결제 요청은 요청 금액 그대로 SUCCESS (거래 키 "tx-{orderId}"), 거래 조회는 UNKNOWN.
  * 응답을 바꾸는 테스트는 willRespond·willFind 로 정하고 @AfterEach 에서 reset() 한다.
+ * test.pg.fake-gateway.enabled=false 면 만들지 않는다: 실제 PgClient 를 HTTP 가짜 PG 에 붙이는 테스트(W10 CheckoutIncidentTest)만 끈다.
  */
+@ConditionalOnProperty(name = "test.pg.fake-gateway.enabled", havingValue = "true", matchIfMissing = true)
 @Primary
 @Component
 public class FakePaymentGateway implements PaymentGateway {

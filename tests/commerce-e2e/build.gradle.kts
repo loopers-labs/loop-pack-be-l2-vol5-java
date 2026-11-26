@@ -59,4 +59,6 @@ tasks.test {
     forkEvery = 1
     systemProperty("e2e.outbox-sql", rootProject.file("docs/week7/order-event-outbox.sql").absolutePath)
     systemProperty("ranking.weekly-sql", rootProject.file("docs/week9/weekly-ranking.sql").absolutePath)
+    // W10 사고 실험 증거. 실행마다 이 아래 새 폴더({runId})를 만든다
+    systemProperty("e2e.incident-evidence-dir", layout.buildDirectory.dir("incident-evidence").get().asFile.absolutePath)
 }

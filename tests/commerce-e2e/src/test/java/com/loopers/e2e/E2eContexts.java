@@ -26,16 +26,21 @@ public final class E2eContexts {
         KafkaTestContainersConfig.bootstrapServers();
     }
 
-    /** commerce-api context. HTTP 는 임의 포트. extraSources 는 이번 실행에만 넣을 구성 (예: 보존한 W6 경로). */
+    /**
+     * commerce-api context. HTTP 는 임의 포트. extraSources 는 이번 실행에만 넣을 구성 (예: 보존한 W6 경로).
+     * properties 에 기본값과 같은 키가 있으면 기본값을 뺀다 (명령행 인자는 같은 키가 둘이면 값이 합쳐진다. 예: server.port 를 미리 정할 때).
+     */
     public static ConfigurableApplicationContext startApi(String topic, List<String> properties, Class<?>... extraSources) {
         List<Class<?>> sources = new ArrayList<>(List.of(E2eApiApplication.class));
         sources.addAll(List.of(extraSources));
+        List<String> overridden = properties.stream().map(property -> property.substring(0, property.indexOf('='))).toList();
         List<String> props = new ArrayList<>(List.of(
             "spring.config.name=e2e-commerce-api",
             "server.port=0",
             "management.server.port=0",
             "kafka.topics.order-events.name=" + topic
         ));
+        props.removeIf(property -> overridden.contains(property.substring(0, property.indexOf('='))));
         props.addAll(properties);
         return new SpringApplicationBuilder(sources.toArray(Class<?>[]::new))
             .web(WebApplicationType.SERVLET)

@@ -1,0 +1,37 @@
+{
+  "runId" : "20261125T074911Z-9bacc715",
+  "files" : {
+    "00-run.json" : "2d3df3b61fb89e6e1b496ffebe9f3bb26ce6a14f6640429f3bf33b62733573fc",
+    "01-baseline.prom" : "2e1bb8d661a94a20d71feb9835a50af83e34542065b71c1680456e49cc4a7263",
+    "01-baseline.json" : "e3272c26de7301c6d2c22814990ad7fe86fde29d83a6f5a5284f33bcdbd8ceab",
+    "02-fault.prom" : "fa9a098465c616df0f14788da690c5e5119667a91d857c648c3285b515336f15",
+    "02-fault.json" : "230f8b273ae7bd1a4ff7e20f22f049d00221c2d0d9f6eda76e26b5b372ae83bb",
+    "03-diagnosis.json" : "c9abf6fa02bdf4ed4f616ef5b15f41bd0ccde29b783c4164f11bcc04769bf8ae",
+    "04-recovery.prom" : "1fe3fd20c442b9e8ba35e21cfbdda5f6b077d4345d96eff54897f44e55d639df",
+    "04-recovery.json" : "d68f401e698cc36b32fdd9823ff9957b982c43f24897e133cbab871d84e14152",
+    "05-downstream.json" : "0206298a094be28f2aabe4ac339a5848dde5fba530ef8b0838315d15a517fe5e",
+    "boundary-logs.jsonl" : "8180234c6d6ec9cde7ffb4b92f0be529e07294f62f3e4de941a6ae830a5019c6"
+  },
+  "result" : "PASSED",
+  "faultFile" : {
+    "sha256AtWrite" : "230f8b273ae7bd1a4ff7e20f22f049d00221c2d0d9f6eda76e26b5b372ae83bb",
+    "name" : "02-fault.json",
+    "sha256AtEnd" : "230f8b273ae7bd1a4ff7e20f22f049d00221c2d0d9f6eda76e26b5b372ae83bb",
+    "preserved" : true
+  },
+  "summary" : {
+    "baseline" : [ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 ],
+    "faultSet" : [ 11, 12, 13, 14, 15, 16, 17, 18, 19, 20 ],
+    "faulted" : [ 13, 16, 19 ],
+    "verdicts" : {
+      "13" : "RESPONSE_LOST",
+      "16" : "RESPONSE_LOST",
+      "19" : "RESPONSE_LOST"
+    },
+    "pgCreates" : 20,
+    "pgLookups" : 23,
+    "pgCallbacks" : 20,
+    "rankingSnapshot" : "weekly:2026-11-16:r1",
+    "ranking" : [ [ 1, 20, 1 ] ]
+  }
+}

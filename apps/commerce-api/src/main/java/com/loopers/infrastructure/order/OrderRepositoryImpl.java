@@ -1,5 +1,6 @@
 package com.loopers.infrastructure.order;
 
+import com.loopers.domain.order.AwaitingPaymentCounts;
 import com.loopers.domain.order.OrderEventOutboxModel;
 import com.loopers.domain.order.OrderModel;
 import com.loopers.domain.order.OrderRepository;
@@ -44,6 +45,13 @@ public class OrderRepositoryImpl implements OrderRepository {
     public Optional<OrderModel> findExpiredAwaitingForUpdate(ZonedDateTime startedBefore) {
         return orderJpaRepository.findFirstByStatusAndPaymentStartedAtLessThanEqualOrderByPaymentStartedAtAsc(
             OrderStatus.AWAITING_PAYMENT, startedBefore);
+    }
+
+    @Override
+    public AwaitingPaymentCounts countAwaitingPayment() {
+        OrderJpaRepository.StatusCountRow row = orderJpaRepository.countByStatusWithTransactionKey(OrderStatus.AWAITING_PAYMENT);
+        long withKey = row.getWithTransactionKey();
+        return new AwaitingPaymentCounts(withKey, row.getTotal() - withKey);
     }
 
     @Override
