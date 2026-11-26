@@ -150,7 +150,10 @@ public class PaymentTransactions {
                 order.completePgPayment(attempt.getAmount(), clock.instant());
                 reservation.consume();
                 // 확정 사실과 보낼 사실을 함께 commit한다. Outbox 저장이 실패하면 확정·예약 소비도 rollback된다 (W7 design.md 3절)
-                eventId = orderOutboxService.append(OrderConfirmedEvent.from(order), order.getConfirmedAt()).getEventId();
+                OrderConfirmedEvent event = OrderConfirmedEvent.from(order);
+                orderOutboxService.append(event, order.getConfirmedAt());
+                // 로그용 eventId는 append 반환값이 아니라 같은 사건에서 읽는다. 로그가 Outbox 저장 결과에 기대어 흐름을 바꾸지 않게 한다
+                eventId = event.eventId();
             }
             case FAILED -> {
                 order.failPgPayment();
