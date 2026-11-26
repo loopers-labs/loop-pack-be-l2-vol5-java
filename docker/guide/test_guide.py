@@ -106,11 +106,15 @@ def prometheus_ok(path, body):
     if "commerce_payment_unresolved" in query and "by (status)" in query:
         result = [{"metric": {"status": "unknown"}, "value": [0, "50"]},
                   {"metric": {"status": "needs_review"}, "value": [0, "2"]}]
-    elif "commerce_payment_refund_cases" in query and "by (status)" in query:
-        result = [{"metric": {"status": "handed_to_human"}, "value": [0, "12"]},
-                  {"metric": {"status": "refund_unknown"}, "value": [0, "1"]}]
-    elif "refund_outcome" in query:
+    elif "commerce_payment_refund_cases" in query and "by (money_status)" in query:
+        result = [{"metric": {"money_status": "charged"}, "value": [0, "12"]},
+                  {"metric": {"money_status": "refund_unknown"}, "value": [0, "1"]}]
+    elif "commerce_payment_refund_person_open" in query:
+        result = [{"metric": {}, "value": [0, "11"]}]
+    elif "commerce_payment_refund_person_assigned_total" in query:
         result = [{"metric": {}, "value": [0, "4"]}]
+    elif "commerce_payment_refund_requested_oldest_age_seconds" in query:
+        result = [{"metric": {}, "value": [0, "900"]}]
     elif "unknown_entered" in query:
         result = [{"metric": {}, "value": [0, "0.006006006006006006"]}]
     else:
@@ -171,6 +175,14 @@ class GuideTestBase(unittest.TestCase):
 
     def slack_messages(self):
         return [json.loads(r["body"]) for r in self.slack.requests]
+
+
+def refund_piling_alert():
+    alert = json.loads(json.dumps(ALERT))
+    alert["groupLabels"]["alertname"] = alert["commonLabels"]["alertname"] = "PaymentRefundPiling"
+    alert["alerts"][0]["labels"]["alertname"] = "PaymentRefundPiling"
+    alert["alerts"][0]["annotations"]["runbook_url"] = "docs/runbook/week10.md#paymentrefundpiling"
+    return alert
 
 
 class GuideTest(GuideTestBase):
@@ -362,22 +374,39 @@ class GuideTest(GuideTestBase):
         self.assertIn("unknown=50", messages[0]["text"])
         self.assertIn("AI 요약 없음: LLM 호출 실패(", messages[0]["text"])
 
-    def test_g11_환불_누적_critical에는_환불_확인_대상_상태별과_사람_이관_증가를_근거로_붙인다(self):
+    def test_g11_환불_누적_critical에는_돈의_상태별_사람_담당_중_이관_증가_요청_정체를_근거로_붙인다(self):
         self.start(api_key="test-key")
-        alert = json.loads(json.dumps(ALERT))
-        alert["groupLabels"]["alertname"] = alert["commonLabels"]["alertname"] = "PaymentRefundPiling"
-        alert["alerts"][0]["labels"]["alertname"] = "PaymentRefundPiling"
-        alert["alerts"][0]["annotations"]["runbook_url"] = "docs/runbook/week10.md#paymentrefundpiling"
 
-        status = self.post_alert(json.dumps(alert).encode())
+        status = self.post_alert(json.dumps(refund_piling_alert()).encode())
 
         self.assertEqual(200, status)
         text = self.slack_messages()[0]["text"]
-        self.assertIn("환불 확인 대상 상태별: handed_to_human=12, refund_unknown=1", text)
-        self.assertIn("사람 이관 증가(30분): 4", text)
+        self.assertIn("환불 확인 대상 돈의 상태별: charged=12, refund_unknown=1", text)
+        self.assertIn("사람 담당 중: 11", text)
+        self.assertIn("사람 담당 이관 증가(30분): 4", text)
+        self.assertIn("환불 요청 정체 경과(가장 오래된 건): 15분", text)
         sent = json.loads(self.llm.requests[0]["body"].decode("utf-8"))["messages"][0]["content"]
-        self.assertIn('"handed_to_human": 12', sent, "LLM에도 집계만 보낸다")
-        self.assertIn("환불 확인 대상 상태별", sent, "어디부터 볼지에 환불 패널 이름을 준다")
+        self.assertIn('"charged": 12', sent, "LLM에도 집계만 보낸다")
+        self.assertIn('"refund_person_open": 11', sent)
+        self.assertIn("환불 확인 대상 돈의 상태별·사람 담당 중", sent, "어디부터 볼지에 환불 패널 이름을 준다")
+        self.assertIn("환불 요청 정체 경과", sent)
+
+    def test_g12_환불_요청_정체가_2일이어도_분으로_보내_숫자_ID_검사에_걸리지_않고_LLM을_부른다(self):
+        def prometheus_old_request(path, body):
+            if "oldest_age_seconds" in parse_qs(urlparse(path).query)["query"][0]:
+                return 200, {"status": "success", "data": {"resultType": "vector",
+                                                           "result": [{"metric": {}, "value": [0, "172800"]}]}}
+            return prometheus_ok(path, body)
+
+        self.start(prometheus=prometheus_old_request, api_key="test-key")
+
+        status = self.post_alert(json.dumps(refund_piling_alert()).encode())
+
+        self.assertEqual(200, status)
+        self.assertEqual(1, len(self.llm.requests), "6자리 이상 숫자가 없어 LLM을 부른다")
+        sent = self.llm.requests[0]["body"].decode("utf-8")
+        self.assertNotIn("172800", sent)
+        self.assertIn("환불 요청 정체 경과(가장 오래된 건): 2880분", self.slack_messages()[0]["text"])
 
     def test_metrics_가동과_처리_실패_수를_낸다(self):
         self.start(prometheus=lambda path, body: (500, {"status": "error"}))

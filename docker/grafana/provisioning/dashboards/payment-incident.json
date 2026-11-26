@@ -522,8 +522,8 @@
     {
       "id": 10,
       "type": "timeseries",
-      "title": "환불 확인 대상 상태별",
-      "description": "만료 뒤 늦은 성공의 환불 확인 대상 수(tracking·refund_requested·refund_unknown·refunded·closed_no_charge·handed_to_human). DB 주기 조회라 갱신 주기만큼 늦다. 빨간 선은 critical 건수 조건 10건(handed_to_human).\nrunbook: https://github.com/loopers-labs/loop-pack-be-l2-vol5-java/blob/L2J4Dot/docs/runbook/week10.md#paymentrefundhandedtohuman / runbook: https://github.com/loopers-labs/loop-pack-be-l2-vol5-java/blob/L2J4Dot/docs/runbook/week10.md#paymentrefundunknown / runbook: https://github.com/loopers-labs/loop-pack-be-l2-vol5-java/blob/L2J4Dot/docs/runbook/week10.md#paymentrefundpiling",
+      "title": "환불 확인 대상 돈의 상태별·사람 담당 중",
+      "description": "만료 뒤 늦은 성공의 환불 확인 대상 수. 선 6개는 돈의 상태(checking·charged·refund_requested·refund_unknown·refunded·no_charge), person_open은 사람 담당 중(담당 종료 전) 건수다. 담당은 돈의 상태와 다른 축이라 합계에 더하지 않는다. DB 주기 조회라 갱신 주기만큼 늦다. 빨간 선은 critical 건수 조건 10건(person_open).\nrunbook: https://github.com/loopers-labs/loop-pack-be-l2-vol5-java/blob/L2J4Dot/docs/runbook/week10.md#paymentrefundneedsperson / runbook: https://github.com/loopers-labs/loop-pack-be-l2-vol5-java/blob/L2J4Dot/docs/runbook/week10.md#paymentrefundunknown / runbook: https://github.com/loopers-labs/loop-pack-be-l2-vol5-java/blob/L2J4Dot/docs/runbook/week10.md#paymentrefundpiling",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -531,7 +531,7 @@
       "gridPos": {
         "x": 0,
         "y": 42,
-        "w": 24,
+        "w": 16,
         "h": 8
       },
       "fieldConfig": {
@@ -572,8 +572,81 @@
       },
       "targets": [
         {
-          "expr": "max by (status) (commerce_payment_refund_cases)",
-          "legendFormat": "{{status}}",
+          "expr": "max by (money_status) (commerce_payment_refund_cases)",
+          "legendFormat": "{{money_status}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A"
+        },
+        {
+          "expr": "max(commerce_payment_refund_person_open)",
+          "legendFormat": "person_open",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "환불 요청 정체 경과",
+      "description": "환불 요청함(refund_requested) 중 가장 오래된 건의 요청 뒤 경과(초, 없으면 0). 정상이면 몇 분 안에 환불됨·결과 모름으로 넘어간다. 빨간 선은 warning 기준 600초[임시](5분 지속).\nrunbook: https://github.com/loopers-labs/loop-pack-be-l2-vol5-java/blob/L2J4Dot/docs/runbook/week10.md#paymentrefundrequeststuck",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 42,
+        "w": 8,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "spanNulls": false,
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 600
+              }
+            ]
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "expr": "max(commerce_payment_refund_requested_oldest_age_seconds)",
+          "legendFormat": "oldest_age",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"

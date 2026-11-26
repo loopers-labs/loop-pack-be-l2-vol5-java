@@ -30,11 +30,11 @@ QUERIES = {
         " / clamp_min(sum(increase(commerce_payment_started_total[30m])), 1)"
     ),
     "expired_increase_10m": 'sum(increase(commerce_payment_outcome_total{result="expired"}[10m]))',
-    # 환불 확인 대상(5단계). status는 유한한 소문자 값이라 LLM에 그대로 보내도 된다.
-    "refund_cases_by_status": "max by (status) (commerce_payment_refund_cases)",
-    "refund_handed_to_human_increase_30m": (
-        'sum(increase(commerce_payment_refund_outcome_total{result="handed_to_human"}[30m]))'
-    ),
+    # 환불 확인 대상(5b 두 축). money_status는 유한한 소문자 값이라 LLM에 그대로 보내도 된다. 식별자 없는 집계만 묻는다.
+    "refund_cases_by_money_status": "max by (money_status) (commerce_payment_refund_cases)",
+    "refund_person_open": "max(commerce_payment_refund_person_open)",
+    "refund_person_assigned_increase_30m": "sum(increase(commerce_payment_refund_person_assigned_total[30m]))",
+    "refund_requested_oldest_age_seconds": "max(commerce_payment_refund_requested_oldest_age_seconds)",
 }
 # 경계 로그는 logger OrderApplicationService가 남긴다(설계 문서 10주차 2-2). label은 app·level만 있다.
 LOKI_QUERY = '{app="commerce-api", level=~"WARN|ERROR"} |= "OrderApplicationService"'
@@ -193,19 +193,22 @@ def query_prometheus(config, deadline):
         if body.get("status") != "success":
             raise EvidenceError(f"Prometheus 조회 실패({name}: status={body.get('status')})")
         results[name] = body["data"]["result"]
-    def by_status(rows):
-        return dict(sorted((row["metric"].get("status", "?"), round(float(row["value"][1]), 1)) for row in rows))
+    def by_label(rows, label):
+        return dict(sorted((row["metric"].get(label, "?"), round(float(row["value"][1]), 1)) for row in rows))
 
     # 반올림한다. 긴 소수 자릿수가 숫자 ID처럼 보여 LLM 전송 확인에 걸리지 않게 하기 위해서다.
     def scalar(rows):
         return round(float(rows[0]["value"][1]), 4) if rows else 0.0
 
     return {
-        "unresolved_by_status": by_status(results["unresolved_by_status"]),
+        "unresolved_by_status": by_label(results["unresolved_by_status"], "status"),
         "unknown_inflow_ratio_30m": scalar(results["unknown_inflow_ratio_30m"]),
         "expired_increase_10m": scalar(results["expired_increase_10m"]),
-        "refund_cases_by_status": by_status(results["refund_cases_by_status"]),
-        "refund_handed_to_human_increase_30m": scalar(results["refund_handed_to_human_increase_30m"]),
+        "refund_cases_by_money_status": by_label(results["refund_cases_by_money_status"], "money_status"),
+        "refund_person_open": scalar(results["refund_person_open"]),
+        "refund_person_assigned_increase_30m": scalar(results["refund_person_assigned_increase_30m"]),
+        # 분으로 줄여 보낸다. 2일(172800초)처럼 6자리 이상 숫자는 숫자 ID로 보여 LLM 전송 확인에 걸린다.
+        "refund_requested_oldest_age_minutes": round(scalar(results["refund_requested_oldest_age_seconds"]) / 60),
     }
 
 
@@ -282,7 +285,7 @@ def build_llm_input(overview, evidence, config):
         "boundary_log_kinds": evidence["loki"]["kinds"][:15],
         "where_to_look": {
             "dashboard_panels": ["미확인 결제 상태별", "시작 대비 결과 모름 유입 비율(30분)", "만료 종결 증가(10분)",
-                                 "환불 확인 대상 상태별", "주문 번호로 경계 로그"],
+                                 "환불 확인 대상 돈의 상태별·사람 담당 중", "환불 요청 정체 경과", "주문 번호로 경계 로그"],
             "runbook_anchors": [f"{config.runbook_base}#{name.lower()}" for name in overview["alertnames"]],
             "loki_query_examples": [
                 '{app="commerce-api", level="WARN"} |= "result=Unknown"',
@@ -327,8 +330,11 @@ def render_guided(overview, evidence, ai_text, ai_note):
         "- 미확인 상태별: " + (", ".join(f"{k}={v:g}" for k, v in p["unresolved_by_status"].items()) or "없음"),
         f"- 결과 모름 유입 비율(30분): {p['unknown_inflow_ratio_30m'] * 100:.2f}%",
         f"- 만료 종결 증가(10분): {p['expired_increase_10m']:g}",
-        "- 환불 확인 대상 상태별: " + (", ".join(f"{k}={v:g}" for k, v in p["refund_cases_by_status"].items()) or "없음"),
-        f"- 사람 이관 증가(30분): {p['refund_handed_to_human_increase_30m']:g}",
+        "- 환불 확인 대상 돈의 상태별: "
+        + (", ".join(f"{k}={v:g}" for k, v in p["refund_cases_by_money_status"].items()) or "없음"),
+        f"- 사람 담당 중: {p['refund_person_open']:g}",
+        f"- 사람 담당 이관 증가(30분): {p['refund_person_assigned_increase_30m']:g}",
+        f"- 환불 요청 정체 경과(가장 오래된 건): {p['refund_requested_oldest_age_minutes']}분",
         f"근거(Loki, 최근 30분 경계 로그 WARN·ERROR {evidence['loki']['total']}줄):",
     ]
     lines += [f"- {k['count']}줄 {k['level']} {k['pattern']}" for k in evidence["loki"]["kinds"][:5]] or ["- 없음"]
