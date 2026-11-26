@@ -58,6 +58,8 @@ val weeklyRankingBatchChildClasspath =
 
 // O11(설계 W7.4-2): W6 준비→W7 복구 E2E 는 빈 fixture DB 가 필요해 새 worker JVM 의 전용 작업에서만 실행한다.
 val w6OutboxRecoveryClass = "com.loopers.infrastructure.order.W6OutboxRecoveryEndToEndIntegrationTest"
+// W10(checkout-incident §6.1): 20주문 사고 시나리오의 AUTO wrapper 는 전용 작업에서만 실행한다.
+val checkoutIncidentClass = "com.loopers.infrastructure.order.CheckoutIncidentTest"
 
 tasks.test {
     dependsOn(streamerBootJar)
@@ -74,10 +76,16 @@ tasks.test {
     jvmArgumentProviders.add(CommandLineArgumentProvider {
         listOf("-Dweekly-ranking.batch-child.classpath=" + weeklyRankingBatchChildClasspath.asPath)
     })
-    // 일반 test 에서는 O11 클래스 하나만 정확히 제외한다. 다른 테스트는 제외하지 않는다.
-    filter { excludeTestsMatching(w6OutboxRecoveryClass) }
+    // 일반 test 에서는 O11·W10 전용 작업 클래스만 정확히 제외한다. 다른 테스트는 제외하지 않는다.
+    filter {
+        excludeTestsMatching(w6OutboxRecoveryClass)
+        excludeTestsMatching(checkoutIncidentClass)
+    }
     // 08-3: 한 worker 의 캐시된 Spring context(최대 32)가 기본 512m 를 넘겨 OutOfMemoryError 가 났다. 기대·시간 한도는 그대로다.
     maxHeapSize = "1g"
+    // W10 단위E: 한 worker 에서 회수되지 않은 context 가 캐시 상한을 넘어 142개까지 쌓여 1g 도 다 썼다.
+    // 원인 제거(테스트 경량화)는 후속이며, 여기서는 30개 클래스마다 새 JVM 으로 교체해 누적 상한만 둔다.
+    forkEvery = 30
 }
 
 val w6OutboxRecoveryTest = tasks.register<Test>("w6OutboxRecoveryTest") {
@@ -116,9 +124,54 @@ tasks.check {
     dependsOn(w6OutboxRecoveryTest)
 }
 
+val checkoutIncidentTest = tasks.register<Test>("checkoutIncidentTest") {
+    description = "W10: 20주문 baseline→fault→recovery 와 후속 활동·랭킹을 실제 DB·PG·Kafka·자식으로 자동 검증한다(AUTO)."
+    group = "verification"
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    // 일반 test 의 streamer·batch child 연결은 이 작업에 상속되지 않으므로 준비·입력·경로를 다시 명시한다.
+    dependsOn(tasks.named("testClasses"), streamerBootJar, prepareWeeklyRankingBatchChildClasses)
+    inputs.file(streamerBootJar.flatMap { it.archiveFile })
+        .withPropertyName("c10StreamerBootJar")
+        .withPathSensitivity(PathSensitivity.NONE)
+    jvmArgumentProviders.add(CommandLineArgumentProvider {
+        listOf("-Dc10.streamer.boot-jar=" + streamerBootJar.get().archiveFile.get().asFile.absolutePath)
+    })
+    inputs.files(weeklyRankingBatchChildClasspath)
+        .withPropertyName("weeklyRankingBatchChildClasspath")
+        .withNormalizer(ClasspathNormalizer::class)
+    jvmArgumentProviders.add(CommandLineArgumentProvider {
+        listOf("-Dweekly-ranking.batch-child.classpath=" + weeklyRankingBatchChildClasspath.asPath)
+    })
+    // opt-in: -Pw10ObservePort=8081 이면 management 를 그 포트로 띄워 공유 Prometheus 가 실행 중 지표를 수집할 수 있게 한다.
+    val observePort = providers.gradleProperty("w10ObservePort")
+    jvmArgumentProviders.add(CommandLineArgumentProvider {
+        observePort.orNull?.let { listOf("-Dw10.observe-management-port=$it") } ?: emptyList()
+    })
+    useJUnitPlatform()
+    systemProperty("user.timezone", "Asia/Seoul")
+    systemProperty("spring.profiles.active", "test")
+    jvmArgs("-Xshare:off")
+    maxHeapSize = "1g"
+    filter {
+        includeTestsMatching(checkoutIncidentClass)
+        isFailOnNoMatchingTests = true
+    }
+    maxParallelForks = 1
+    forkEvery = 1
+    mustRunAfter(tasks.test)
+    outputs.upToDateWhen { false }
+    outputs.doNotCacheIf("실제 외부 자원 관찰 E2E") { true }
+    // 결과와 JaCoCo exec 는 작업 이름별 기본 경로(test-results/checkoutIncidentTest, jacoco/checkoutIncidentTest.exec)다.
+}
+
+tasks.check {
+    dependsOn(checkoutIncidentTest)
+}
+
 // 기존 report 는 jacoco/*.exec 를 모두 수집한다. 전용 작업의 exec 도 report 전에 만들어지도록 순서만 더한다.
 tasks.withType<JacocoReport> {
-    mustRunAfter(w6OutboxRecoveryTest)
+    mustRunAfter(w6OutboxRecoveryTest, checkoutIncidentTest)
 }
 
 checkstyle {

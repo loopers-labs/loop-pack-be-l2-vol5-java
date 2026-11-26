@@ -56,6 +56,11 @@ public final class ResponsePlan {
         return new ResponsePlan(null, ReplyMode.CLOSE_EARLY, 0, null, 0, null, null);
     }
 
+    /** CREATE 전용. PG에 SUCCESS 거래를 저장한 뒤 응답 본문 일부만 보내고 연결을 닫는다. */
+    public static ResponsePlan successThenCloseEarly() {
+        return new ResponsePlan(CreateOutcome.SUCCESS, ReplyMode.CLOSE_EARLY, 0, null, 0, null, null);
+    }
+
     /** PG 응답 대신 이 상태·본문·header 를 보낸다. 저장소는 바꾸지 않는다. */
     public static ResponsePlan raw(int httpStatus, String body, Map<String, String> headers) {
         return new ResponsePlan(null, ReplyMode.RAW, 0, null, httpStatus, body, headers);

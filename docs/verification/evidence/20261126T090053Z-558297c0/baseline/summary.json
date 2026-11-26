@@ -1,0 +1,24 @@
+{
+  "orderStatus" : {
+    "CONFIRMED" : 10
+  },
+  "paymentStatus" : {
+    "SUCCESS" : 10
+  },
+  "cohortPgSuccess" : 10,
+  "pgTransactions" : 10,
+  "createReceived" : 10,
+  "stockA" : 80,
+  "stockB" : 90,
+  "outbox" : 10,
+  "activityRows" : 20,
+  "quantityA" : 20,
+  "quantityB" : 10,
+  "reservationRows" : 20,
+  "releaseRows" : 0,
+  "deductionRows" : 0,
+  "unknownPaymentsAll" : 0,
+  "confirmedAt" : [ "2026-11-23 01:00:00.000000" ],
+  "activityRowsByOrder" : [ "10:1:2", "10:2:1", "1:1:2", "1:2:1", "2:1:2", "2:2:1", "3:1:2", "3:2:1", "4:1:2", "4:2:1", "5:1:2", "5:2:1", "6:1:2", "6:2:1", "7:1:2", "7:2:1", "8:1:2", "8:2:1", "9:1:2", "9:2:1" ],
+  "reservationRowsByOrder" : [ "10:1:2:2", "10:2:1:1", "1:1:2:2", "1:2:1:1", "2:1:2:2", "2:2:1:1", "3:1:2:2", "3:2:1:1", "4:1:2:2", "4:2:1:1", "5:1:2:2", "5:2:1:1", "6:1:2:2", "6:2:1:1", "7:1:2:2", "7:2:1:1", "8:1:2:2", "8:2:1:1", "9:1:2:2", "9:2:1:1" ]
+}

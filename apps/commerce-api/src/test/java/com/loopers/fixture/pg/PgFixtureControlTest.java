@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 
 import java.io.IOException;
@@ -21,6 +22,7 @@ import java.net.http.HttpResponse;
 import java.net.http.HttpTimeoutException;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -401,6 +403,142 @@ class PgFixtureControlTest {
                 () -> assertThat(failure).isInstanceOf(IOException.class),
                 () -> assertThat(pg.state().transactions()).isEqualTo(before),
                 () -> assertThat(get("/api/v1/payments/" + key).statusCode()).isEqualTo(200)
+            );
+        }
+    }
+
+    @DisplayName("SUCCESS 저장 후 생성 응답을 유실시킬 때(W10),")
+    @Nested
+    class SuccessThenLostResponse {
+
+        @DisplayName("SUCCESS 거래를 먼저 저장하고 생성 응답만 끊으며, 권위 조회는 같은 SUCCESS 거래를 돌려준다.")
+        @Test
+        void storesSuccessThenClosesCreateResponse() {
+            String orderId = "LP-ORD-0000000190";
+            FixtureState beforeEnqueue = pg.state();
+            pg.enqueuePlan(PgOperation.CREATE, orderId, ResponsePlan.successThenCloseEarly());
+            FixtureState afterEnqueue = pg.state();
+
+            Throwable failure = sendExpectingFailure(createRequest(validBody(orderId, 7000)));
+            awaitHandlersFinished();
+
+            FixtureState state = pg.state();
+            JournalEntry entry = state.journal().get(0);
+            String key = entry.createdTransactionKey();
+            System.out.println("[SUCCESS+CLOSE_EARLY CREATE] client failure: " + describe(failure)
+                + (failure.getCause() == null ? "" : " / cause: " + describe(failure.getCause())));
+            assertAll(
+                () -> assertThat(afterEnqueue).as("등록만으로 거래·journal·카운터 변화 없음").isEqualTo(beforeEnqueue),
+                () -> assertThat(failure).as("완전한 생성 응답을 받지 못함").isInstanceOf(IOException.class),
+                () -> assertThat(key).isNotNull(),
+                () -> assertThat(state.transactions()).as("작업 완료 후 SUCCESS 거래 정확히 1개")
+                    .containsExactly(new TransactionSnapshot(key, orderId, 7000, PaymentStatus.SUCCESS)),
+                () -> assertThat(state.counts()).isEqualTo(new RequestCounts(1, 0, 0, 0)),
+                () -> assertThat(state.journal()).hasSize(1),
+                () -> assertThat(entry.operation()).isEqualTo(PgOperation.CREATE),
+                () -> assertThat(entry.target()).isEqualTo(orderId),
+                () -> assertThat(entry.failure()).isEqualTo(ResponseFailure.CLOSED_EARLY),
+                () -> assertThat(entry.responseStatus()).as("보내려 한 상태는 즉시 성공 200").isEqualTo(200),
+                () -> assertThat(entry.receivedAt()).isNotNull(),
+                () -> assertThat(entry.completedAt()).isNotNull().isAfterOrEqualTo(entry.receivedAt()),
+                () -> assertThat(state.activeRequests()).isZero(),
+                () -> assertThat(state.activeCallbackJobs()).isZero()
+            );
+
+            HttpResponse<String> byKey = get("/api/v1/payments/" + key);
+            HttpResponse<String> byOrder = get("/api/v1/payments?orderId=" + orderId);
+            awaitHandlersFinished();
+
+            JsonNode transaction = readJson(byKey);
+            FixtureState afterLookup = pg.state();
+            assertAll(
+                () -> assertThat(byKey.statusCode()).isEqualTo(200),
+                () -> assertThat(transaction.get("transactionKey").textValue()).isEqualTo(key),
+                () -> assertThat(transaction.get("orderId").textValue()).isEqualTo(orderId),
+                () -> assertThat(transaction.get("amount").longValue()).isEqualTo(7000),
+                () -> assertThat(transaction.get("status").textValue()).isEqualTo("SUCCESS"),
+                () -> assertThat(byOrder.statusCode()).isEqualTo(200),
+                () -> assertThat(transactionKeys(readJson(byOrder))).containsExactly(key),
+                () -> assertThat(afterLookup.transactions()).as("조회 후에도 거래 변화 없음").isEqualTo(state.transactions()),
+                () -> assertThat(afterLookup.counts()).as("조회 후 create 수 불변").isEqualTo(new RequestCounts(1, 1, 1, 0)),
+                () -> assertThat(afterLookup.journal()).extracting(JournalEntry::operation, JournalEntry::failure)
+                    .containsExactly(
+                        tuple(PgOperation.CREATE, ResponseFailure.CLOSED_EARLY),
+                        tuple(PgOperation.LOOKUP_TRANSACTION, null),
+                        tuple(PgOperation.LOOKUP_ORDER, null))
+            );
+        }
+
+        @DisplayName("같은 대상 FIFO 에서 기존 closeEarly 와 섞어도 순차 요청마다 plan 하나씩만 소비한다.")
+        @Test
+        void consumesOncePreservingFifo() {
+            String orderId = "LP-ORD-0000000191";
+            String other = "LP-ORD-0000000192";
+            pg.enqueuePlan(PgOperation.CREATE, orderId, ResponsePlan.successThenCloseEarly());
+            pg.enqueuePlan(PgOperation.CREATE, orderId, ResponsePlan.closeEarly());
+
+            Throwable first = sendExpectingFailure(createRequest(validBody(orderId, 7000)));
+            int otherStatus = post(other, 7000).statusCode();
+            Throwable second = sendExpectingFailure(createRequest(validBody(orderId, 7000)));
+            int thirdStatus = post(orderId, 7000).statusCode();
+            awaitHandlersFinished();
+
+            FixtureState state = pg.state();
+            List<JournalEntry> journal = state.journal().stream()
+                .sorted(Comparator.comparingLong(JournalEntry::sequence)).toList();
+            Map<String, PaymentStatus> statusByKey = new LinkedHashMap<>();
+            state.transactions().forEach(transaction -> statusByKey.put(transaction.transactionKey(), transaction.status()));
+            assertAll(
+                () -> assertThat(first).isInstanceOf(IOException.class),
+                () -> assertThat(second).isInstanceOf(IOException.class),
+                () -> assertThat(otherStatus).as("다른 대상은 plan 없이 기본 응답").isEqualTo(202),
+                () -> assertThat(thirdStatus).as("두 plan 소비 뒤 기본 응답").isEqualTo(202),
+                () -> assertThat(state.counts()).isEqualTo(new RequestCounts(4, 0, 0, 0)),
+                () -> assertThat(state.transactions()).as("응답 유실도 실제 생성 4건").hasSize(4),
+                () -> assertThat(journal).extracting(JournalEntry::target, JournalEntry::responseStatus,
+                        JournalEntry::failure)
+                    .containsExactly(
+                        tuple(orderId, 200, ResponseFailure.CLOSED_EARLY),
+                        tuple(other, 202, null),
+                        tuple(orderId, 202, ResponseFailure.CLOSED_EARLY),
+                        tuple(orderId, 202, null)),
+                () -> assertThat(journal).extracting(entry -> statusByKey.get(entry.createdTransactionKey()))
+                    .as("거래 상태는 생성 시 정한 값")
+                    .containsExactly(PaymentStatus.SUCCESS, PaymentStatus.PENDING, PaymentStatus.PENDING,
+                        PaymentStatus.PENDING)
+            );
+        }
+
+        @DisplayName("조회 operation 에 등록하면 IllegalArgumentException 이고 숨은 plan 을 남기지 않는다.")
+        @ParameterizedTest(name = "{0}")
+        @EnumSource(value = PgOperation.class, names = {"LOOKUP_TRANSACTION", "LOOKUP_ORDER"})
+        void rejectsLookupOperations(PgOperation operation) {
+            String orderId = "LP-ORD-0000000193";
+            String key = transactionKeyOf(post(orderId, 7000));
+            awaitHandlersFinished();
+            String target = operation == PgOperation.LOOKUP_TRANSACTION ? key : orderId;
+            FixtureState before = pg.state();
+
+            assertThatThrownBy(() -> pg.enqueuePlan(operation, target, ResponsePlan.successThenCloseEarly()))
+                .isInstanceOf(IllegalArgumentException.class);
+            FixtureState afterRejected = pg.state();
+
+            HttpResponse<String> byKey = get("/api/v1/payments/" + key);
+            HttpResponse<String> byOrder = get("/api/v1/payments?orderId=" + orderId);
+            awaitHandlersFinished();
+
+            FixtureState state = pg.state();
+            assertAll(
+                () -> assertThat(afterRejected).as("거절 후 상태 변화 없음").isEqualTo(before),
+                () -> assertThat(byKey.statusCode()).isEqualTo(200),
+                () -> assertThat(readJson(byKey).get("status").textValue()).isEqualTo("PENDING"),
+                () -> assertThat(byOrder.statusCode()).isEqualTo(200),
+                () -> assertThat(transactionKeys(readJson(byOrder))).containsExactly(key),
+                () -> assertThat(state.transactions()).isEqualTo(before.transactions()),
+                () -> assertThat(state.counts()).isEqualTo(new RequestCounts(1, 1, 1, 0)),
+                () -> assertThat(state.journal()).extracting(JournalEntry::responseStatus, JournalEntry::failure)
+                    .as("이후 정상 조회에 숨은 plan 미적용")
+                    .containsExactly(tuple(202, null), tuple(200, null), tuple(200, null))
             );
         }
     }

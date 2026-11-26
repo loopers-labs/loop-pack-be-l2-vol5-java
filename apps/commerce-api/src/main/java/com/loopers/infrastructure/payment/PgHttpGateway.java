@@ -6,16 +6,21 @@ import com.loopers.domain.payment.ObservationSource;
 import com.loopers.domain.payment.PaymentGateway;
 import com.loopers.domain.payment.PaymentObservation;
 import com.loopers.domain.payment.PaymentRequest;
+import com.loopers.support.logging.DiagnosticLog;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 
 import java.net.URI;
+import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.UUID;
 import java.util.function.Supplier;
 
 /**
@@ -34,9 +39,23 @@ import java.util.function.Supplier;
  * 풀에서 연결을 얻지 못함       이 호출의 POST exchange 가 정확히 1번(최초 연결 획득에서 실패)  POOL_ACQUIRE_TIMEOUT
  * 그 밖의 풀 대기 실패·통신 실패  -                                                        확인 불가(UNKNOWN 유지)
  * </pre>
+ *
+ * <p>생성·조회 호출마다 진단 callId 하나로 PAYMENT_PG_START 와 RESULT 또는 ERROR 를 남긴다(checkout-incident §4.2).
  */
+@Slf4j
 @Component
 public class PgHttpGateway implements PaymentGateway {
+
+    static final String PG_START = "PAYMENT_PG_START";
+    static final String PG_RESULT = "PAYMENT_PG_RESULT";
+    static final String PG_ERROR = "PAYMENT_PG_ERROR";
+    static final String RESULT_DECODED = "RESULT_DECODED";
+    static final String CIRCUIT_REJECTED = "CIRCUIT_REJECTED";
+    static final String POOL_ACQUIRE_TIMEOUT = "POOL_ACQUIRE_TIMEOUT";
+    static final String TRANSPORT_UNAVAILABLE = "TRANSPORT_UNAVAILABLE";
+    static final String CREATE_RESULT_UNAVAILABLE = "CREATE_RESULT_UNAVAILABLE";
+    static final String LOOKUP_RESULT_UNAVAILABLE = "LOOKUP_RESULT_UNAVAILABLE";
+    static final String UNCLASSIFIED_PROPAGATED = "UNCLASSIFIED_PROPAGATED";
 
     private final PgHttpTransport transport;
     private final PgResponseDecoder decoder;
@@ -78,35 +97,71 @@ public class PgHttpGateway implements PaymentGateway {
      */
     @Override
     public PaymentObservation create(PaymentRequest request) {
+        String target = request == null ? null : DiagnosticLog.providerOrderId(request.providerOrderId());
+        return logged("CREATE", "providerOrderId", target, () -> classifyCreate(request));
+    }
+
+    @Override
+    public PaymentObservation findByTransactionKey(String transactionKey) {
+        return logged("LOOKUP_KEY", "transactionKey", DiagnosticLog.transactionKey(transactionKey), () -> {
+            URI uri = transport.transactionUri(transactionKey);
+            return lookup(() -> decoder.decodeLookupByKey(transport.get(uri), transactionKey));
+        });
+    }
+
+    @Override
+    public PaymentObservation findByOrderId(String providerOrderId) {
+        return logged("LOOKUP_ORDER", "providerOrderId", DiagnosticLog.providerOrderId(providerOrderId), () -> {
+            URI uri = transport.orderLookupUri(providerOrderId);
+            return lookup(() -> decoder.decodeLookupByOrder(transport.get(uri), providerOrderId));
+        });
+    }
+
+    private PaymentObservation logged(String operation, String targetName, String target, Supplier<Classified> call) {
+        String callId = UUID.randomUUID().toString();
+        Map<String, Object> start = new LinkedHashMap<>();
+        start.put("callId", callId);
+        start.put("operation", operation);
+        start.put(targetName, target);
+        DiagnosticLog.info(log, PG_START, start);
+        Classified classified;
+        try {
+            classified = call.get();
+        } catch (RuntimeException e) {
+            Map<String, Object> error = new LinkedHashMap<>();
+            error.put("callId", callId);
+            error.put("operation", operation);
+            error.put("exception", e.getClass().getName());
+            error.put("reason", UNCLASSIFIED_PROPAGATED);
+            DiagnosticLog.info(log, PG_ERROR, error);
+            throw e;
+        }
+        DiagnosticLog.info(log, PG_RESULT, resultFields(callId, operation, classified));
+        return classified.observation();
+    }
+
+    private Classified classifyCreate(PaymentRequest request) {
         CreateCall call = new CreateCall();
         Map<String, Object> body = transport.createBody(request);
         URI uri = transport.createUri();
         createCallHook.beforeDecorator();
         try {
-            return createCircuit.executeSupplier(() -> sendAndDecode(request, uri, body, call)).observation();
+            return new Classified(
+                createCircuit.executeSupplier(() -> sendAndDecode(request, uri, body, call)).observation(), RESULT_DECODED);
         } catch (CallNotPermittedException e) {
-            return circuitRejected(e, call);
+            return new Classified(circuitRejected(e, call), CIRCUIT_REJECTED);
         } catch (PgPoolAcquireException e) {
             // 회로 표본에서는 이미 제외됐다. 최초 연결 획득에서 실패한 경우만 보내지 않은 것이 확실하다.
             if (call.postExchanges() == 1) {
-                return new PaymentObservation.LocalNotDispatched(LocalNotDispatchedReason.POOL_ACQUIRE_TIMEOUT);
+                return new Classified(
+                    new PaymentObservation.LocalNotDispatched(LocalNotDispatchedReason.POOL_ACQUIRE_TIMEOUT),
+                    POOL_ACQUIRE_TIMEOUT);
             }
-            return new PaymentObservation.Unavailable(ObservationSource.CREATE);
+            return new Classified(new PaymentObservation.Unavailable(ObservationSource.CREATE), POOL_ACQUIRE_TIMEOUT);
         } catch (PgCreateUnavailableException e) {
-            return new PaymentObservation.Unavailable(ObservationSource.CREATE);
+            return new Classified(new PaymentObservation.Unavailable(ObservationSource.CREATE),
+                unavailableReason(e, CREATE_RESULT_UNAVAILABLE));
         }
-    }
-
-    @Override
-    public PaymentObservation findByTransactionKey(String transactionKey) {
-        URI uri = transport.transactionUri(transactionKey);
-        return lookup(() -> decoder.decodeLookupByKey(transport.get(uri), transactionKey));
-    }
-
-    @Override
-    public PaymentObservation findByOrderId(String providerOrderId) {
-        URI uri = transport.orderLookupUri(providerOrderId);
-        return lookup(() -> decoder.decodeLookupByOrder(transport.get(uri), providerOrderId));
     }
 
     /** 회로 본문. 첫 동작으로 "본문에 들어왔음"을 표시해야 회로 거절과 본문 안 예외를 구분할 수 있다. */
@@ -131,16 +186,74 @@ public class PgHttpGateway implements PaymentGateway {
     }
 
     /** 회로 거절·풀 대기 실패·조회 통신 실패만 확인 불가로 바꾼다. 프로그램 오류와 식별하지 못한 예외는 전파한다. */
-    private PaymentObservation lookup(Supplier<PgLookupResult> getAndDecode) {
+    private Classified lookup(Supplier<PgLookupResult> getAndDecode) {
         try {
-            return lookupCircuit.executeSupplier(getAndDecode).observation();
-        } catch (CallNotPermittedException | PgPoolAcquireException | PgLookupUnavailableException e) {
-            return new PaymentObservation.Unavailable(ObservationSource.QUERY);
+            return new Classified(lookupCircuit.executeSupplier(getAndDecode).observation(), RESULT_DECODED);
+        } catch (CallNotPermittedException e) {
+            return new Classified(new PaymentObservation.Unavailable(ObservationSource.QUERY), CIRCUIT_REJECTED);
+        } catch (PgPoolAcquireException e) {
+            return new Classified(new PaymentObservation.Unavailable(ObservationSource.QUERY), POOL_ACQUIRE_TIMEOUT);
+        } catch (PgLookupUnavailableException e) {
+            return new Classified(new PaymentObservation.Unavailable(ObservationSource.QUERY),
+                unavailableReason(e, LOOKUP_RESULT_UNAVAILABLE));
         }
+    }
+
+    /**
+     * 원인 사슬에 RestClient 의 ResourceAccessException 이 있을 때만 통신 실패로 적는다.
+     * JSON 해석 오류도 IOException 일 수 있어 IOException 여부로는 판정하지 않는다.
+     */
+    private static String unavailableReason(RuntimeException e, String otherwise) {
+        for (Throwable cause = e; cause != null; cause = cause.getCause()) {
+            if (cause instanceof ResourceAccessException) {
+                return TRANSPORT_UNAVAILABLE;
+            }
+        }
+        return otherwise;
+    }
+
+    private static Map<String, Object> resultFields(String callId, String operation, Classified classified) {
+        Map<String, Object> fields = new LinkedHashMap<>();
+        fields.put("callId", callId);
+        fields.put("operation", operation);
+        PaymentObservation observation = classified.observation();
+        fields.put("classification", observation.getClass().getSimpleName());
+        fields.put("source", observation.source().name());
+        fields.put("reason", classified.reason());
+        switch (observation) {
+            case PaymentObservation.TransactionObserved observed -> {
+                fields.put("transactionKey", DiagnosticLog.transactionKey(observed.transactionKey()));
+                fields.put("providerOrderId", DiagnosticLog.providerOrderId(observed.providerOrderId()));
+                fields.put("amount", observed.amount());
+                fields.put("status", observed.status().name());
+            }
+            case PaymentObservation.Conflict conflict -> {
+                fields.put("conflictCode", conflict.code().name());
+                fields.put("observedTransactionKey", DiagnosticLog.transactionKey(conflict.evidence().observedTransactionKey()));
+                fields.put("observedProviderOrderId", DiagnosticLog.providerOrderId(conflict.evidence().observedOrderId()));
+                fields.put("observedAmount", conflict.evidence().observedAmount());
+                fields.put("observedStatus", conflict.evidence().observedStatus() == null ? null
+                    : conflict.evidence().observedStatus().name());
+                fields.put("observedCount", conflict.evidence().observedCount());
+            }
+            case PaymentObservation.RejectedNoEffect rejected -> {
+                fields.put("providerOrderId", DiagnosticLog.providerOrderId(rejected.providerOrderId()));
+                fields.put("amount", rejected.amount());
+            }
+            case PaymentObservation.LocalNotDispatched notDispatched ->
+                fields.put("notDispatchedReason", notDispatched.reason().name());
+            case PaymentObservation.Unavailable unavailable -> {
+            }
+        }
+        return fields;
     }
 
     private static CircuitBreaker existingCircuit(CircuitBreakerRegistry registry, String name) {
         return registry.find(name).orElseThrow(() -> new IllegalStateException(name + " 회로 설정 없음"));
+    }
+
+    /** 기존 분류 결과와 그 이유. 이유는 진단 로그에만 쓴다. */
+    private record Classified(PaymentObservation observation, String reason) {
     }
 
     /** 생성 호출 하나의 로컬 기록. Gateway 필드·다른 요청과 공유하지 않는다. */

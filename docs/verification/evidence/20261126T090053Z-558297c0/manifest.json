@@ -1,0 +1,285 @@
+{
+  "runId": "20261126T090053Z-558297c0",
+  "sourceRoot": "apps/commerce-api/build/checkout-incident-runs/20261126T090053Z-558297c0",
+  "fileCount": 55,
+  "executionCodeCommit": "afdb04c1680a9aee8d73cc0f5afd0b0b516802e8",
+  "trackedDiffBytes": 0,
+  "untrackedCodeFiles": [],
+  "files": [
+    {
+      "path": "baseline/deliveries.json",
+      "bytes": 333,
+      "sha256": "d52e711903c1bb9738d24ece96836edf97566e0c2ace0ea3bedf2f61c994e0cf"
+    },
+    {
+      "path": "baseline/diagnostic-log.txt",
+      "bytes": 55010,
+      "sha256": "9d2e9f0d4fe2d5ebb15bf57d1f1f10eac097ffdd811603cd8f40667780be415c"
+    },
+    {
+      "path": "baseline/direct-observation.txt",
+      "bytes": 85345,
+      "sha256": "ff41db5c6640416c8c932bc0f9bb7779ac13825240055a099116dc9cfa302640"
+    },
+    {
+      "path": "baseline/health-response.json",
+      "bytes": 92,
+      "sha256": "2631c6384d7d37475ba31e87b7abedda91539a06998e2a272a77c3eeeb187ad4"
+    },
+    {
+      "path": "baseline/health-response.txt",
+      "bytes": 49,
+      "sha256": "b9613659d8f4412c778e34293d5b865fb188c5814379ee3bfb8c819432e70020"
+    },
+    {
+      "path": "baseline/orders.json",
+      "bytes": 3953,
+      "sha256": "4afb1479e3b7963f9165c99cc1002e874ec86777b07b4cbab913d5bf40c51def"
+    },
+    {
+      "path": "baseline/pg-state.json",
+      "bytes": 7958,
+      "sha256": "5d6053ef1ab24845b0476a11434f3dc290ba3ea3e6e0c6b6f6ef3e1a78fc0202"
+    },
+    {
+      "path": "baseline/plan-ledger.json",
+      "bytes": 3,
+      "sha256": "5984eac0c5c6d947241e29dd5671b81a1546cedf77e08d38438ac47029969afa"
+    },
+    {
+      "path": "baseline/preserved-before.json",
+      "bytes": 1171,
+      "sha256": "7aa58a1c8f1b664a455c450c5ca90687469eca27acb0ddfb8f625cb526f9fdb4"
+    },
+    {
+      "path": "baseline/preserved.json",
+      "bytes": 1171,
+      "sha256": "7aa58a1c8f1b664a455c450c5ca90687469eca27acb0ddfb8f625cb526f9fdb4"
+    },
+    {
+      "path": "baseline/prometheus-response.json",
+      "bytes": 92,
+      "sha256": "3ba6311984b71a538c7c01e8c56699568cc457939f508aed7d80bef3441249b9"
+    },
+    {
+      "path": "baseline/prometheus-response.txt",
+      "bytes": 85259,
+      "sha256": "2b143db2cbe38d2b054871fd875f15f0dd945dd69d99cfac17321d331bb8f7f2"
+    },
+    {
+      "path": "baseline/roster.json",
+      "bytes": 3651,
+      "sha256": "0014d8acdbf2f2f0f35ba7111fcc1a1a73f266abd90e4610bbac9cb042caab99"
+    },
+    {
+      "path": "baseline/summary.json",
+      "bytes": 901,
+      "sha256": "e6bcabbce1c506d59440c76912fd9645b99188f335de072b7d7fc25d2cab5127"
+    },
+    {
+      "path": "control/accepted/baseline.json",
+      "bytes": 222,
+      "sha256": "156b54cf9f3a616eeeba02ea1acc897e04e714459368c7309ad055f102941f0e"
+    },
+    {
+      "path": "control/accepted/fault.json",
+      "bytes": 219,
+      "sha256": "17eb7ebf4f32b03478652272ce5f8a42e154ec097e106e23e07dea416a6b08f7"
+    },
+    {
+      "path": "control/accepted/recovery.json",
+      "bytes": 222,
+      "sha256": "5bb99a3870ed5b1b2ab01409c7faa1954dd07a8a7d3a9395fac519f1d1745902"
+    },
+    {
+      "path": "diagnosis-expectations.json",
+      "bytes": 1320,
+      "sha256": "a91b616eea709a36d43946e5d58433dd75a3a161ebc6f9737d8424ac40d46830"
+    },
+    {
+      "path": "fault-seal.json",
+      "bytes": 1960,
+      "sha256": "b6d7589be16f59ebf4b85eaab0ab5f378cee470ceaa9a42c476e33c0a28ea2a0"
+    },
+    {
+      "path": "fault/deliveries.json",
+      "bytes": 571,
+      "sha256": "e61207394372ce0e88641a1060d3a06debc9ccfa449aaee67318ddd1e77cc998"
+    },
+    {
+      "path": "fault/diagnosis.json",
+      "bytes": 2360,
+      "sha256": "f559cd336b841c4880dc21038ada662e795422315bc0d2c6527f9473303950a0"
+    },
+    {
+      "path": "fault/diagnostic-log.txt",
+      "bytes": 100879,
+      "sha256": "9797cb611897053e80f4c101f6d2431da9bc33616933c2509f683ba3672fab0b"
+    },
+    {
+      "path": "fault/direct-observation.txt",
+      "bytes": 85412,
+      "sha256": "3500d94df2b2dc76c64b2346f8d439eb00ed47cb3d937801bda278a335439301"
+    },
+    {
+      "path": "fault/health-response.json",
+      "bytes": 92,
+      "sha256": "a77600a41e8be293500227d4e86ea72dd7a7e1b680e5c616629ef437183f38ea"
+    },
+    {
+      "path": "fault/health-response.txt",
+      "bytes": 49,
+      "sha256": "b9613659d8f4412c778e34293d5b865fb188c5814379ee3bfb8c819432e70020"
+    },
+    {
+      "path": "fault/orders.json",
+      "bytes": 3815,
+      "sha256": "ea6a0c58475928c6da47150944de499101c38d9ed4f1f1205f6a671767c2ee0e"
+    },
+    {
+      "path": "fault/pg-state.json",
+      "bytes": 14801,
+      "sha256": "d6692e072fd0de376de286a4dd422ab0949375c347de06c9b78547b284179955"
+    },
+    {
+      "path": "fault/plan-ledger.json",
+      "bytes": 494,
+      "sha256": "6a36ef279092f26244e611bdd95a5f66df1845c972eef77e86506e5a0099ced0"
+    },
+    {
+      "path": "fault/preserved.json",
+      "bytes": 1171,
+      "sha256": "7aa58a1c8f1b664a455c450c5ca90687469eca27acb0ddfb8f625cb526f9fdb4"
+    },
+    {
+      "path": "fault/prometheus-response.json",
+      "bytes": 92,
+      "sha256": "fd170ebbcc23bc5a7a3c7ae35b2524e1932c0205c0c64d9dd101310d7c39393b"
+    },
+    {
+      "path": "fault/prometheus-response.txt",
+      "bytes": 85326,
+      "sha256": "bdbe21c29d9612bef2c42d9277240a7be0c1106149e38de2497ea6359ff91d35"
+    },
+    {
+      "path": "fault/summary.json",
+      "bytes": 1325,
+      "sha256": "5100f4d82e065d467640408587eae2eeb421619fbe3a5e3069d2dc02ad52a49d"
+    },
+    {
+      "path": "fault/u-lookups.json",
+      "bytes": 611,
+      "sha256": "5171755ec3a5c2378cbc14cd10db98cfa473a28ebfe0262efa64bdc6d91d38f2"
+    },
+    {
+      "path": "metadata-expectations.json",
+      "bytes": 125,
+      "sha256": "37306c3582189217e2a9ceca926fef75342783893e5ef1fe3b4281f807981257"
+    },
+    {
+      "path": "metadata.json",
+      "bytes": 419,
+      "sha256": "b6afb57bd838383f3ceec9949dcbb4982b08e92acdef9477c91e9c3620fe9e3c"
+    },
+    {
+      "path": "recovery/deliveries.json",
+      "bytes": 718,
+      "sha256": "721e3e5ac4f2283d0a3789a34244c561e319840e4fc32e3972ee6392b538efe9"
+    },
+    {
+      "path": "recovery/diagnostic-log.txt",
+      "bytes": 136078,
+      "sha256": "9ca7b4f213e705d408a59b70df0a4d1461d3ba98db62c2bab7d14b934f4c42d5"
+    },
+    {
+      "path": "recovery/direct-observation.txt",
+      "bytes": 148298,
+      "sha256": "d92cdf5f6683176e44cbec75db1b1d01407aa0788ab9594ce98853151732cbcc"
+    },
+    {
+      "path": "recovery/health-response.json",
+      "bytes": 92,
+      "sha256": "a95c3bde738ea97609d8c63c8f88aa0f4fe24d91e95a9f48cba826991ec00d19"
+    },
+    {
+      "path": "recovery/health-response.txt",
+      "bytes": 49,
+      "sha256": "b9613659d8f4412c778e34293d5b865fb188c5814379ee3bfb8c819432e70020"
+    },
+    {
+      "path": "recovery/orders.json",
+      "bytes": 3962,
+      "sha256": "5f8a8be40f43c678ea056b9bb6f5c8c3c059af371d105c90ad677947724be364"
+    },
+    {
+      "path": "recovery/pg-state.json",
+      "bytes": 19286,
+      "sha256": "f067be38e5b6d5fb584b3212d4557720da21895031e12966a06fa857613fa55a"
+    },
+    {
+      "path": "recovery/plan-ledger.json",
+      "bytes": 494,
+      "sha256": "6a36ef279092f26244e611bdd95a5f66df1845c972eef77e86506e5a0099ced0"
+    },
+    {
+      "path": "recovery/preserved.json",
+      "bytes": 1171,
+      "sha256": "7aa58a1c8f1b664a455c450c5ca90687469eca27acb0ddfb8f625cb526f9fdb4"
+    },
+    {
+      "path": "recovery/prometheus-response.json",
+      "bytes": 92,
+      "sha256": "8bcbd00e995c4a1f66d40ea308c897ecdf8e791ea988555ba5aa4443eedda998"
+    },
+    {
+      "path": "recovery/prometheus-response.txt",
+      "bytes": 148212,
+      "sha256": "22d0204dc83279c0f979bae057e17b11e567f3b7aadae0d129538a55a4bfe722"
+    },
+    {
+      "path": "recovery/ranking.json",
+      "bytes": 244,
+      "sha256": "5234da48960781f7af413eaed3ec48a3efea51a534ee5cf042dfdcb7aa1692ea"
+    },
+    {
+      "path": "recovery/summary.json",
+      "bytes": 1341,
+      "sha256": "ebfdd321880fab84f2a48dd49c548a2f993f2a21955881ec3b091fa0c95a65c3"
+    },
+    {
+      "path": "resources/001-kafka.json",
+      "bytes": 166,
+      "sha256": "5cae3abd44c2157eb0c32c9294d7dde9caf23ca12721473e2dfbdcd7674f44b0"
+    },
+    {
+      "path": "resources/002-pg.json",
+      "bytes": 71,
+      "sha256": "d3acbff4397383e524fdcc5935c54b5d034fd9617b54ae9c9f0969ed3fc5b582"
+    },
+    {
+      "path": "resources/003-db.json",
+      "bytes": 92,
+      "sha256": "f9637f63e5609890deb372e54f6827697ea912260f709ba752cae558cb77baa7"
+    },
+    {
+      "path": "resources/004-api.json",
+      "bytes": 176,
+      "sha256": "96cfa7ae5c49348c3cfe9d347f6d095e44d6990478f588c2e26304d45b6e9821"
+    },
+    {
+      "path": "resources/005-streamer.json",
+      "bytes": 171,
+      "sha256": "e03998f5e35517efaf70a74c639fb5f08c9c96de699a6b9049b282f6dfbff786"
+    },
+    {
+      "path": "resources/006-batch-schema-child.json",
+      "bytes": 69,
+      "sha256": "5ae1d5ff522f9271c8f2bb265dca3c20574773c85beb47641c50f24ae13e64a7"
+    },
+    {
+      "path": "resources/007-cleanup.json",
+      "bytes": 131,
+      "sha256": "a8e59d674f991adcfaf712405b4f6fb7841e8a8039356d4ca011d42061f94897"
+    }
+  ]
+}

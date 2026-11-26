@@ -136,3 +136,35 @@ plan target은 서버 저장/요청과 같은 문자열 식별자로 직접 전�
 - 재시작 테스트는 같은 PG fixture와 MySQL container/스키마를 두 commerce 컨텍스트보다 긴 수명으로 유지한다. 첫 컨텍스트의 스키마 준비/주문·결제 생성 뒤 종료하고, 두 번째는 ddl-auto=validate로 시작한다. 두 컨텍스트 사이에 create/cleanup/TRUNCATE/reset을 실행하지 않는다. 기존 test/local의 create 설정을 두 번째 컨텍스트의 최종값으로 두지 않는다. 각 컨텍스트는 기동 전에 자기 커머스 포트와 callback URL을 위 절차대로 함께 주입하고 기동 후 일치를 확인하며, 두 컨텍스트가 같은 커머스 포트를 쓸 필요는 없다. 첫 컨텍스트 종료와 진행 요청/콜백·worker 정리는 아래 종료 계약을 따른다.
 - 두 번째 컨텍스트의 필수 복구 경로는 고객 주문 조회 → reconcile이다. 같은 거래를 확인하고 create 추가 0·주문/재고 효과 한 번을 검증한다. PG 거래에 저장된 첫 컨텍스트의 callback URL을 두 번째 주소로 고치거나 이전 주소로 콜백을 받는 기능은 추가하지 않으며, 이전 주소로 향한 콜백 전송 결과를 복구 근거로 쓰지 않는다. 주문·결제·발송 기록은 DB에서 유지되고 client/회로 메모리 상태는 새로 시작한다. PG fixture까지 종료해 거래가 사라진 사례를 거래 복구 성공으로 기록하지 않는다.
 - 종료 시 진행 commerce 요청/콜백·gate를 해제하고 실제 작업 종료를 확인한 뒤 commerce 컨텍스트/client → PG fixture → DB 순으로 정리한다. worker 종료를 확인하지 못하면 실패를 보고하고 해당 환경의 안전한 재사용/검증 통과로 기록하지 않는다. 일반 테스트는 매번 새 fixture를 사용하며 재시작 테스트의 두 컨텍스트 사이만 의도적으로 공유한다.
+
+
+### W10 SUCCESS 저장 후 생성 응답 유실
+
+**상태:** 2026-11-23 Claude 전체 검토·보완 재확인 후 사용자가 W10 전체 설계를 최종 승인했다. 아래 API는 승인된 구현 계약이며 단위1(`20ba851`)에서 구현·검증했다. 최종 check의 fixture 회귀와 AUTO 연결 결과·남은 한계는 결제 사고 실행 기록을 따른다. [사고 관측·연결 계약](../checkout-incident.md)의 §1~§10과 함께 읽는다.
+
+추가 공개 메서드는 `ResponsePlan.successThenCloseEarly(): ResponsePlan` 하나다. `createOutcome=SUCCESS`, `reply=CLOSE_EARLY`, 나머지 미사용 필드는 기존 `closeEarly()`와 동일한0/null로 만든다. `PgFixtureServer.enqueuePlan`의 기존 validation에 따라 CREATE 외 operation 등록은 IllegalArgumentException이다. 기존 `closeEarly()`의 기본 PENDING, 기존 factory/enum·FIFO·서버·수명 의미는 변경하지 않는다.
+
+```text
+successThenCloseEarly():
+  SUCCESS + CLOSE_EARLY의 불변 ResponsePlan 반환
+
+enqueuePlan(CREATE, 실제 providerOrderId, plan):
+  기존 입력/operation 검증
+  같은 plan의 SUCCESS를 생성 결과 FIFO에, CLOSE_EARLY를 응답 FIFO에 등록
+
+실제 생성 HTTP:
+  ScriptedOutcomePolicy가 IMMEDIATE_SUCCESS 선택
+  PG가 동일 계정/주문/금액의 SUCCESS 거래를 실제 저장
+  프록시가 PG의 완성 응답을 수신하고 거래 키를 journal에 기록
+  원래 Content-Length를 보내고 본문 일부만 쓰고 exchange 종료
+  journal에 CLOSED_EARLY·실제 target·거래 키·수신/완료 시각 보존
+  거래/수신 기록을 지우지 않음; callback 자동 전송 없음
+```
+
+거래를 PENDING으로 만든 뒤 응답 유실 완료 후 SUCCESS로 변경하는 기존 회귀와 구분한다. 이 조합은 SUCCESS 저장이 응답 유실보다 선행한다. 불완전 응답을 받은 client의 실제 오류가 I/O라면 I/O로 기록하며 timeout이라고 고정하지 않는다. commerce의 기존 Unavailable(CREATE)·UNKNOWN/예약 유지 분류를 바꾸지 않는다.
+
+이 plan은 한 요청에서 소비된다. 같은 명단 U3개에 각1개씩 등록하며 baseline/복구에는 새 plan을 등록하지 않는다. W10의 등록 이력·각U journal 소비·진행 작업 종료·복구 구간 관측은 [사고 관측·연결 계약 §5](../checkout-incident.md#5-success-뒤-응답-유실)를 따른다. FixtureState에 잔여 plan 수를 추가하지 않으며 진행 작업0을 잔여 plan 수0으로 해석하지 않는다. activeRequests0과 해당 journal의 CLOSED_EARLY를 확인해 세 plan의 실제 소비를 검증한다. 전역 장애 ON/OFF 상태나 초기화용 reset을 새로 추가하지 않는다. finally는 남은 자기 작업을 종료하되 PG 거래·fault 원문을 성공 상태로 초기화하지 않는다.
+
+필수 실제 HTTP 검증은 새 fixture에서 SUCCESS 거래1개, createReceived1, 동일 orderId/금액/거래 키, client 수신 실패, journal CLOSED_EARLY, callback0, 실제 권위 조회 SUCCESS다. CREATE 외 등록 거절도 검증하고 기존 normal/outcome/closeEarly/gate·회로/조회·수명 회귀를 유지한다. 중복 생성 시도는 journal에서 숨기지 않으며 사고 테스트가 주문별 create1·복구 추가0을 assert한다. 같은 대상 복수 동시 CREATE의 기존 두 FIFO 제약을 이번 소규모 확장으로 해결했다고 주장하지 않는다.
+
+선택 근거: 기존 GATE+setStatus 방식도 후보였지만 client read-timeout 이전 상태 변경·gate 해제의 시간 경쟁이 추가된다. 작은 조합 factory는 기존 PG/프록시의 저장 후 응답 제어 순서를 그대로 재사용한다. 일반 장애 DSL·PG main의 테스트 헤더·원자 FIFO 재설계는 이번 요구에 필요하지 않아 추가하지 않는다.

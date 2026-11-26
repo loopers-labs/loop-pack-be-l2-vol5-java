@@ -1,0 +1,10 @@
+{
+  "instanceId" : 1,
+  "executionId" : 1,
+  "status" : "COMPLETED",
+  "publicationOutcome" : "PUBLISHED",
+  "snapshotId" : "weekly-20261123-r1",
+  "inputCount" : 40,
+  "results" : [ "1:40:1", "2:20:2" ],
+  "apiItems" : [ "1:40:1", "2:20:2" ]
+}

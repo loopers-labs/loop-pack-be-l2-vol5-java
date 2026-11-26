@@ -1,0 +1,127 @@
+{
+  "userId" : 1,
+  "otherUserId" : 2,
+  "productA" : 1,
+  "productB" : 2,
+  "entries" : [ {
+    "orderId" : 1,
+    "cohort" : "BASELINE",
+    "unknown" : false,
+    "attemptKey" : "7fe354b3-57e3-3111-93d0-c77caae20cce",
+    "providerOrderId" : "LP-ORD-0000000001"
+  }, {
+    "orderId" : 2,
+    "cohort" : "BASELINE",
+    "unknown" : false,
+    "attemptKey" : "4b018000-516b-359b-a6ac-760966c98ae7",
+    "providerOrderId" : "LP-ORD-0000000002"
+  }, {
+    "orderId" : 3,
+    "cohort" : "BASELINE",
+    "unknown" : false,
+    "attemptKey" : "7e6477eb-1ef8-30b0-b36f-9a6fa8b89ca8",
+    "providerOrderId" : "LP-ORD-0000000003"
+  }, {
+    "orderId" : 4,
+    "cohort" : "BASELINE",
+    "unknown" : false,
+    "attemptKey" : "7dd6ef8f-55d5-3cca-ae30-0cbaeb0e70a9",
+    "providerOrderId" : "LP-ORD-0000000004"
+  }, {
+    "orderId" : 5,
+    "cohort" : "BASELINE",
+    "unknown" : false,
+    "attemptKey" : "b811b761-b06a-34f2-a26c-ddb478773b31",
+    "providerOrderId" : "LP-ORD-0000000005"
+  }, {
+    "orderId" : 6,
+    "cohort" : "BASELINE",
+    "unknown" : false,
+    "attemptKey" : "3e359ca9-208f-3f80-83fd-cd7199007209",
+    "providerOrderId" : "LP-ORD-0000000006"
+  }, {
+    "orderId" : 7,
+    "cohort" : "BASELINE",
+    "unknown" : false,
+    "attemptKey" : "f92f1972-f46c-34b2-9624-1b14e1f13791",
+    "providerOrderId" : "LP-ORD-0000000007"
+  }, {
+    "orderId" : 8,
+    "cohort" : "BASELINE",
+    "unknown" : false,
+    "attemptKey" : "24d49a33-9686-329e-9a82-92f7d91c0563",
+    "providerOrderId" : "LP-ORD-0000000008"
+  }, {
+    "orderId" : 9,
+    "cohort" : "BASELINE",
+    "unknown" : false,
+    "attemptKey" : "ae1575dd-8b32-3048-9ddb-7922251f4129",
+    "providerOrderId" : "LP-ORD-0000000009"
+  }, {
+    "orderId" : 10,
+    "cohort" : "BASELINE",
+    "unknown" : false,
+    "attemptKey" : "720d4572-957f-31c7-a463-6c593a45ab8d",
+    "providerOrderId" : "LP-ORD-0000000010"
+  }, {
+    "orderId" : 11,
+    "cohort" : "FAULT",
+    "unknown" : true,
+    "attemptKey" : "db9cb5ce-52ac-38b4-9c66-04734bbc83c9",
+    "providerOrderId" : "LP-ORD-0000000011"
+  }, {
+    "orderId" : 12,
+    "cohort" : "FAULT",
+    "unknown" : true,
+    "attemptKey" : "27a70364-0795-3a42-b2dc-e7817251a485",
+    "providerOrderId" : "LP-ORD-0000000012"
+  }, {
+    "orderId" : 13,
+    "cohort" : "FAULT",
+    "unknown" : true,
+    "attemptKey" : "cbf205d0-7a33-3b44-9e5e-a9286c7fef55",
+    "providerOrderId" : "LP-ORD-0000000013"
+  }, {
+    "orderId" : 14,
+    "cohort" : "FAULT",
+    "unknown" : false,
+    "attemptKey" : "961c4eb3-18e6-3253-ac57-6a7f70bcd257",
+    "providerOrderId" : "LP-ORD-0000000014"
+  }, {
+    "orderId" : 15,
+    "cohort" : "FAULT",
+    "unknown" : false,
+    "attemptKey" : "689335b3-f4b3-3036-a53c-778f49a2d81d",
+    "providerOrderId" : "LP-ORD-0000000015"
+  }, {
+    "orderId" : 16,
+    "cohort" : "FAULT",
+    "unknown" : false,
+    "attemptKey" : "ecec4f98-cecd-387c-91b3-1e48a9b104a1",
+    "providerOrderId" : "LP-ORD-0000000016"
+  }, {
+    "orderId" : 17,
+    "cohort" : "FAULT",
+    "unknown" : false,
+    "attemptKey" : "a0104fe6-85ea-325f-aa38-8498d60f78f1",
+    "providerOrderId" : "LP-ORD-0000000017"
+  }, {
+    "orderId" : 18,
+    "cohort" : "FAULT",
+    "unknown" : false,
+    "attemptKey" : "9eb1428b-1344-36f7-a731-780ac9e6decb",
+    "providerOrderId" : "LP-ORD-0000000018"
+  }, {
+    "orderId" : 19,
+    "cohort" : "FAULT",
+    "unknown" : false,
+    "attemptKey" : "cdd9564e-233c-30b6-976f-8b0dbc8b736d",
+    "providerOrderId" : "LP-ORD-0000000019"
+  }, {
+    "orderId" : 20,
+    "cohort" : "FAULT",
+    "unknown" : false,
+    "attemptKey" : "63307b42-a7a9-360b-81e8-28a16b869a30",
+    "providerOrderId" : "LP-ORD-0000000020"
+  } ]
+}

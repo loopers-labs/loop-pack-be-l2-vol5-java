@@ -66,6 +66,7 @@ public class PaymentTransactionService {
     private final PaymentTransactionProbe probe;
     private final Clock orderConfirmationClock;
     private final OrderConfirmedRecorder recorder;
+    private final PaymentTxDiagnostics diagnostics;
     private final String providerAccount;
 
     public PaymentTransactionService(OrderRepository orderRepository, PaymentRepository paymentRepository,
@@ -74,7 +75,7 @@ public class PaymentTransactionService {
                                      ProductDetailCache productDetailCache, AfterCommitRunner afterCommitRunner,
                                      PaymentTransactionProbe probe,
                                      @Qualifier("orderConfirmationClock") Clock orderConfirmationClock,
-                                     OrderConfirmedRecorder recorder,
+                                     OrderConfirmedRecorder recorder, PaymentTxDiagnostics diagnostics,
                                      @Value("${commerce.pg.account-id}") String providerAccount) {
         this.orderRepository = orderRepository;
         this.paymentRepository = paymentRepository;
@@ -86,6 +87,7 @@ public class PaymentTransactionService {
         this.probe = probe;
         this.orderConfirmationClock = orderConfirmationClock;
         this.recorder = recorder;
+        this.diagnostics = diagnostics;
         this.providerAccount = providerAccount;
     }
 
@@ -126,10 +128,13 @@ public class PaymentTransactionService {
      */
     @Transactional
     public BeginConfirmationResult beginConfirmation(Long userId, Long orderId, PaymentConfirmCommand command) {
+        String observationId = diagnostics.observe(PaymentTxDiagnostics.Operation.BEGIN_CONFIRMATION, orderId, null,
+            ObservationSource.CREATE);
         OrderModel order = lockOwnedOrder(orderId, userId);
         String attemptKey = validateConfirmInput(order, command);
         PaymentModel existing = paymentRepository.findByOrderId(orderId).orElse(null);
         if (existing != null) {
+            diagnostics.paymentContext(observationId, order, existing);
             return BeginConfirmationResult.stored(storedResult(order, existing, attemptKey));
         }
         requireNewAttempt(order, attemptKey);
@@ -148,6 +153,7 @@ public class PaymentTransactionService {
         orderRepository.save(order);
         probe.reach(PaymentTransactionProbe.Point.BEFORE_PAYMENT_INSERT, "beginConfirmation", orderId);
         payment = paymentRepository.save(payment);
+        diagnostics.paymentContext(observationId, order, payment);
         evictAfterCommit(products.keySet());
         reachBeforeCommit("beginConfirmation", orderId);
 
@@ -163,6 +169,8 @@ public class PaymentTransactionService {
      */
     @Transactional
     public VerificationTarget prepareVerification(Long orderId, Long requesterUserId, String callbackTransactionKey) {
+        String observationId = diagnostics.observe(PaymentTxDiagnostics.Operation.PREPARE_VERIFICATION, orderId, null,
+            ObservationSource.QUERY);
         OrderModel order = orderRepository.findForUpdate(orderId)
             .orElseThrow(() -> new CoreException(ErrorType.ORDER_NOT_FOUND));
         if (requesterUserId != null) {
@@ -173,13 +181,17 @@ public class PaymentTransactionService {
         requireConsistent(order, payment);
         PaymentCheckToken token = new PaymentCheckToken(payment.getId(), orderId, ObservationSource.QUERY,
             payment.getStatus().isTerminal());
+        VerificationTarget target;
         if (callbackTransactionKey != null) {
-            return new VerificationTarget(token, VerificationTarget.LookupKind.TRANSACTION_KEY, callbackTransactionKey);
+            target = new VerificationTarget(token, VerificationTarget.LookupKind.TRANSACTION_KEY, callbackTransactionKey);
+        } else if (payment.getTransactionKey() != null) {
+            target = new VerificationTarget(token, VerificationTarget.LookupKind.TRANSACTION_KEY, payment.getTransactionKey());
+        } else {
+            target = new VerificationTarget(token, VerificationTarget.LookupKind.PROVIDER_ORDER_ID,
+                payment.getProviderOrderId());
         }
-        if (payment.getTransactionKey() != null) {
-            return new VerificationTarget(token, VerificationTarget.LookupKind.TRANSACTION_KEY, payment.getTransactionKey());
-        }
-        return new VerificationTarget(token, VerificationTarget.LookupKind.PROVIDER_ORDER_ID, payment.getProviderOrderId());
+        diagnostics.paymentContext(observationId, order, payment, target.kind().name(), target.target());
+        return target;
     }
 
     /**
@@ -190,10 +202,15 @@ public class PaymentTransactionService {
      */
     @Transactional
     public PaymentApplyResult applyObservation(PaymentCheckToken token, PaymentObservation observation) {
+        String observationId = diagnostics.observe(PaymentTxDiagnostics.Operation.APPLY_OBSERVATION, token.orderId(),
+            token.paymentId(), token.source());
         OrderModel order = orderRepository.findForUpdate(token.orderId())
             .orElseThrow(() -> new CoreException(ErrorType.INTERNAL_ERROR, "결과 반영 대상 주문이 없습니다."));
         PaymentModel payment = loadTokenPayment(order, token);
+        diagnostics.paymentContext(observationId, order, payment);
+        diagnostics.applyInput(observationId, observation);
         ObservationDecision decision = payment.recordObservation(token, observation, ZonedDateTime.now());
+        diagnostics.applyDecision(observationId, decision, payment);
 
         OrderConfirmed confirmed = null;
         PaymentApplyResult.Outcome outcome = switch (decision.effect()) {
@@ -233,9 +250,12 @@ public class PaymentTransactionService {
     @Transactional
     public PaymentApplyResult recordConstraintConflict(PaymentCheckToken token,
                                                        PaymentObservation.TransactionObserved observation) {
+        String observationId = diagnostics.observe(PaymentTxDiagnostics.Operation.RECORD_CONSTRAINT_CONFLICT,
+            token.orderId(), token.paymentId(), token.source());
         OrderModel order = orderRepository.findForUpdate(token.orderId())
             .orElseThrow(() -> new CoreException(ErrorType.INTERNAL_ERROR, "충돌 기록 대상 주문이 없습니다."));
         PaymentModel payment = loadTokenPayment(order, token);
+        diagnostics.paymentContext(observationId, order, payment);
         ObservationDecision decision = payment.recordTransactionAlreadyBound(token, observation, ZonedDateTime.now());
         recordConflictSummary(payment, decision);
         paymentRepository.save(payment);

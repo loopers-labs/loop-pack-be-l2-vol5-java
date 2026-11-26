@@ -1,8 +1,11 @@
 package com.loopers.infrastructure.payment;
 
 import com.loopers.domain.payment.PaymentModel;
+import com.loopers.domain.payment.PaymentStatus;
+import jakarta.persistence.QueryHint;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.QueryHints;
 import org.springframework.data.repository.query.Param;
 
 import java.util.Collection;
@@ -24,4 +27,9 @@ public interface PaymentJpaRepository extends JpaRepository<PaymentModel, Long> 
                                              @Param("providerOrderId") String providerOrderId);
 
     List<PaymentModel> findAllByOrderIdIn(Collection<Long> orderIds);
+
+    /** 업무 지표용 상태별 스칼라 COUNT. Entity 를 읽지 않으며 쿼리 timeout 목표는 1초다. */
+    @Query("select count(p) from PaymentModel p where p.status = :status")
+    @QueryHints(@QueryHint(name = "jakarta.persistence.query.timeout", value = "1000"))
+    long countByStatus(@Param("status") PaymentStatus status);
 }

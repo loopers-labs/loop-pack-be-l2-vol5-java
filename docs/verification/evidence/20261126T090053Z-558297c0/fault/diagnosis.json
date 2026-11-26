@@ -1,0 +1,68 @@
+{
+  "expectationsSha256" : "a91b616eea709a36d43946e5d58433dd75a3a161ebc6f9737d8424ac40d46830",
+  "unknowns" : [ {
+    "orderId" : 11,
+    "providerOrderId" : "LP-ORD-0000000011",
+    "callId" : "221b1adf-04f4-41cc-af06-64b1246a4377",
+    "observationId" : "7cc089ef-4b1b-40d5-b003-b180b0f5dba5",
+    "evidenceFiles" : [ "fault/summary.json", "fault/orders.json", "fault/pg-state.json", "fault/diagnostic-log.txt", "fault/u-lookups.json" ],
+    "judgments" : {
+      "PG_STILL_PROCESSING" : {
+        "verdict" : "EXCLUDED",
+        "reason" : "AUTHORITATIVE_SUCCESS"
+      },
+      "RESPONSE_LOST" : {
+        "verdict" : "SUPPORTED",
+        "reason" : "ALL_REQUIRED_EVIDENCE"
+      },
+      "APPLY_TX_FAILED" : {
+        "verdict" : "EXCLUDED",
+        "reason" : "CREATE_APPLY_UNAVAILABLE_COMMITTED"
+      }
+    },
+    "diagnosticFailures" : [ ]
+  }, {
+    "orderId" : 12,
+    "providerOrderId" : "LP-ORD-0000000012",
+    "callId" : "fbc885d1-e324-4cce-a8a4-a71f2ce5386d",
+    "observationId" : "c486b14e-2a01-4b53-866f-29a67b7689b6",
+    "evidenceFiles" : [ "fault/summary.json", "fault/orders.json", "fault/pg-state.json", "fault/diagnostic-log.txt", "fault/u-lookups.json" ],
+    "judgments" : {
+      "PG_STILL_PROCESSING" : {
+        "verdict" : "EXCLUDED",
+        "reason" : "AUTHORITATIVE_SUCCESS"
+      },
+      "RESPONSE_LOST" : {
+        "verdict" : "SUPPORTED",
+        "reason" : "ALL_REQUIRED_EVIDENCE"
+      },
+      "APPLY_TX_FAILED" : {
+        "verdict" : "EXCLUDED",
+        "reason" : "CREATE_APPLY_UNAVAILABLE_COMMITTED"
+      }
+    },
+    "diagnosticFailures" : [ ]
+  }, {
+    "orderId" : 13,
+    "providerOrderId" : "LP-ORD-0000000013",
+    "callId" : "c9de574c-4688-4411-a7f6-1296d4a745d7",
+    "observationId" : "df83f155-99e5-40f6-9f0a-445ed15c8037",
+    "evidenceFiles" : [ "fault/summary.json", "fault/orders.json", "fault/pg-state.json", "fault/diagnostic-log.txt", "fault/u-lookups.json" ],
+    "judgments" : {
+      "PG_STILL_PROCESSING" : {
+        "verdict" : "EXCLUDED",
+        "reason" : "AUTHORITATIVE_SUCCESS"
+      },
+      "RESPONSE_LOST" : {
+        "verdict" : "SUPPORTED",
+        "reason" : "ALL_REQUIRED_EVIDENCE"
+      },
+      "APPLY_TX_FAILED" : {
+        "verdict" : "EXCLUDED",
+        "reason" : "CREATE_APPLY_UNAVAILABLE_COMMITTED"
+      }
+    },
+    "diagnosticFailures" : [ ]
+  } ],
+  "proceed" : true
+}
