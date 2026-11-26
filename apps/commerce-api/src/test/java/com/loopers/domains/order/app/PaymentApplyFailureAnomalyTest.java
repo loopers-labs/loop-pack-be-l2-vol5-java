@@ -40,6 +40,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 import org.springframework.http.MediaType;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
@@ -56,6 +57,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 // 결제 결과 반영 트랜잭션이 실패하면 rollback 뒤 별도 트랜잭션으로 APPLY_FAILED 이상이 commit되는지 본다(w10s7).
 // 판단 근거가 로그 부재가 아니라 DB에 남는지가 핵심이다. 실패 주입은 OrderTransactionTest의 저장소 교체 설정과
 // 이 클래스의 이상 기록 실패 주입을 함께 쓴다. 상태는 서비스·HTTP 호출이 끝난 뒤 트랜잭션 없는 JdbcTemplate로 다시 읽는다.
+// 이 설정 조합은 다른 클래스와 공유되지 않는 컨텍스트라, 끝나면 닫아 테스트 DB 연결 상한을 넘지 않게 한다.
+@DirtiesContext
 @SpringBootTest
 @AutoConfigureMockMvc
 @Import({OrderTransactionTest.FailureInjectionConfig.class, PaymentApplyFailureAnomalyTest.AnomalyFailureConfig.class})

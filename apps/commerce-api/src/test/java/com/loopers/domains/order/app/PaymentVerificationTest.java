@@ -83,7 +83,7 @@ class PaymentVerificationTest {
             new PaymentExpiryPolicy(Duration.ofMinutes(2)), mock(OrderConfirmedPublisher.class),
             mock(OrderConfirmedOutbox.class), mock(PaymentOutcomeRecorder.class),
             mock(PaymentProgressRecorder.class), mock(PaymentRefundCaseRepository.class),
-            mock(RefundOutcomeRecorder.class));
+            mock(RefundOutcomeRecorder.class), mock(PaymentApplyFailureRecorder.class));
         clearInvocations(gateway);
     }
 

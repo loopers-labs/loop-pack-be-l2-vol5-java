@@ -107,6 +107,9 @@ class OrderTransactionTest {
     private PaymentLookupScheduleRepository paymentLookupScheduleRepository;
 
     @Autowired
+    private PaymentApplyFailureRecorder paymentApplyFailureRecorder;
+
+    @Autowired
     private BrandApplicationService brandApplicationService;
 
     @Autowired
@@ -261,7 +264,7 @@ class OrderTransactionTest {
             assertThat(paymentRecord()).containsEntry("result", "SUCCESS").containsEntry("provider_status", "SUCCESS");
             assertThat(server.transactions()).hasSize(1);
             assertThat(server.lookupCalls()).isEqualTo(index + 1);
-            assertThat(jdbcTemplate.queryForObject("select count(*) from payment_anomalies", Long.class)).isZero();
+            assertOnlyApplyFailedAnomaly();
         }
     }
 
@@ -285,7 +288,7 @@ class OrderTransactionTest {
         assertThat(paymentLookupScheduleRepository.findByOrderId(orderId)).isEmpty();
         assertThat(server.lookupCalls()).isEqualTo(1);
         assertThat(server.transactions()).hasSize(1);
-        assertThat(jdbcTemplate.queryForObject("select count(*) from payment_anomalies", Long.class)).isZero();
+        assertOnlyApplyFailedAnomaly();
     }
 
     @Test
@@ -305,7 +308,7 @@ class OrderTransactionTest {
             new PaymentGatewayRegistry(List.of(testPgFixture.newClient()), List.of(TestPgFixture.PROVIDER_ID)),
             transactionTemplate, paymentAnomalyRepository, clock, paymentLookupScheduleRepository, paymentLookupPolicy,
             paymentExpiryPolicy, orderConfirmedPublisher, orderConfirmedOutbox, paymentOutcomeRecorder,
-            paymentProgressRecorder, failingRefundCaseRepository, refundOutcomeRecorder);
+            paymentProgressRecorder, failingRefundCaseRepository, refundOutcomeRecorder, paymentApplyFailureRecorder);
         OrderResult afterRestart = restarted.confirm(1, orderId, TestPgFixture.command(attemptKey));
 
         assertThat(afterRestart.status()).isEqualTo("PAYMENT_PENDING");
@@ -368,6 +371,16 @@ class OrderTransactionTest {
 
     private long paymentRecords() {
         return jdbcTemplate.queryForObject("select count(*) from payment_records", Long.class);
+    }
+
+    // confirm의 결과 반영 실패는 별도 트랜잭션으로 APPLY_FAILED 한 건을 남긴다(w10s7). 이후 복구 조회는 다른 이상을 만들지 않는다.
+    private void assertOnlyApplyFailedAnomaly() {
+        assertThat(jdbcTemplate.queryForObject(
+            "select count(*) from payment_anomalies where order_id = ? and kind = 'APPLY_FAILED'", Long.class, orderId))
+            .as("APPLY_FAILED").isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+            "select count(*) from payment_anomalies where kind <> 'APPLY_FAILED'", Long.class))
+            .as("APPLY_FAILED 밖 이상").isZero();
     }
 
     private Map<String, Object> paymentRecord() {

@@ -7,6 +7,7 @@ import com.loopers.domains.order.app.port.OrderConfirmedOutbox;
 import com.loopers.domains.order.app.port.OrderConfirmedPayload;
 import com.loopers.domains.order.app.port.OrderConfirmedPublisher;
 import com.loopers.domains.order.app.port.OrderRepository;
+import com.loopers.domains.order.app.port.PaymentApplyFailureCounter;
 import com.loopers.domains.order.app.port.PaymentOutcomeRecorder;
 import com.loopers.domains.order.app.port.PaymentOutcomeRecorder.Outcome;
 import com.loopers.domains.order.app.port.PaymentProgressRecorder;
@@ -72,6 +73,7 @@ public class OrderApplicationService {
     private final PaymentProgressRecorder paymentProgressRecorder;
     private final PaymentRefundCaseRepository paymentRefundCaseRepository;
     private final RefundOutcomeRecorder refundOutcomeRecorder;
+    private final PaymentApplyFailureRecorder paymentApplyFailureRecorder;
 
     public OrderApplicationService(OrderRepository orderRepository, ProductRepository productRepository,
         PaymentRecordRepository paymentRecordRepository, PaymentGatewayRegistry paymentGatewayRegistry,
@@ -80,7 +82,7 @@ public class OrderApplicationService {
         PaymentExpiryPolicy paymentExpiryPolicy, OrderConfirmedPublisher orderConfirmedPublisher,
         OrderConfirmedOutbox orderConfirmedOutbox, PaymentOutcomeRecorder paymentOutcomeRecorder,
         PaymentProgressRecorder paymentProgressRecorder, PaymentRefundCaseRepository paymentRefundCaseRepository,
-        RefundOutcomeRecorder refundOutcomeRecorder) {
+        RefundOutcomeRecorder refundOutcomeRecorder, PaymentApplyFailureRecorder paymentApplyFailureRecorder) {
         this.orderRepository = orderRepository;
         this.productRepository = productRepository;
         this.paymentRecordRepository = paymentRecordRepository;
@@ -97,12 +99,22 @@ public class OrderApplicationService {
         this.paymentProgressRecorder = paymentProgressRecorder;
         this.paymentRefundCaseRepository = paymentRefundCaseRepository;
         this.refundOutcomeRecorder = refundOutcomeRecorder;
+        this.paymentApplyFailureRecorder = paymentApplyFailureRecorder;
     }
 
     public record ItemRequest(long productId, int quantity) { }
 
     private enum PaymentSource {
-        CREATE, CALLBACK, MANUAL, AUTOMATIC;
+        CREATE(PaymentApplyFailureCounter.Source.CREATE),
+        CALLBACK(PaymentApplyFailureCounter.Source.CALLBACK),
+        MANUAL(PaymentApplyFailureCounter.Source.MANUAL),
+        AUTOMATIC(PaymentApplyFailureCounter.Source.AUTOMATIC);
+
+        private final PaymentApplyFailureCounter.Source applyFailureSource;
+
+        PaymentSource(PaymentApplyFailureCounter.Source applyFailureSource) {
+            this.applyFailureSource = applyFailureSource;
+        }
 
         boolean canResolveReview() {
             return this == MANUAL;
@@ -151,6 +163,7 @@ public class OrderApplicationService {
                 // 예외 원문에는 SQL·값이 섞일 수 있어 종류만 남긴다.
                 log.error("PG 호출 후 결과 저장에 실패했습니다. orderId={}, providerStatus={}, causeType={}",
                     orderId, report.status(), e.getClass().getSimpleName());
+                paymentApplyFailureRecorder.record(orderId, PaymentSource.CREATE.applyFailureSource, e);
                 return transactionTemplate.execute(status -> withPayment(
                     orderRepository.findById(orderId).orElseThrow(OrderNotFoundException::new)));
             }
@@ -349,6 +362,8 @@ public class OrderApplicationService {
             });
         } catch (RuntimeException e) {
             logApplyFailure(requested.getOrderId(), source, e);
+            // 반영 트랜잭션이 rollback된 뒤라 주문 행 잠금을 쥐지 않은 채 기록한다. 잠금 대기 초과도 반영 실패로 남긴다(PL w10s7-P1).
+            paymentApplyFailureRecorder.record(requested.getOrderId(), source.applyFailureSource, e);
             throw e;
         }
     }
