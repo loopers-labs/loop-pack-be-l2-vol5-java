@@ -7,6 +7,7 @@
 #   commerce_payment_started_total{provider}       PG 결제를 새로 시작한 수(commit 뒤).
 #   commerce_payment_unknown_entered_total{provider} 결제 기록이 처음 UNKNOWN이 된 수(commit 뒤, 재보고 제외).
 #   commerce_payment_outcome_total{result}         주문이 결제 종결로 처음 바뀐 수. counter는 sum으로 합한다.
+#   http_server_requests_seconds_bucket{uri,le}    Spring HTTP 응답 시간 히스토그램(percentiles-histogram). uri는 경로 템플릿이라 유한하다.
 # label에는 orderId·userId를 넣지 않는다. 집계 결과는 alertname·severity만 남는다.
 # 수치는 모두 [임시]다. 운영하며 조정하고, 바꾸면 payment_test.yml도 함께 바꾼다.
 groups:
@@ -88,6 +89,29 @@ groups:
         annotations:
           summary: PG에 결제 요청을 보내지 못한 종결(not_sent)이 10분에 5건 이상입니다. PG 연결을 확인하세요.
           runbook_url: docs/runbook/week10.md#paymentpgunreachable
+          dashboard_url: http://localhost:3000/d/commerce-payment-incident
+
+      # 결제 확정 API 응답 시간 꼬리(p99). 대상: 확정, 본인 결과 확인, 관리자 결과 확인(한 주문씩 PG를 부르는 경로).
+      # 관리자 일괄 확정(reconcile-batch)은 최대 50건을 한 요청에서 처리해 원래 길어서 뺀다. 상태 코드는 가리지 않는다(실패 응답도 사용자가 기다린 시간).
+      # [임시] 1s: 정상 확정은 수십 ms다(증거 수집 실행에서 0.045s 버킷 이하). PG read timeout이 3s라 1s를 넘는 꼬리는 PG 지연·응답 유실을 의심할 수준이다.
+      #   p99 > 1s는 "1%를 넘는 요청이 1s 넘게 걸림"이다. 딱 1%면 p99가 빠른 버킷 경계에 걸려 울리지 않는다(payment_test.yml L1b).
+      # [임시] N=100건/5분: p99는 상위 1%라 100건 미만이면 상위 1%가 한 건도 안 돼 p99가 사실상 최대값(느린 한 건)이 된다.
+      #   새벽 저트래픽의 우연한 한 건으로 울리지 않게 건수로 거른다.
+      # [임시] 10m: PG 순간 지연(수 분)은 거르고, 계속되는 꼬리만 아침 확인(warning)으로 남긴다.
+      # 평균·p50이 오르는데 p99가 1s 아래인 전체 느려짐은 이 규칙 대상이 아니다(대시보드 p50 선으로 본다).
+      - alert: PaymentApiLatencyP99High
+        expr: |
+          histogram_quantile(0.99, sum by (le) (rate(http_server_requests_seconds_bucket{uri=~"/api/v1/orders/\\{id\\}/confirm|/api/v1/orders/\\{id\\}/payment/reconcile|/api-admin/v1/orders/\\{id\\}/payment/reconcile"}[5m])))
+            > 1
+          and
+          sum(increase(http_server_requests_seconds_count{uri=~"/api/v1/orders/\\{id\\}/confirm|/api/v1/orders/\\{id\\}/payment/reconcile|/api-admin/v1/orders/\\{id\\}/payment/reconcile"}[5m]))
+            >= 100
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: 결제 확정 API 응답 시간 p99가 1초를 넘은 채 10분 넘게 계속됩니다. PG 지연·응답 유실을 확인하세요.
+          runbook_url: docs/runbook/week10.md#paymentapilatencyp99high
           dashboard_url: http://localhost:3000/d/commerce-payment-incident
 
       # (5단계 자리) 환불 규칙: 고객에게 약속한 환불 기한까지 남은 시간으로 급한 정도를 정한다.

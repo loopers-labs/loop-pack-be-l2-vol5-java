@@ -39,6 +39,14 @@
 - 뜻: PG에 요청을 보내지 못한 종결(not_sent)이 10분 5건 이상이다. PG 연결 문제를 의심한다.
 - 본문은 범위 밖(다음 단계).
 
+## PaymentApiLatencyP99High
+
+- severity: warning
+- 뜻: 결제 확정·본인 결과 확인·관리자 결과 확인 API의 응답 시간 p99가 1s를 넘고(5분 100건 이상) 10분 지속됐다. 관리자 일괄 확정은 대상이 아니다.
+- p99가 PG read timeout(3s) 근처면 응답 유실·PG 지연을 먼저 의심한다(PaymentUnresolvedPiling·결과 모름 유입 비율 패널을 함께 본다).
+- 확인: 대시보드 "결제 확정 API 응답 시간 p50·p90·p99(5분)" 패널.
+- 본문은 범위 밖(다음 단계).
+
 ## GuideServerDown
 
 - severity: warning

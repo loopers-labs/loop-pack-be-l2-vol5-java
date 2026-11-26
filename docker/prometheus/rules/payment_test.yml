@@ -1,5 +1,5 @@
 # payment.yml 규칙 테스트(promtool test rules). 실행: scripts/ops/check-alerting.sh
-# 각 그룹은 계획의 장면 R1~R9 하나다(R9는 10주차 4b 가이드 서버 생존 감시). 수치는 payment.yml의 [임시] 값(X=0.2%, N=20, M=10m, K=5)에 맞췄다.
+# 각 그룹은 계획의 장면 R1~R9 하나다(R9는 10주차 4b 가이드 서버 생존 감시). L1~L5는 4b 추가 결제 확정 API p99 지연이다. 수치는 payment.yml의 [임시] 값(X=0.2%, N=20, M=10m, K=5)에 맞췄다.
 # 시계열은 1분 간격이다. 'a+bxn'은 a에서 시작해 1분마다 b씩 n번 더한다.
 rule_files:
   - payment.yml
@@ -355,3 +355,189 @@ tests:
               summary: critical 가이드 서버가 5분 넘게 응답하지 않습니다. critical 알림은 근거 없이 원본만 갑니다.
               runbook_url: docs/runbook/week10.md#guideserverdown
               dashboard_url: http://localhost:3000/d/commerce-payment-incident
+
+  # L 결제 확정 API p99 지연(PaymentApiLatencyP99High, warning). [임시] p99 > 1s AND 5분 100건 이상, 10분 지속.
+  # 히스토그램은 누적 버킷이다. 버킷 경계(le)는 실제 수집 값(Micrometer 기본) 중 0.0447·0.5369·1.0737·3.2212·+Inf만 쓴다.
+  # 빠른 요청은 0.0447 이하, PG read timeout 근처 요청(3s)은 1.0737 초과 3.2212 이하 버킷에 든다.
+
+  # L1 사고: 1분 2000건(5분 1만 건). 11분부터 2%(분당 40건)가 3초 걸린다.
+  # 5분 창의 느린 비율이 1%를 넘는 13분쯤부터 조건이 참이고 10분 지속한 23분쯤부터 울린다.
+  - name: L1 5분 1만 건 중 2%가 3초면 p99 지연 warning 울림
+    interval: 1m
+    input_series:
+      - series: 'http_server_requests_seconds_bucket{uri="/api/v1/orders/{id}/confirm", method="POST", status="200", outcome="SUCCESS", le="0.044739241"}'
+        values: '0+2000x10 21960+1960x49'
+      - series: 'http_server_requests_seconds_bucket{uri="/api/v1/orders/{id}/confirm", method="POST", status="200", outcome="SUCCESS", le="0.536870911"}'
+        values: '0+2000x10 21960+1960x49'
+      - series: 'http_server_requests_seconds_bucket{uri="/api/v1/orders/{id}/confirm", method="POST", status="200", outcome="SUCCESS", le="1.073741824"}'
+        values: '0+2000x10 21960+1960x49'
+      - series: 'http_server_requests_seconds_bucket{uri="/api/v1/orders/{id}/confirm", method="POST", status="200", outcome="SUCCESS", le="3.22122547"}'
+        values: '0+2000x60'
+      - series: 'http_server_requests_seconds_bucket{uri="/api/v1/orders/{id}/confirm", method="POST", status="200", outcome="SUCCESS", le="+Inf"}'
+        values: '0+2000x60'
+      - series: 'http_server_requests_seconds_count{uri="/api/v1/orders/{id}/confirm", method="POST", status="200", outcome="SUCCESS"}'
+        values: '0+2000x60'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: PaymentApiLatencyP99High
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: PaymentApiLatencyP99High
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations: &latency_annotations
+              summary: 결제 확정 API 응답 시간 p99가 1초를 넘은 채 10분 넘게 계속됩니다. PG 지연·응답 유실을 확인하세요.
+              runbook_url: docs/runbook/week10.md#paymentapilatencyp99high
+              dashboard_url: http://localhost:3000/d/commerce-payment-incident
+      - eval_time: 60m
+        alertname: PaymentApiLatencyP99High
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations: *latency_annotations
+
+  # L1b 경계: L1과 같되 느린 요청이 딱 1%(분당 20건)다. p99 순위(99%)가 빠른 버킷 누적과 같아 p99는 0.0447 안에 있다.
+  # 즉 이 규칙은 "1%를 넘는" 요청이 1초를 넘을 때 울린다.
+  - name: L1b 느린 요청이 딱 1%면 p99가 빠른 버킷 경계에 걸려 p99 지연 warning 안 울림
+    interval: 1m
+    input_series:
+      - series: 'http_server_requests_seconds_bucket{uri="/api/v1/orders/{id}/confirm", method="POST", status="200", outcome="SUCCESS", le="0.044739241"}'
+        values: '0+2000x10 21980+1980x49'
+      - series: 'http_server_requests_seconds_bucket{uri="/api/v1/orders/{id}/confirm", method="POST", status="200", outcome="SUCCESS", le="0.536870911"}'
+        values: '0+2000x10 21980+1980x49'
+      - series: 'http_server_requests_seconds_bucket{uri="/api/v1/orders/{id}/confirm", method="POST", status="200", outcome="SUCCESS", le="1.073741824"}'
+        values: '0+2000x10 21980+1980x49'
+      - series: 'http_server_requests_seconds_bucket{uri="/api/v1/orders/{id}/confirm", method="POST", status="200", outcome="SUCCESS", le="3.22122547"}'
+        values: '0+2000x60'
+      - series: 'http_server_requests_seconds_bucket{uri="/api/v1/orders/{id}/confirm", method="POST", status="200", outcome="SUCCESS", le="+Inf"}'
+        values: '0+2000x60'
+      - series: 'http_server_requests_seconds_count{uri="/api/v1/orders/{id}/confirm", method="POST", status="200", outcome="SUCCESS"}'
+        values: '0+2000x60'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: PaymentApiLatencyP99High
+        exp_alerts: []
+      - eval_time: 60m
+        alertname: PaymentApiLatencyP99High
+        exp_alerts: []
+
+  # L2 새벽: 분당 2건(5분 10건), 그중 5분에 1건(10%)이 3초. p99는 3초 근처로 1s를 넘지만 5분 10건 < N(100)이라 거른다.
+  # 건수 조건을 지우면 이 장면이 울려 실패한다.
+  - name: L2 새벽 5분 10건 중 1건이 3초면 건수 미달로 p99 지연 warning 안 울림
+    interval: 1m
+    input_series:
+      - series: 'http_server_requests_seconds_bucket{uri="/api/v1/orders/{id}/confirm", method="POST", status="200", outcome="SUCCESS", le="0.044739241"}'
+        values: '0+1.8x60'
+      - series: 'http_server_requests_seconds_bucket{uri="/api/v1/orders/{id}/confirm", method="POST", status="200", outcome="SUCCESS", le="0.536870911"}'
+        values: '0+1.8x60'
+      - series: 'http_server_requests_seconds_bucket{uri="/api/v1/orders/{id}/confirm", method="POST", status="200", outcome="SUCCESS", le="1.073741824"}'
+        values: '0+1.8x60'
+      - series: 'http_server_requests_seconds_bucket{uri="/api/v1/orders/{id}/confirm", method="POST", status="200", outcome="SUCCESS", le="3.22122547"}'
+        values: '0+2x60'
+      - series: 'http_server_requests_seconds_bucket{uri="/api/v1/orders/{id}/confirm", method="POST", status="200", outcome="SUCCESS", le="+Inf"}'
+        values: '0+2x60'
+      - series: 'http_server_requests_seconds_count{uri="/api/v1/orders/{id}/confirm", method="POST", status="200", outcome="SUCCESS"}'
+        values: '0+2x60'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: PaymentApiLatencyP99High
+        exp_alerts: []
+      - eval_time: 40m
+        alertname: PaymentApiLatencyP99High
+        exp_alerts: []
+      - eval_time: 60m
+        alertname: PaymentApiLatencyP99High
+        exp_alerts: []
+
+  # L3 잠깐 튐: 분당 2000건, 11·12분 2분만 10%(분당 200건)가 3초. 5분 창이 그 2분을 품는 약 6분만 조건이 참이다.
+  # for 10m에 못 미쳐 울리지 않는다. for를 지우면 12분에 울려 실패한다.
+  - name: L3 2분만 10%가 3초로 튀면 for 10m 전에 풀려 p99 지연 warning 안 울림
+    interval: 1m
+    input_series:
+      - series: 'http_server_requests_seconds_bucket{uri="/api/v1/orders/{id}/confirm", method="POST", status="200", outcome="SUCCESS", le="0.044739241"}'
+        values: '0+2000x10 21800+1800x1 25600+2000x47'
+      - series: 'http_server_requests_seconds_bucket{uri="/api/v1/orders/{id}/confirm", method="POST", status="200", outcome="SUCCESS", le="0.536870911"}'
+        values: '0+2000x10 21800+1800x1 25600+2000x47'
+      - series: 'http_server_requests_seconds_bucket{uri="/api/v1/orders/{id}/confirm", method="POST", status="200", outcome="SUCCESS", le="1.073741824"}'
+        values: '0+2000x10 21800+1800x1 25600+2000x47'
+      - series: 'http_server_requests_seconds_bucket{uri="/api/v1/orders/{id}/confirm", method="POST", status="200", outcome="SUCCESS", le="3.22122547"}'
+        values: '0+2000x60'
+      - series: 'http_server_requests_seconds_bucket{uri="/api/v1/orders/{id}/confirm", method="POST", status="200", outcome="SUCCESS", le="+Inf"}'
+        values: '0+2000x60'
+      - series: 'http_server_requests_seconds_count{uri="/api/v1/orders/{id}/confirm", method="POST", status="200", outcome="SUCCESS"}'
+        values: '0+2000x60'
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: PaymentApiLatencyP99High
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: PaymentApiLatencyP99High
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: PaymentApiLatencyP99High
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: PaymentApiLatencyP99High
+        exp_alerts: []
+
+  # L4 p50만 오름: 11분부터 모든 요청이 0.0447 초과 0.5369 이하로 느려진다. p50은 수십 ms에서 약 0.29s로 오르지만 p99는 약 0.53s다.
+  # 꼬리가 아니라 전체가 느려진 것은 이 규칙 대상이 아니다(대시보드 p50 선과 다른 지표로 본다).
+  - name: L4 전체가 0.5초로 느려져 p50은 올라도 p99가 1s 아래면 p99 지연 warning 안 울림
+    interval: 1m
+    input_series:
+      - series: 'http_server_requests_seconds_bucket{uri="/api/v1/orders/{id}/confirm", method="POST", status="200", outcome="SUCCESS", le="0.044739241"}'
+        values: '0+2000x10 20000x49'
+      - series: 'http_server_requests_seconds_bucket{uri="/api/v1/orders/{id}/confirm", method="POST", status="200", outcome="SUCCESS", le="0.536870911"}'
+        values: '0+2000x60'
+      - series: 'http_server_requests_seconds_bucket{uri="/api/v1/orders/{id}/confirm", method="POST", status="200", outcome="SUCCESS", le="1.073741824"}'
+        values: '0+2000x60'
+      - series: 'http_server_requests_seconds_bucket{uri="/api/v1/orders/{id}/confirm", method="POST", status="200", outcome="SUCCESS", le="3.22122547"}'
+        values: '0+2000x60'
+      - series: 'http_server_requests_seconds_bucket{uri="/api/v1/orders/{id}/confirm", method="POST", status="200", outcome="SUCCESS", le="+Inf"}'
+        values: '0+2000x60'
+      - series: 'http_server_requests_seconds_count{uri="/api/v1/orders/{id}/confirm", method="POST", status="200", outcome="SUCCESS"}'
+        values: '0+2000x60'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: PaymentApiLatencyP99High
+        exp_alerts: []
+      - eval_time: 60m
+        alertname: PaymentApiLatencyP99High
+        exp_alerts: []
+
+  # L5 경로 범위: 확정은 빠르고, 대상 밖 주문 생성(/api/v1/orders)만 11분부터 10%가 3초다. uri 조건으로 거른다.
+  - name: L5 대상이 아닌 주문 생성 경로만 느리면 p99 지연 warning 안 울림
+    interval: 1m
+    input_series:
+      - series: 'http_server_requests_seconds_bucket{uri="/api/v1/orders/{id}/confirm", method="POST", status="200", outcome="SUCCESS", le="0.044739241"}'
+        values: '0+2000x60'
+      - series: 'http_server_requests_seconds_bucket{uri="/api/v1/orders/{id}/confirm", method="POST", status="200", outcome="SUCCESS", le="0.536870911"}'
+        values: '0+2000x60'
+      - series: 'http_server_requests_seconds_bucket{uri="/api/v1/orders/{id}/confirm", method="POST", status="200", outcome="SUCCESS", le="1.073741824"}'
+        values: '0+2000x60'
+      - series: 'http_server_requests_seconds_bucket{uri="/api/v1/orders/{id}/confirm", method="POST", status="200", outcome="SUCCESS", le="3.22122547"}'
+        values: '0+2000x60'
+      - series: 'http_server_requests_seconds_bucket{uri="/api/v1/orders/{id}/confirm", method="POST", status="200", outcome="SUCCESS", le="+Inf"}'
+        values: '0+2000x60'
+      - series: 'http_server_requests_seconds_count{uri="/api/v1/orders/{id}/confirm", method="POST", status="200", outcome="SUCCESS"}'
+        values: '0+2000x60'
+      - series: 'http_server_requests_seconds_bucket{uri="/api/v1/orders", method="POST", status="200", outcome="SUCCESS", le="0.044739241"}'
+        values: '0+2000x10 21800+1800x49'
+      - series: 'http_server_requests_seconds_bucket{uri="/api/v1/orders", method="POST", status="200", outcome="SUCCESS", le="0.536870911"}'
+        values: '0+2000x10 21800+1800x49'
+      - series: 'http_server_requests_seconds_bucket{uri="/api/v1/orders", method="POST", status="200", outcome="SUCCESS", le="1.073741824"}'
+        values: '0+2000x10 21800+1800x49'
+      - series: 'http_server_requests_seconds_bucket{uri="/api/v1/orders", method="POST", status="200", outcome="SUCCESS", le="3.22122547"}'
+        values: '0+2000x60'
+      - series: 'http_server_requests_seconds_bucket{uri="/api/v1/orders", method="POST", status="200", outcome="SUCCESS", le="+Inf"}'
+        values: '0+2000x60'
+      - series: 'http_server_requests_seconds_count{uri="/api/v1/orders", method="POST", status="200", outcome="SUCCESS"}'
+        values: '0+2000x60'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: PaymentApiLatencyP99High
+        exp_alerts: []
+      - eval_time: 60m
+        alertname: PaymentApiLatencyP99High
+        exp_alerts: []

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 알림 규칙·라우팅·대시보드·로그 수집·가이드 서버 검사(10주차 4단계 4a·4b). gradle check에는 넣지 않는다(Docker 필요).
-# 1) promtool check rules / check config  2) promtool test rules(0건이면 실패, R1~R9)
+# 1) promtool check rules / check config  2) promtool test rules(0건이면 실패, R1~R9·L1~L5)
 # 3) amtool check-config / 라우팅(A1: critical → 가이드와 Slack 자리 둘 다)
 # 4) 대시보드 JSON·datasource·dashboard_url·runbook 앵커 일치
 # 5) Alloy validate + label은 app·level만  6) Loki verify-config  7) 가이드 서버 unittest(0건·skip이면 실패)
@@ -89,6 +89,7 @@ route_case guide-webhook,slack alertname=PaymentUnresolvedPiling severity=critic
 route_case guide-webhook,slack alertname=PaymentAbandonedPiling severity=critical
 route_case slack alertname=PaymentNeedsReview severity=warning
 route_case slack alertname=GuideServerDown severity=warning
+route_case slack alertname=PaymentApiLatencyP99High severity=warning
 route_case slack alertname=SomethingWithoutSeverity
 
 step "dashboard / rule links"

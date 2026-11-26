@@ -432,6 +432,92 @@
           "refId": "A"
         }
       ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "결제 확정 API 응답 시간 p50·p90·p99(5분)",
+      "description": "확정·본인 결과 확인·관리자 결과 확인 경로의 응답 시간 분위수(5분 창). 빨간 선은 warning p99 조건 1s다(5분 100건 이상, 10분 지속일 때 울림). 노란 선은 PG read timeout 3s.\np99가 3s 근처면 응답 유실·PG 지연을 먼저 의심한다. p50만 오르면 전체 느려짐이라 이 알림 대상이 아니다.\nrunbook: docs/runbook/week10.md#paymentapilatencyp99high",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 34,
+        "w": 24,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "spanNulls": false,
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          },
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              },
+              {
+                "color": "yellow",
+                "value": 3
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(http_server_requests_seconds_bucket{uri=~\"/api/v1/orders/\\\\{id\\\\}/confirm|/api/v1/orders/\\\\{id\\\\}/payment/reconcile|/api-admin/v1/orders/\\\\{id\\\\}/payment/reconcile\"}[5m])))",
+          "legendFormat": "p50",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.9, sum by (le) (rate(http_server_requests_seconds_bucket{uri=~\"/api/v1/orders/\\\\{id\\\\}/confirm|/api/v1/orders/\\\\{id\\\\}/payment/reconcile|/api-admin/v1/orders/\\\\{id\\\\}/payment/reconcile\"}[5m])))",
+          "legendFormat": "p90",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(http_server_requests_seconds_bucket{uri=~\"/api/v1/orders/\\\\{id\\\\}/confirm|/api/v1/orders/\\\\{id\\\\}/payment/reconcile|/api-admin/v1/orders/\\\\{id\\\\}/payment/reconcile\"}[5m])))",
+          "legendFormat": "p99",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "C"
+        }
+      ]
     }
   ],
   "links": [
