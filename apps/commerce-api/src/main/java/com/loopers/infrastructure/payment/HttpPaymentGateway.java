@@ -28,6 +28,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CancellationException;
 import java.util.function.Supplier;
 
 /**
@@ -36,7 +37,8 @@ import java.util.function.Supplier;
  * 연결 timeout 은 HttpClient 에, 응답 timeout 은 request factory 에 설정값으로 건다. 어떤 요청도 다시 보내지 않는다.
  * base URL·X-USER-ID·callback URL 은 설정값만 쓴다. HTTP 요청·응답 본문은 로그에 남기지 않는다 (요청 본문에 카드 번호가 있다).
  * 응답은 상태 코드와 본문 문자열로 받아 트리로 해석한다. transactionCreated 가 진짜 boolean 인지 보기 위해서다.
- * create: 202 + PENDING → ACCEPTED, 422 + 정확한 code + boolean false + orderId·amount 일치 → REJECTED_NO_EFFECT,
+ * create: orderId·amount 일치가 확인된 202 + PENDING + 거래 키 → ACCEPTED,
+ * orderId·amount 일치가 확인된 422 + 정확한 code + boolean false → REJECTED_NO_EFFECT,
  * 202·422 인데 orderId·amount 불일치 → UNKNOWN + 충돌 사유(key 없음), 그 밖의 응답·잘못된 JSON·timeout·연결 실패 → UNKNOWN.
  * 조회(목록·단건): 200 → FOUND + 거래, 단건 404 → FOUND + 0건, 그 밖의 응답·잘못된 JSON·timeout·연결 실패 → UNAVAILABLE(CALL_FAILED).
  * 조회 두 경로는 서킷브레이커 하나로 감싼다 (설계 5-7 결정 ㉗~㉜). UNAVAILABLE(CALL_FAILED) 결과만 실패 표본으로 세고 FOUND(빈 목록·404 포함)는 성공이다.
@@ -50,6 +52,7 @@ public class HttpPaymentGateway implements PaymentGateway {
     private static final String PAYMENTS_PATH = "/api/v1/payments";
     private static final String USER_ID_HEADER = "X-USER-ID";
     private static final String REJECTED_BEFORE_CREATE_CODE = "TEST_PG_REJECTED_BEFORE_CREATE";
+    private static final int CAUSE_CHAIN_LIMIT = 5;
     private static final int ACCEPTED = 202;
     private static final int OK = 200;
     private static final int NOT_FOUND = 404;
@@ -106,11 +109,13 @@ public class HttpPaymentGateway implements PaymentGateway {
                 .contentType(MediaType.APPLICATION_JSON)
                 .body((StreamingHttpOutputMessage.Body) outputStream -> outputStream.write(body))
                 .exchange(HttpPaymentGateway::readRaw);
-        } catch (RestClientException e) {
-            // 외부 경계에서 결과를 잃은 지점. 가설 2(응답 유실)를 지지하는 1차 증거다. 예외 메시지·본문은 남기지 않는다.
-            log.warn("pg.create outcome=UNKNOWN providerOrderId={} cause={}",
-                command.providerOrderId(), rootCauseName(e));
-            return PaymentCreateResult.unknown();
+        } catch (RestClientException | CancellationException e) {
+            // 요청은 보냈고 결과를 확인하지 못한 지점. 외부 거래가 생겼는지 알 수 없으므로 기존 UNKNOWN 경로로 수렴시킨다.
+            // CancellationException 을 같이 잡는 이유: spring-web 6.2.5 의 JdkClientHttpRequest 는 timeout 처리 중
+            // CompletableFuture 를 취소해 이 예외를 그대로 올릴 수 있다 (spring-framework#33973, 6.2.10 에서 수정).
+            // 이 프로젝트에는 PG 호출을 의도적으로 취소하거나 인터럽트하는 경로가 없으므로, 여기서의 취소는 "결과 미확인"을 뜻한다.
+            // RuntimeException·Exception·Throwable 전체를 잡지 않는다. 개발 오류나 설정 결함을 UNKNOWN 으로 숨기지 않기 위해서다.
+            return unknownCreate(command.providerOrderId(), e);
         }
         PaymentCreateResult result = mapCreate(command, response);
         logCreateResult(command, result);
@@ -133,14 +138,37 @@ public class HttpPaymentGateway implements PaymentGateway {
     }
 
     /**
-     * 예외의 가장 깊은 원인의 클래스 이름만 돌려준다. 메시지에는 주소·본문이 섞일 수 있어 남기지 않는다.
+     * 결과를 확인하지 못한 create 를 UNKNOWN 으로 수렴시키고 증거를 남긴다.
+     * 예외 타입과 cause chain 까지만 적는다. timeout 인지 거래가 생겼는지를 여기서 단정하지 않는다.
+     * interrupted 는 "명시적 취소·인터럽트 정책"과 "결과 미확인"을 구분하기 위한 관측값이다. 이 프로젝트에는 그런 정책이 없다.
      */
-    private static String rootCauseName(Throwable e) {
+    PaymentCreateResult unknownCreate(String providerOrderId, RuntimeException e) {
+        log.warn("pg.create outcome=UNKNOWN providerOrderId={} exception={} causeChain={} interrupted={}",
+            providerOrderId, e.getClass().getSimpleName(), causeChain(e), Thread.currentThread().isInterrupted());
+        return PaymentCreateResult.unknown();
+    }
+
+    /**
+     * 조회 결과를 확인하지 못한 경우 기존 UNAVAILABLE 로 수렴시키고 증거를 남긴다.
+     */
+    private PaymentLookupResult unavailableLookup(RuntimeException e) {
+        log.warn("pg.lookup outcome=UNAVAILABLE exception={} causeChain={} interrupted={}",
+            e.getClass().getSimpleName(), causeChain(e), Thread.currentThread().isInterrupted());
+        return PaymentLookupResult.unavailable(PaymentLookupResult.UnavailableReason.CALL_FAILED);
+    }
+
+    /**
+     * 예외의 cause chain 을 클래스 이름만으로 늘어놓는다. 메시지에는 주소·본문이 섞일 수 있어 남기지 않는다.
+     * 가장 깊은 원인 하나만 보면 정보를 잃는다 (연결 거부가 ClosedChannelException 으로만 보이는 사례).
+     */
+    private static List<String> causeChain(Throwable e) {
+        List<String> names = new ArrayList<>();
         Throwable cause = e;
-        while (cause.getCause() != null && cause.getCause() != cause) {
-            cause = cause.getCause();
+        while (cause != null && names.size() < CAUSE_CHAIN_LIMIT) {
+            names.add(cause.getClass().getSimpleName());
+            cause = cause.getCause() == cause ? null : cause.getCause();
         }
-        return cause.getClass().getSimpleName();
+        return names;
     }
 
     /**
@@ -206,8 +234,8 @@ public class HttpPaymentGateway implements PaymentGateway {
             response = restClient.get()
                 .uri(uriBuilder -> uriBuilder.path(PAYMENTS_PATH).queryParam("orderId", providerOrderId).build())
                 .exchange(HttpPaymentGateway::readRaw);
-        } catch (RestClientException e) {
-            return PaymentLookupResult.unavailable(PaymentLookupResult.UnavailableReason.CALL_FAILED);
+        } catch (RestClientException | CancellationException e) {
+            return unavailableLookup(e);
         }
         if (response.status() != OK) {
             return PaymentLookupResult.unavailable(PaymentLookupResult.UnavailableReason.CALL_FAILED);
@@ -233,8 +261,8 @@ public class HttpPaymentGateway implements PaymentGateway {
             response = restClient.get()
                 .uri(PAYMENTS_PATH + "/{transactionKey}", transactionKey)
                 .exchange(HttpPaymentGateway::readRaw);
-        } catch (RestClientException e) {
-            return PaymentLookupResult.unavailable(PaymentLookupResult.UnavailableReason.CALL_FAILED);
+        } catch (RestClientException | CancellationException e) {
+            return unavailableLookup(e);
         }
         if (response.status() == NOT_FOUND) {
             return PaymentLookupResult.found(List.of());
@@ -267,8 +295,8 @@ public class HttpPaymentGateway implements PaymentGateway {
     }
 
     /**
-     * 202 는 접수, 422 는 네 조건을 모두 갖춘 경우만 거절이다. 두 경우 모두 orderId·amount 가 요청과 다르면 충돌 사유를 붙인 UNKNOWN 이다.
-     * 본문이 없거나 JSON 이 아니거나 그 밖의 상태 코드면 증거가 아니므로 UNKNOWN 이다.
+     * 202 수락과 422 확정 거절 모두 응답의 주문 ID와 금액이 요청과 일치해야 한다.
+     * 유효한 값의 불일치는 충돌로 남기고, 필수 필드 부재나 형식 오류만 있으면 UNKNOWN 으로 둔다.
      */
     private PaymentCreateResult mapCreate(PaymentCreateCommand command, RawResponse response) {
         JsonNode body;
@@ -280,46 +308,38 @@ public class HttpPaymentGateway implements PaymentGateway {
         if (body == null || !body.isObject()) {
             return PaymentCreateResult.unknown();
         }
-        if (response.status() == ACCEPTED) {
-            PaymentAttempt.ConflictReason conflict = conflictOf(command, body);
-            if (conflict != null) {
-                return PaymentCreateResult.unknownWithConflict(conflict);
-            }
-            String transactionKey = textOf(body, "transactionKey");
-            if (transactionKey == null || !PaymentTransaction.Status.PENDING.name().equals(textOf(body, "status"))) {
-                return PaymentCreateResult.unknown();
-            }
-            return PaymentCreateResult.accepted(transactionKey);
-        }
-        if (response.status() == UNPROCESSABLE_CONTENT) {
+        boolean rejection = response.status() == UNPROCESSABLE_CONTENT;
+        if (rejection) {
             JsonNode transactionCreated = body.get("transactionCreated");
             boolean rejectedBeforeCreate = REJECTED_BEFORE_CREATE_CODE.equals(textOf(body, "code"))
                 && transactionCreated != null && transactionCreated.isBoolean() && !transactionCreated.booleanValue();
             if (!rejectedBeforeCreate) {
                 return PaymentCreateResult.unknown();
             }
-            PaymentAttempt.ConflictReason conflict = conflictOf(command, body);
-            if (conflict != null) {
-                return PaymentCreateResult.unknownWithConflict(conflict);
-            }
-            return PaymentCreateResult.rejectedNoEffect();
+        } else if (response.status() != ACCEPTED) {
+            return PaymentCreateResult.unknown();
         }
-        return PaymentCreateResult.unknown();
-    }
 
-    /**
-     * 응답의 orderId·amount 가 요청과 다르면 충돌 사유. 값이 없거나 형식이 다르면 비교하지 않고 null (증거 아님으로만 처리).
-     */
-    private static PaymentAttempt.ConflictReason conflictOf(PaymentCreateCommand command, JsonNode body) {
         String orderId = textOf(body, "orderId");
         if (orderId != null && !orderId.equals(command.providerOrderId())) {
-            return PaymentAttempt.ConflictReason.ORDER_MISMATCH;
+            return PaymentCreateResult.unknownWithConflict(PaymentAttempt.ConflictReason.ORDER_MISMATCH);
         }
         JsonNode amount = body.get("amount");
-        if (amount != null && amount.isIntegralNumber() && amount.asLong() != command.amount()) {
-            return PaymentAttempt.ConflictReason.AMOUNT_MISMATCH;
+        boolean validAmount = amount != null && amount.isIntegralNumber() && amount.canConvertToLong();
+        if (validAmount && amount.longValue() != command.amount()) {
+            return PaymentCreateResult.unknownWithConflict(PaymentAttempt.ConflictReason.AMOUNT_MISMATCH);
         }
-        return null;
+        if (orderId == null || !validAmount) {
+            return PaymentCreateResult.unknown();
+        }
+        if (rejection) {
+            return PaymentCreateResult.rejectedNoEffect();
+        }
+        String transactionKey = textOf(body, "transactionKey");
+        if (transactionKey == null || !PaymentTransaction.Status.PENDING.name().equals(textOf(body, "status"))) {
+            return PaymentCreateResult.unknown();
+        }
+        return PaymentCreateResult.accepted(transactionKey);
     }
 
     private static PaymentTransaction toTransaction(JsonNode node) {
@@ -330,10 +350,11 @@ public class HttpPaymentGateway implements PaymentGateway {
         String orderId = textOf(node, "orderId");
         String status = textOf(node, "status");
         JsonNode amount = node.get("amount");
-        if (transactionKey == null || orderId == null || status == null || amount == null || !amount.isIntegralNumber()) {
-            throw new IllegalArgumentException("거래 응답에 필수 값이 없다.");
+        boolean validAmount = amount != null && amount.isIntegralNumber() && amount.canConvertToLong();
+        if (transactionKey == null || orderId == null || status == null || !validAmount) {
+            throw new IllegalArgumentException("거래 응답의 필수 값이 없거나 유효하지 않다.");
         }
-        return new PaymentTransaction(transactionKey, orderId, amount.asLong(), PaymentTransaction.Status.valueOf(status));
+        return new PaymentTransaction(transactionKey, orderId, amount.longValue(), PaymentTransaction.Status.valueOf(status));
     }
 
     private static String textOf(JsonNode node, String field) {
