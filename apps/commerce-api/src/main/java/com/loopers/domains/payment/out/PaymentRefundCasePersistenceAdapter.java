@@ -56,5 +56,6 @@ public class PaymentRefundCasePersistenceAdapter implements PaymentRefundCaseRep
 
     @Override
     public void recordCheck(long orderId, RefundCase.CheckOutcome outcome, String cause, Instant checkedAt) {
+        paymentRefundCaseJpaRepository.updateLastCheck(orderId, outcome.name(), cause, checkedAt);
     }
 }

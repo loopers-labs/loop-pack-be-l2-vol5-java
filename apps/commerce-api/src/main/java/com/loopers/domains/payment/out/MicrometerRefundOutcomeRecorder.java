@@ -16,14 +16,17 @@ import org.springframework.stereotype.Component;
 public class MicrometerRefundOutcomeRecorder implements RefundOutcomeRecorder {
     static final String OUTCOME_METRIC = "commerce.payment.refund_outcome";
     static final String ASSIGNED_METRIC = "commerce.payment.refund_person_assigned";
+    static final String CHECK_METRIC = "commerce.payment.refund_check";
     private static final String OUTCOME_DESCRIPTION = "환불 확인 대상의 돈의 상태가 환불됨·청구 없음으로 끝난 횟수, result·actor별. "
         + "commit 뒤에만 센다.";
     private static final String ASSIGNED_DESCRIPTION = "환불 확인 대상의 담당이 사람으로 바뀐 횟수, reason별. commit 뒤에만 센다.";
+    private static final String CHECK_DESCRIPTION = "환불 확인 회차의 마지막 확인 결과 횟수, outcome별. commit 뒤에만 센다.";
     private static final List<String> REASONS = List.of(RefundCase.HANDOFF_DEADLINE, RefundCase.TRANSACTION_MISMATCH,
         RefundCase.MULTIPLE_TRANSACTIONS, RefundCase.REFUND_REJECTED, RefundCase.RESULT_REVERSED);
 
     private final Map<String, Counter> outcomes;
     private final Map<String, Counter> assignments;
+    private final Map<RefundCase.CheckOutcome, Counter> checks;
 
     public MicrometerRefundOutcomeRecorder(MeterRegistry meterRegistry) {
         Map<String, Counter> registeredOutcomes = new HashMap<>();
@@ -43,8 +46,16 @@ public class MicrometerRefundOutcomeRecorder implements RefundOutcomeRecorder {
                 .tag("reason", label(reason))
                 .register(meterRegistry));
         }
+        Map<RefundCase.CheckOutcome, Counter> registeredChecks = new HashMap<>();
+        for (RefundCase.CheckOutcome outcome : RefundCase.CheckOutcome.values()) {
+            registeredChecks.put(outcome, Counter.builder(CHECK_METRIC)
+                .description(CHECK_DESCRIPTION)
+                .tag("outcome", label(outcome.name()))
+                .register(meterRegistry));
+        }
         this.outcomes = Map.copyOf(registeredOutcomes);
         this.assignments = Map.copyOf(registeredAssignments);
+        this.checks = Map.copyOf(registeredChecks);
     }
 
     @Override
@@ -64,6 +75,7 @@ public class MicrometerRefundOutcomeRecorder implements RefundOutcomeRecorder {
 
     @Override
     public void recordCheck(RefundCase.CheckOutcome outcome) {
+        checks.get(outcome).increment();
     }
 
     private static String outcomeKey(Result result, RefundCase.RefundActor actor) {

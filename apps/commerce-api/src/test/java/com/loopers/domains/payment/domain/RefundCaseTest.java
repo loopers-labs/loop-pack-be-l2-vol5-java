@@ -622,6 +622,17 @@ class RefundCaseTest {
         assertThat(refundCase.getCheckAttempts()).isEqualTo(1);
     }
 
+    @Test
+    @DisplayName("마지막 확인 원인이 칸 상한 100자를 넘으면 앞 100자만 남긴다")
+    void truncatesLongCause() {
+        RefundCase refundCase = existing(MoneyStatus.CHARGED, Owner.PERSON, "TR-1", LATE, 1);
+        String cause = "A".repeat(100) + "B".repeat(30);
+
+        refundCase.recordCheck(RefundCase.CheckOutcome.PG_UNREACHABLE, cause, LATE);
+
+        assertThat(refundCase.getLastCheckCause()).isEqualTo("A".repeat(100));
+    }
+
     private static PaymentRecord pending(PaymentRecord.ProviderStatus providerStatus, String transactionKey) {
         PaymentRecord payment = PaymentRecord.pgStarted(42, new Money(7000), "attempt", "test-pg", STARTED_AT);
         payment.applyProviderReport(providerStatus, transactionKey);

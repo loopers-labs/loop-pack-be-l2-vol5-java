@@ -183,13 +183,13 @@ public class TestPgPaymentGateway implements PaymentGateway {
                 .exchange((request, response) -> {
                     int status = response.getStatusCode().value();
                     if (status != OK) {
-                        return listFailed("HTTP " + status);
+                        return listErrorResponse("HTTP " + status);
                     }
                     return readTree(response.getBody().readAllBytes())
                         .flatMap(this::toTransactions)
                         .<PaymentTransactionsLookup>map(transactions -> new PaymentTransactionsLookup.Found(
                             transactions, PaymentTransactionsLookup.Coverage.ALL))
-                        .orElseGet(() -> listFailed("응답 형식 오류"));
+                        .orElseGet(() -> listErrorResponse("응답 형식 오류"));
                 });
         } catch (RestClientException e) {
             return listFailed(causeSummary(e));
@@ -358,8 +358,16 @@ public class TestPgPaymentGateway implements PaymentGateway {
     }
 
     private static PaymentTransactionsLookup listFailed(String reason) {
+        return listFailed(reason, PaymentTransactionsLookup.FailureKind.UNREACHABLE);
+    }
+
+    private static PaymentTransactionsLookup listErrorResponse(String reason) {
+        return listFailed(reason, PaymentTransactionsLookup.FailureKind.ERROR_RESPONSE);
+    }
+
+    private static PaymentTransactionsLookup listFailed(String reason, PaymentTransactionsLookup.FailureKind kind) {
         log.debug("테스트 PG 주문 거래 조회에 실패했습니다. reason={}", reason);
-        return new PaymentTransactionsLookup.Failed(reason);
+        return new PaymentTransactionsLookup.Failed(reason, kind);
     }
 
     private static String causeSummary(RestClientException exception) {

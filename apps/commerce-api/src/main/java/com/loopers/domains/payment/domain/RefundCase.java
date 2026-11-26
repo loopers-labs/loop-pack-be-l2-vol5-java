@@ -37,6 +37,8 @@ public final class RefundCase {
     public static final Duration FIRST_CHECK_DELAY = Duration.ofMinutes(1);
     public static final Duration MAX_CHECK_DELAY = Duration.ofHours(1);
     public static final Duration PERSON_CHECK_DELAY = Duration.ofMinutes(30);
+    // last_check_cause 칸 길이다. 원인은 클래스 이름·우리 코드가 만든 고정 문자열이라 보통 짧지만 칸을 넘기면 자른다.
+    public static final int MAX_CHECK_CAUSE_LENGTH = 100;
 
     private final long orderId;
     private final String providerId;
@@ -175,21 +177,29 @@ public final class RefundCase {
         return !isConcluded() && owner == Owner.AUTO && !now.isBefore(handoffAt);
     }
 
-    // 자동 환불(취소 호출)을 보낼 수 있는지 판단하는 유일한 곳이다. 사람이 맡은 건에는 시스템이 끼어들지 않는다(to-pl 17:15).
-    // 환불 요청함을 commit한 뒤에만 취소를 보내므로 청구 확인에서만 한 번 요청할 수 있다.
     public boolean canRequestRefund() {
-        return moneyStatus == MoneyStatus.CHARGED && owner == Owner.AUTO;
+        return canRequestRefund(CheckTrigger.SCHEDULER);
     }
 
+    // 환불(취소 호출)을 보낼 수 있는지 판단하는 유일한 곳이다. 스케줄러는 사람이 맡은 건에 끼어들지 않고(to-pl 17:15),
+    // 사람이 "지금 처리"를 누른 회차는 사람 담당 건도 환불한다(PL P2). 환불 요청함을 commit한 뒤에만 취소를 보내므로
+    // 청구 확인에서만 한 번 요청할 수 있다.
     public boolean canRequestRefund(CheckTrigger trigger) {
-        return canRequestRefund();
+        return moneyStatus == MoneyStatus.CHARGED && (owner == Owner.AUTO || trigger == CheckTrigger.PERSON);
     }
 
-    public void requestRefund(CheckTrigger trigger, Instant now, Duration resultCheckDelay) {
-        requestRefund(now, resultCheckDelay);
-    }
-
+    // 원인에는 예외 클래스 이름이나 우리 코드가 만든 고정 문자열만 온다(PL P4). PG가 준 텍스트는 호출자가 넣지 않는다.
     public void recordCheck(CheckOutcome outcome, String cause, Instant now) {
+        lastCheckAt = now;
+        lastCheckOutcome = outcome;
+        lastCheckCause = limitCause(cause);
+    }
+
+    public static String limitCause(String cause) {
+        if (cause == null || cause.length() <= MAX_CHECK_CAUSE_LENGTH) {
+            return cause;
+        }
+        return cause.substring(0, MAX_CHECK_CAUSE_LENGTH);
     }
 
     public void recordCharged(String foundTransactionKey) {
@@ -198,10 +208,14 @@ public final class RefundCase {
         moneyStatus = MoneyStatus.CHARGED;
     }
 
-    // 결과가 기록되지 않은 채 멈춘 경우를 다음 회차가 조회로 확인하도록 결과 확인 시각을 잡아 둔다.
     public void requestRefund(Instant now, Duration resultCheckDelay) {
-        if (!canRequestRefund()) {
-            throw new IllegalStateException("자동 담당의 청구 확인 대상만 환불을 요청할 수 있습니다: " + moneyStatus + "/" + owner);
+        requestRefund(CheckTrigger.SCHEDULER, now, resultCheckDelay);
+    }
+
+    // 결과가 기록되지 않은 채 멈춘 경우를 다음 회차가 조회로 확인하도록 결과 확인 시각을 잡아 둔다.
+    public void requestRefund(CheckTrigger trigger, Instant now, Duration resultCheckDelay) {
+        if (!canRequestRefund(trigger)) {
+            throw new IllegalStateException("환불을 요청할 수 없는 대상입니다: " + moneyStatus + "/" + owner + "/" + trigger);
         }
         moneyStatus = MoneyStatus.REFUND_REQUESTED;
         refundRequestedAt = now;
@@ -210,10 +224,15 @@ public final class RefundCase {
 
     // 환불 주체는 우리가 본 경로로 정한다: 우리가 요청한 뒤면 SYSTEM, 요청한 적 없는데 취소가 보이면 EXTERNAL(계획 2-1).
     public void markRefunded(Instant now) {
+        markRefunded(now, CLOSED_BY_SYSTEM);
+    }
+
+    // closedBy는 돈이 끝나며 사람 담당을 닫은 주체다. 스케줄러 회차는 SYSTEM, "지금 처리" 회차는 누른 관리자 이름이다.
+    public void markRefunded(Instant now, String closedBy) {
         requireOpen();
         refundActor = moneyStatus == MoneyStatus.REFUND_REQUESTED || moneyStatus == MoneyStatus.REFUND_UNKNOWN
             ? RefundActor.SYSTEM : RefundActor.EXTERNAL;
-        conclude(MoneyStatus.REFUNDED, now);
+        conclude(MoneyStatus.REFUNDED, now, closedBy);
     }
 
     public void markRefundUnknown(Instant now, Duration resultCheckDelay) {
@@ -260,8 +279,12 @@ public final class RefundCase {
     }
 
     public void closeNoCharge(Instant now) {
+        closeNoCharge(now, CLOSED_BY_SYSTEM);
+    }
+
+    public void closeNoCharge(Instant now, String closedBy) {
         requireMoney(MoneyStatus.CHECKING);
-        conclude(MoneyStatus.NO_CHARGE, now);
+        conclude(MoneyStatus.NO_CHARGE, now, closedBy);
     }
 
     // 담당만 바꾼다. 돈의 사실은 그대로 남고 돈이 끝나지 않았으므로 조회는 계속한다.
@@ -309,13 +332,13 @@ public final class RefundCase {
     }
 
     // PG 사실로 돈이 끝나면 사람 담당도 같은 때에 닫는다. 사람이 따로 "처리 완료"를 누를 필요가 없다(to-pl 17:15).
-    private void conclude(MoneyStatus concluded, Instant now) {
+    private void conclude(MoneyStatus concluded, Instant now, String closedBy) {
         moneyStatus = concluded;
         concludedAt = now;
         nextCheckAt = null;
         if (isPersonOpen()) {
             ownerClosedAt = now;
-            ownerClosedBy = CLOSED_BY_SYSTEM;
+            ownerClosedBy = closedBy;
         }
     }
 

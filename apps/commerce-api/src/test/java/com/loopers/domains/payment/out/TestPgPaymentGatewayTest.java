@@ -423,6 +423,19 @@ class TestPgPaymentGatewayTest {
             assertThat(gateway.verifyOrder(ORDER_ID, null)).isInstanceOf(PaymentTransactionsLookup.Failed.class);
         }
 
+        @ParameterizedTest(name = "{0} → {1}")
+        @CsvSource({"ERROR_500, ERROR_RESPONSE", "BROKEN_JSON, ERROR_RESPONSE", "DELAY, UNREACHABLE"})
+        @DisplayName("주문 조회 실패는 PG가 오류·깨진 응답을 준 경우 ERROR_RESPONSE, 응답을 받지 못한 경우 UNREACHABLE로 나눈다")
+        void classifiesLookupFailureKind(LookupBehavior behavior, PaymentTransactionsLookup.FailureKind expected) {
+            server.addTransaction(ORDER_ID, AMOUNT, "SUCCESS");
+            server.lookupBehavior(behavior);
+
+            PaymentTransactionsLookup result = gateway.verifyOrder(ORDER_ID, null);
+
+            assertThat(result).isInstanceOfSatisfying(PaymentTransactionsLookup.Failed.class,
+                failed -> assertThat(failed.kind()).isEqualTo(expected));
+        }
+
         static Stream<Arguments> failures() {
             return Stream.of(
                 arguments("키 조회 500", LookupBehavior.ERROR_500, true),

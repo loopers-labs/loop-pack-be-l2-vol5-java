@@ -7,6 +7,7 @@ import java.util.Optional;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -21,4 +22,10 @@ public interface PaymentRefundCaseJpaRepository extends JpaRepository<PaymentRef
         + " where c.moneyStatus in ('CHECKING', 'CHARGED', 'REFUND_REQUESTED', 'REFUND_UNKNOWN') and c.nextCheckAt <= :now"
         + " order by case when c.owner = 'AUTO' then 0 else 1 end, c.nextCheckAt, c.orderId")
     List<Long> findDue(@Param("now") Instant now, Pageable pageable);
+
+    @Modifying
+    @Query("update PaymentRefundCaseJpaEntity c set c.lastCheckAt = :checkedAt, c.lastCheckOutcome = :outcome,"
+        + " c.lastCheckCause = :cause where c.orderId = :orderId")
+    int updateLastCheck(@Param("orderId") long orderId, @Param("outcome") String outcome, @Param("cause") String cause,
+        @Param("checkedAt") Instant checkedAt);
 }

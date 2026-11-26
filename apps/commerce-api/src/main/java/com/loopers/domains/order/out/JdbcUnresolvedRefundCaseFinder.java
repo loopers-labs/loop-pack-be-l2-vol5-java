@@ -21,7 +21,8 @@ public class JdbcUnresolvedRefundCaseFinder implements UnresolvedRefundCaseFinde
     private static final String FIND_SQL = """
         select order_id, provider_order_id, provider_id, amount, money_status, refund_actor, owner, owner_reason,
                owner_changed_at, owner_closed_at, prior_provider_status, transaction_key is not null as has_transaction_key,
-               opened_at, handoff_at, promise_at, check_attempts, next_check_at, refund_requested_at, concluded_at
+               opened_at, handoff_at, promise_at, check_attempts, next_check_at, refund_requested_at, concluded_at,
+               last_check_at, last_check_outcome, last_check_cause
         from payment_refund_cases
         where opened_at <= ?%s
         order by opened_at, order_id
@@ -64,7 +65,8 @@ public class JdbcUnresolvedRefundCaseFinder implements UnresolvedRefundCaseFinde
             resultSet.getString("prior_provider_status"), resultSet.getBoolean("has_transaction_key"),
             instant(resultSet, "opened_at"), instant(resultSet, "handoff_at"), instant(resultSet, "promise_at"),
             resultSet.getInt("check_attempts"), instant(resultSet, "next_check_at"), instant(resultSet, "refund_requested_at"),
-            instant(resultSet, "concluded_at"), null, null, null);
+            instant(resultSet, "concluded_at"), instant(resultSet, "last_check_at"), resultSet.getString("last_check_outcome"),
+            resultSet.getString("last_check_cause"));
     }
 
     private static Instant instant(ResultSet resultSet, String column) throws SQLException {

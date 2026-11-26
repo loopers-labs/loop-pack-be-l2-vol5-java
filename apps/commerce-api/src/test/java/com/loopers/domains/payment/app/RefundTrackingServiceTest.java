@@ -702,12 +702,12 @@ class RefundTrackingServiceTest {
     @ParameterizedTest(name = "취소 결과={0} → 마지막 확인={1}, 원인={2}, 돈의 상태={3}")
     @CsvSource({
         "canceled, OK, , REFUNDED",
-        "rejected, CANCEL_REJECTED, ALREADY_SETTLED, CHARGED",
+        "rejected, CANCEL_REJECTED, , CHARGED",
         "unknown, CANCEL_UNKNOWN, SocketTimeoutException, REFUND_UNKNOWN",
         "not-sent, CANCEL_UNKNOWN, ConnectException, REFUND_UNKNOWN",
         "throws, CANCEL_UNKNOWN, IllegalStateException, REFUND_UNKNOWN"
     })
-    @DisplayName("C2: 환불 요청 회차는 취소 결과로 마지막 확인을 남기고(결과 모름·거절은 원인과 함께) 한 회차에 한 번만 센다")
+    @DisplayName("C2: 환불 요청 회차는 취소 결과로 마지막 확인을 남기고(결과 모름은 우리 코드가 만든 원인과 함께, 거절은 PG 거절 코드를 넣지 않고) 한 회차에 한 번만 센다")
     void recordsLastCheckPerCancelResult(String scene, RefundCase.CheckOutcome expected, String expectedCause,
         MoneyStatus expectedMoney) {
         refundCases.put(tracking(1, PG_A, "TR-1"));
