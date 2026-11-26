@@ -12,15 +12,19 @@ import com.loopers.domains.payment.app.port.PaymentAnomalyRepository;
 import com.loopers.domains.payment.app.port.PaymentCreateResult;
 import com.loopers.domains.payment.app.port.PaymentGateway;
 import com.loopers.domains.payment.app.port.PaymentLookupScheduleRepository;
+import com.loopers.domains.payment.app.port.PaymentRefundCaseRepository;
 import com.loopers.domains.payment.app.port.PaymentTransactionsLookup;
 import com.loopers.domains.payment.domain.LookupBackoff;
 import com.loopers.domains.payment.domain.PaymentRecord;
+import com.loopers.domains.payment.domain.RefundCase;
 import com.loopers.domains.payment.in.PaymentCallbackController;
 import com.loopers.domains.payment.out.CircuitBreakingPaymentGateway;
 import com.loopers.domains.payment.out.PaymentAnomalyJpaEntity;
 import com.loopers.domains.payment.out.PaymentAnomalyPersistenceAdapter;
 import com.loopers.domains.payment.out.PaymentCircuitBreakers;
 import com.loopers.domains.payment.out.PaymentLookupScheduleJpaEntity;
+import com.loopers.domains.payment.out.PaymentRefundCaseJpaEntity;
+import com.loopers.domains.payment.out.PaymentRefundCasePersistenceAdapter;
 import com.loopers.domains.payment.out.TestPgPaymentGateway;
 import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.domain.JavaClasses;
@@ -234,6 +238,10 @@ class ArchitectureTest {
         assertThat(out.contain(CircuitBreakingPaymentGateway.class)).isTrue();
         assertThat(out.contain(PaymentCircuitBreakers.class)).isTrue();
         assertThat(app.contain(PaymentTransactionsLookup.NotCalled.class)).isTrue();
+        assertThat(domain.contain(RefundCase.class)).isTrue();
+        assertThat(app.contain(PaymentRefundCaseRepository.class)).isTrue();
+        assertThat(out.contain(PaymentRefundCaseJpaEntity.class)).isTrue();
+        assertThat(out.contain(PaymentRefundCasePersistenceAdapter.class)).isTrue();
     }
 
     @Test

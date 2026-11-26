@@ -16,6 +16,7 @@ import com.loopers.domains.payment.app.port.PaymentAnomalyRepository;
 import com.loopers.domains.payment.app.port.PaymentGateway;
 import com.loopers.domains.payment.app.port.PaymentLookupScheduleRepository;
 import com.loopers.domains.payment.app.port.PaymentRecordRepository;
+import com.loopers.domains.payment.app.port.PaymentRefundCaseRepository;
 import com.loopers.domains.payment.app.port.PaymentTransaction;
 import com.loopers.domains.payment.app.port.PaymentTransactionStatus;
 import com.loopers.domains.payment.app.port.PaymentTransactionsLookup;
@@ -80,7 +81,7 @@ class PaymentVerificationTest {
             new PaymentLookupPolicy(new LookupBackoff(Duration.ofSeconds(5), 2, Duration.ofMinutes(1)), maximum -> maximum, 12, 100),
             new PaymentExpiryPolicy(Duration.ofMinutes(2)), mock(OrderConfirmedPublisher.class),
             mock(OrderConfirmedOutbox.class), mock(PaymentOutcomeRecorder.class),
-            mock(PaymentProgressRecorder.class));
+            mock(PaymentProgressRecorder.class), mock(PaymentRefundCaseRepository.class));
         clearInvocations(gateway);
     }
 

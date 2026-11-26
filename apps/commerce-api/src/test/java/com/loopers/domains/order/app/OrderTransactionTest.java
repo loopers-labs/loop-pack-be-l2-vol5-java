@@ -14,9 +14,12 @@ import com.loopers.domains.payment.app.PaymentLookupPolicy;
 import com.loopers.domains.payment.app.port.PaymentAnomalyRepository;
 import com.loopers.domains.payment.app.port.PaymentLookupScheduleRepository;
 import com.loopers.domains.payment.app.port.PaymentRecordRepository;
+import com.loopers.domains.payment.app.port.PaymentRefundCaseRepository;
 import com.loopers.domains.payment.domain.PaymentRecord;
+import com.loopers.domains.payment.domain.RefundCase;
 import com.loopers.domains.payment.out.PaymentLookupSchedulePersistenceAdapter;
 import com.loopers.domains.payment.out.PaymentRecordPersistenceAdapter;
+import com.loopers.domains.payment.out.PaymentRefundCasePersistenceAdapter;
 import com.loopers.domains.payment.out.TestPgServer.CreateBehavior;
 import com.loopers.domains.payment.out.TestPgServer;
 import com.loopers.domains.point.app.PointApplicationService;
@@ -122,6 +125,9 @@ class OrderTransactionTest {
     private FailingPaymentRecordRepository failingPaymentRecordRepository;
 
     @Autowired
+    private FailingRefundCaseRepository failingRefundCaseRepository;
+
+    @Autowired
     private ProductRepository productRepository;
 
     @Autowired
@@ -167,6 +173,7 @@ class OrderTransactionTest {
         failingOrderRepository.disarm();
         failingScheduleRepository.armed = false;
         failingPaymentRecordRepository.disarm();
+        failingRefundCaseRepository.disarm();
         jdbcTemplate.update("delete from order_items");
         databaseCleanUp.truncateAllTables();
     }
@@ -289,7 +296,7 @@ class OrderTransactionTest {
             new PaymentGatewayRegistry(List.of(testPgFixture.newClient()), List.of(TestPgFixture.PROVIDER_ID)),
             transactionTemplate, paymentAnomalyRepository, clock, paymentLookupScheduleRepository, paymentLookupPolicy,
             paymentExpiryPolicy, orderConfirmedPublisher, orderConfirmedOutbox, paymentOutcomeRecorder,
-            paymentProgressRecorder);
+            paymentProgressRecorder, failingRefundCaseRepository);
         OrderResult afterRestart = restarted.confirm(1, orderId, TestPgFixture.command(attemptKey));
 
         assertThat(afterRestart.status()).isEqualTo("PAYMENT_PENDING");
@@ -301,6 +308,24 @@ class OrderTransactionTest {
             Long.class, orderId)).isEqualTo(1);
         assertThat(jdbcTemplate.queryForObject("select actual_attempts from payment_lookup_schedules where order_id = ?",
             Integer.class, orderId)).isZero();
+    }
+
+    @Test
+    @DisplayName("만료 트랜잭션에서 환불 확인 대상 INSERT까지 DB에 반영된 뒤 실패하면 주문·재고·결제 기록이 만료 전으로 돌아가고 대상 기록도 남지 않는다")
+    void rollsBackRefundCaseWithExpiry() {
+        server.createBehavior(CreateBehavior.ACCEPT_PENDING);
+        orderApplicationService.confirm(1, orderId, TestPgFixture.command());
+        assertState("PAYMENT_PENDING", 3, 4, 1);
+        failingRefundCaseRepository.failOnNextSave();
+        clock.set(clock.instant().plus(paymentExpiryPolicy.timeout()));
+
+        orderApplicationService.expireOverduePayments();
+
+        assertThat(failingRefundCaseRepository.stateBeforeFailure())
+            .isEqualTo("stock=5/5, order=PAYMENT_EXPIRED, payment=EXPIRED, refundCases=1");
+        assertState("PAYMENT_PENDING", 3, 4, 1);
+        assertThat(paymentRecord()).containsEntry("result", "PENDING").containsEntry("provider_status", "PENDING");
+        assertThat(jdbcTemplate.queryForObject("select count(*) from payment_refund_cases", Long.class)).isZero();
     }
 
     private void assertState(String orderStatus, int firstStock, int secondStock, long createCalls) {
@@ -340,6 +365,13 @@ class OrderTransactionTest {
         FailingOrderRepository failingOrderRepository(OrderPersistenceAdapter orderPersistenceAdapter,
             EntityManager entityManager, JdbcTemplate jdbcTemplate) {
             return new FailingOrderRepository(orderPersistenceAdapter, entityManager, jdbcTemplate);
+        }
+
+        @Bean
+        @Primary
+        FailingRefundCaseRepository failingRefundCaseRepository(PaymentRefundCasePersistenceAdapter delegate,
+            EntityManager entityManager, JdbcTemplate jdbcTemplate) {
+            return new FailingRefundCaseRepository(delegate, entityManager, jdbcTemplate);
         }
 
         @Bean
@@ -563,6 +595,57 @@ class OrderTransactionTest {
         @Override
         public List<Long> findExpirable(Instant startedAtOrBefore, int limit) {
             return delegate.findExpirable(startedAtOrBefore, limit);
+        }
+    }
+
+    // 무장 후 다음 환불 확인 대상 저장을 실제로 한 뒤 같은 트랜잭션의 앞선 변경과 함께 DB로 보내고 실패한다.
+    // 대상 기록이 만료와 같은 트랜잭션에 있어야 함께 rollback된다.
+    static class FailingRefundCaseRepository implements PaymentRefundCaseRepository {
+        static final String INJECTED_FAILURE = "주입된 환불 확인 대상 저장 실패";
+
+        private final PaymentRefundCaseRepository delegate;
+        private final EntityManager entityManager;
+        private final JdbcTemplate jdbcTemplate;
+        private final AtomicInteger remainingFailures = new AtomicInteger();
+        private final AtomicReference<String> stateBeforeFailure = new AtomicReference<>();
+
+        FailingRefundCaseRepository(PaymentRefundCaseRepository delegate, EntityManager entityManager, JdbcTemplate jdbcTemplate) {
+            this.delegate = delegate;
+            this.entityManager = entityManager;
+            this.jdbcTemplate = jdbcTemplate;
+        }
+
+        void failOnNextSave() {
+            stateBeforeFailure.set(null);
+            remainingFailures.set(1);
+        }
+
+        void disarm() {
+            remainingFailures.set(0);
+        }
+
+        String stateBeforeFailure() {
+            return stateBeforeFailure.get();
+        }
+
+        @Override
+        public RefundCase save(RefundCase refundCase) {
+            RefundCase saved = delegate.save(refundCase);
+            if (remainingFailures.getAndUpdate(count -> Math.max(0, count - 1)) > 0) {
+                entityManager.flush();
+                Map<String, Object> state = jdbcTemplate.queryForMap("select o.status, p.provider_status from orders o"
+                    + " join payment_records p on p.order_id = o.id where o.id = ?", refundCase.getOrderId());
+                stateBeforeFailure.set(stockState(jdbcTemplate) + ", order=" + state.get("status")
+                    + ", payment=" + state.get("provider_status") + ", refundCases="
+                    + jdbcTemplate.queryForObject("select count(*) from payment_refund_cases", Long.class));
+                throw new IllegalStateException(INJECTED_FAILURE);
+            }
+            return saved;
+        }
+
+        @Override
+        public Optional<RefundCase> findByOrderId(long orderId) {
+            return delegate.findByOrderId(orderId);
         }
     }
 }

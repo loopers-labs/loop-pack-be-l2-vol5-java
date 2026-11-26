@@ -25,6 +25,7 @@ import com.loopers.domains.payment.app.port.PaymentGateway;
 import com.loopers.domains.payment.app.port.PaymentLookupScheduleRepository.Schedule;
 import com.loopers.domains.payment.app.port.PaymentLookupScheduleRepository;
 import com.loopers.domains.payment.app.port.PaymentRecordRepository;
+import com.loopers.domains.payment.app.port.PaymentRefundCaseRepository;
 import com.loopers.domains.payment.app.port.PaymentTransactionsLookup;
 import com.loopers.domains.payment.domain.PaymentRecord;
 import com.loopers.domains.product.app.ProductNotFoundException;
@@ -66,6 +67,7 @@ public class OrderApplicationService {
     private final OrderConfirmedOutbox orderConfirmedOutbox;
     private final PaymentOutcomeRecorder paymentOutcomeRecorder;
     private final PaymentProgressRecorder paymentProgressRecorder;
+    private final PaymentRefundCaseRepository paymentRefundCaseRepository;
 
     public OrderApplicationService(OrderRepository orderRepository, ProductRepository productRepository,
         PaymentRecordRepository paymentRecordRepository, PaymentGatewayRegistry paymentGatewayRegistry,
@@ -73,7 +75,7 @@ public class OrderApplicationService {
         PaymentLookupScheduleRepository paymentLookupScheduleRepository, PaymentLookupPolicy paymentLookupPolicy,
         PaymentExpiryPolicy paymentExpiryPolicy, OrderConfirmedPublisher orderConfirmedPublisher,
         OrderConfirmedOutbox orderConfirmedOutbox, PaymentOutcomeRecorder paymentOutcomeRecorder,
-        PaymentProgressRecorder paymentProgressRecorder) {
+        PaymentProgressRecorder paymentProgressRecorder, PaymentRefundCaseRepository paymentRefundCaseRepository) {
         this.orderRepository = orderRepository;
         this.productRepository = productRepository;
         this.paymentRecordRepository = paymentRecordRepository;
@@ -88,6 +90,7 @@ public class OrderApplicationService {
         this.orderConfirmedOutbox = orderConfirmedOutbox;
         this.paymentOutcomeRecorder = paymentOutcomeRecorder;
         this.paymentProgressRecorder = paymentProgressRecorder;
+        this.paymentRefundCaseRepository = paymentRefundCaseRepository;
     }
 
     public record ItemRequest(long productId, int quantity) { }
