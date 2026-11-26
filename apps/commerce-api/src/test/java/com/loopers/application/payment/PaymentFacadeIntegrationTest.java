@@ -1,5 +1,8 @@
 package com.loopers.application.payment;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.loopers.CommerceApiApplication;
 import com.loopers.application.brand.BrandFacade;
 import com.loopers.application.order.OrderCreateCommand;
@@ -36,6 +39,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.WebApplicationType;
 import org.springframework.boot.builder.SpringApplicationBuilder;
@@ -52,7 +56,9 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
@@ -848,6 +854,46 @@ class PaymentFacadeIntegrationTest {
                 .filter(line -> line.contains("error=")))
                 .singleElement().asString().contains("orderId=" + order.getId());
             assertThat(changedLines(output, payment)).isEmpty();
+        }
+
+        @DisplayName("결제의 줄은 식별자와 판단 값을 문장 속 글자뿐 아니라 따로 찾을 수 있는 필드로도 갖는다")
+        @Test
+        void carriesIdsAsFields() {
+            Logger paymentLogger = (Logger) LoggerFactory.getLogger("com.loopers.application.payment.PaymentLog");
+            ListAppender<ILoggingEvent> events = new ListAppender<>();
+            events.start();
+            paymentLogger.addAppender(events);
+            try {
+                Order order = place(2);
+                PG.dropNextCreateResponse();
+                Payment payment = confirm(order.getId(), "attempt-1");
+                PG.changeStatus(
+                    PG.transactionsOf(payment.getProviderOrderId().value()).get(0).transactionKey(),
+                    PgFixture.Status.SUCCESS);
+                paymentFacade.reconcile(USER, order.getId(), NOW.plusSeconds(10));
+
+                assertThat(events.list).hasSize(2);
+                assertThat(fieldsOf(events.list.get(0)))
+                    .containsEntry("paymentId", payment.getId())
+                    .containsEntry("orderId", order.getId())
+                    .containsEntry("result", "unknown");
+                assertThat(fieldsOf(events.list.get(1)))
+                    .containsEntry("paymentId", payment.getId())
+                    .containsEntry("orderId", order.getId())
+                    .containsEntry("source", "reconcile")
+                    .containsEntry("from", "UNKNOWN")
+                    .containsEntry("to", "SUCCESS");
+            } finally {
+                paymentLogger.detachAppender(events);
+            }
+        }
+
+        private Map<String, Object> fieldsOf(ILoggingEvent event) {
+            Map<String, Object> fields = new HashMap<>();
+            if (event.getKeyValuePairs() != null) {
+                event.getKeyValuePairs().forEach(pair -> fields.put(pair.key, pair.value));
+            }
+            return fields;
         }
 
         private List<String> changedLines(CapturedOutput output, Payment payment) {
