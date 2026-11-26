@@ -23,10 +23,10 @@
 | 가설 | 예상(이 가설이면 보일 것) | 실제(사고 E2E, 유실 주문마다) | 부족한 증거(보지 못한 것) |
 | --- | --- | --- | --- |
 | H1 응답 유실: PG는 성공했지만 create 응답을 받지 못했다 | create Unknown WARN(HttpTimeoutException) 1, 반영 ERROR 0, PG 조회 SUCCESS·금액 일치 | 채택. 세 조건 모두 맞음 | PG가 요청을 받고 응답을 보냈다는 것은 test-pg 내부 상태(createCalls·거래 SUCCESS)로만 봤다. 실제 PG 로그는 없다 / 응답이 어디서 끊겼는지 네트워크 계층(패킷·프록시·LB 로그)은 보지 않았다. 근거는 우리 쪽 HttpTimeoutException뿐이다 |
-| H2 내부 반영 실패: PG 결과를 받거나 조회했지만 우리 DB 반영이 실패했다 | create Accepted INFO 또는 조회 Verified INFO가 있고 반영 ERROR가 있다 | 기각. ~~반영 ERROR 0~~ → 7단계: DB `APPLY_FAILED` 0건 + 같은 주문 시작 INFO·Unknown WARN 있음(로그 통로 생존) 교차 확인(13-2) | ~~"반영 ERROR 0"은 … 부재 판단이다. 로그 유실·MDC 누락이면 구분할 수 없다~~ → 7단계에서 DB 근거로 바꿈. 새 문장: `APPLY_FAILED` 이상 기록 자체가 실패하면 DB에는 남지 않고 기록기 ERROR만 남는다. 그 경우는 errorLines(로그)로만 보인다 / DB 쪽 오류 기록(MySQL error log·rollback 통계)은 보지 않았다 |
+| H2 내부 반영 실패: PG 결과를 받거나 조회했지만 우리 DB 반영이 실패했다 | create Accepted INFO 또는 조회 Verified INFO가 있고 반영 ERROR가 있다 | 기각. ~~반영 ERROR 0~~ → 7단계: DB `APPLY_FAILED` 0건 + 같은 주문 시작 INFO·Unknown WARN 있음(로그 통로 생존) 교차 확인(13-2) | ~~"반영 ERROR 0"은 … 부재 판단이다. 로그 유실·MDC 누락이면 구분할 수 없다~~ → 7단계에서 DB 근거로 바꿈. 새 문장: `APPLY_FAILED` 이상 기록 자체가 실패하면 DB에는 남지 않고 기록기 ERROR만 남는다. 그 경우는 errorLines(로그)로만 보인다 / DB 쪽 오류 기록(MySQL error log·rollback 통계)은 보지 않았다 / (w10s7-P3) logChannelAlive는 JVM 안 로그 캡처 기준이다. Alloy→Loki 경로는 증명하지 않는다(운영은 가이드 교차 확인·CommerceLogIngestionSilent) / 반영 중 프로세스가 죽으면 DB에도 로그에도 남지 않는다 |
 | H3 PG 실패·미발송: 돈이 움직이지 않았다 | PG 거래가 없거나 FAILED, 또는 create NotSent WARN | 기각. PG 조회 SUCCESS·금액 일치, NotSent WARN 0 | 돈이 움직였다는 근거는 PG 조회 SUCCESS·금액 일치뿐이다. PG 정산 파일·카드사 승인 내역 대조는 없다 / "NotSent WARN 0"도 캡처 로그 기준 부재 판단이다 |
 
-- 실제 칸은 `CheckoutIncidentE2ETest`의 단언(H1 참, H2·H3 거짓)이다. 최종 코드로 다시 뽑은 evidence는 `docs/week10/evidence/20261126T140219Z-4ab238b7/`다(`diagnosis.json`의 `missingEvidence`가 위 "부족한 증거" 칸, H2 교차 확인은 13-2). 6단계 기록은 `20261126T120742Z-f9dbdfde`다(8절·12-1).
+- 실제 칸은 `CheckoutIncidentE2ETest`의 단언(H1 참, H2·H3 거짓)이다. 최종 코드로 다시 뽑은 evidence는 `docs/week10/evidence/20261126T142753Z-ca7bfc01/`다(`diagnosis.json`의 `missingEvidence`가 위 "부족한 증거" 칸, H2 교차 확인은 13-2). 7단계 H2 교차 확인 기록은 `20261126T140219Z-4ab238b7`, 6단계 기록은 `20261126T120742Z-f9dbdfde`다(8절·12-1).
 
 ## 2. 로그 레벨과 경계 로그
 
@@ -149,11 +149,11 @@
 
 - 테스트: `apps/commerce-api/src/e2eTest/.../order/in/CheckoutIncidentE2ETest.java`. 같은 DB·같은 PG 거래로 정상 10건 → 응답 유실 3건 → 증거 보존 → 가설 판정 → 본인 reconcile 복구 → 반복·보호 → 구매 활동·주간 랭킹을 잇는다.
 - 실행 증거는 `build/incident-evidence/<runId>/`에 실행마다 새로 쌓인다(빌드 산출물이라 `clean`이면 지워진다).
-- 제출용 한 벌: `docs/week10/evidence/20261126T140219Z-4ab238b7/`(최종 코드: 실행 당시 7cb8f44 + E2E 교차 확인 Green 작업 트리, 실행 뒤 7865fc4로 커밋. `src/main`은 7cb8f44와 같다. 실패·skip 없음). 단계별 JSON 7개(`summary.json` 포함)와 `SHA256SUMS`, `README.md`가 있다. 6단계 기록: `20261126T120742Z-f9dbdfde`(3d08c71 + 1c1889d).
-  - `diagnosis.json` 판정: 유실 주문 11·12·13 모두 H1(응답 유실) 채택, H2(내부 반영 실패)·H3(PG 실패·미발송) 기각. 가설마다 `missingEvidence`(보지 못한 증거) 2문장(1절 표의 "부족한 증거" 칸과 같다).
+- 제출용 한 벌: `docs/week10/evidence/20261126T142753Z-ca7bfc01/`(최종 코드: 실행 당시 153bb97 + w10s7 QA 반영 Green 작업 트리. 실패·skip 없음). 단계별 JSON 7개(`summary.json` 포함)와 `SHA256SUMS`, `README.md`가 있다. 7단계 H2 교차 확인 기록: `20261126T140219Z-4ab238b7`(7cb8f44 + Green 작업 트리, 커밋 7865fc4). 6단계 기록: `20261126T120742Z-f9dbdfde`(3d08c71 + 1c1889d).
+  - `diagnosis.json` 판정: 유실 주문 11·12·13 모두 H1(응답 유실) 채택, H2(내부 반영 실패)·H3(PG 실패·미발송) 기각. 가설마다 `missingEvidence`(보지 못한 증거) H1·H3 2문장, H2 4문장(1절 표의 "부족한 증거" 칸과 같다).
   - `summary.json`(확정·UNKNOWN·PG 성공 수): 장애 집합(사용자 2) FAULT 7·3·10 → RECOVERY·REPEAT·FOLLOWUP 모두 10·0·10. FAULT 뒤 create 증가 0(복구·반복·후속). 기준 집합(사용자 1)은 모든 단계 10·0·10.
   - fault 시점 자산(포인트 5,000·10,000, 사용자 2 쿠폰 1장, 가용 재고 10, 잡힌 수량 20)이 복구·반복·후속에서 그대로다.
-  - `fault.json` sha256 `9f5664b2…babd3e`(복구 뒤에도 같음을 테스트가 단언).
+  - `fault.json` sha256 `dbf144b6…cd03378`(복구 뒤에도 같음을 테스트가 단언).
   - 카드번호·인증 헤더·비밀값 문자열 없음(복사 전 검사).
 - 기록(11-25 코드): `docs/week10/evidence/20261125T082202Z-068161dd/`(커밋 873d848 실행). `missingEvidence`·`summary.json`·0이 아닌 포인트·쿠폰이 없던 때의 한 벌이라 제출 근거로 쓰지 않고 그대로 둔다.
 
@@ -867,10 +867,10 @@ REFUNDED일 때만 값이 있다. **우리가 본 경로**로 정한다.
 
 | 검사 | 결과 | 비고 |
 | --- | --- | --- |
-| `./gradlew :apps:commerce-api:check`(test·e2eTest·Checkstyle·ArchUnit) | test 1157·e2eTest 4, 실패·skip 0 (7단계 회귀 `--rerun-tasks`, `docs/week10/evidence/20261126T140219Z-4ab238b7/`) | 6단계 기록: test 1143·e2eTest 4(`20261126T120742Z-f9dbdfde`) |
-| 다른 모듈 검사 | commerce-streamer test 47·commerce-batch test 54, 실패·skip 0 (7단계 회귀 `--rerun-tasks`, `docs/week10/evidence/20261126T140219Z-4ab238b7/`) | — |
+| `./gradlew :apps:commerce-api:check`(test·e2eTest·Checkstyle·ArchUnit) | test 1159·e2eTest 4, 실패·skip 0 (7단계 QA 반영 회귀 `--rerun-tasks`, `docs/week10/evidence/20261126T142753Z-ca7bfc01/`) | 7단계 H2 교차 확인 기록: test 1157(`20261126T140219Z-4ab238b7`). 6단계 기록: test 1143·e2eTest 4(`20261126T120742Z-f9dbdfde`) |
+| 다른 모듈 검사 | commerce-streamer test 47·commerce-batch test 54, 실패·skip 0 (7단계 QA 반영 회귀 `--rerun-tasks`, `docs/week10/evidence/20261126T142753Z-ca7bfc01/`) | — |
 | `scripts/ops/check-alerting.sh`(promtool·amtool·대시보드·가이드 테스트) | promtool 40·guide 16 (6단계 2번 회귀) | 직전 기록: rules 12, promtool 40, guide 16, ALL CHECKS PASSED |
-| 사고 연결 E2E(8절) | 제출용 한 벌 `docs/week10/evidence/20261126T140219Z-4ab238b7/`(7cb8f44 + Green 작업 트리, 커밋 7865fc4) | H1 채택·H2·H3 기각(가설별 `missingEvidence` 2문장, H2는 DB `APPLY_FAILED` 0·로그 통로 생존 교차 확인), 장애 집합 FAULT 7·3·10 → RECOVERY·REPEAT·FOLLOWUP 10·0·10, create 증가 0, 기준 집합 10·0·10, fault 시점 자산 불변, 복구 뒤 증거 해시 같음. 기록: 6단계 `20261126T120742Z-f9dbdfde`, 11-25 코드 `20261125T082202Z-068161dd` |
+| 사고 연결 E2E(8절) | 제출용 한 벌 `docs/week10/evidence/20261126T142753Z-ca7bfc01/`(153bb97 + QA 반영 Green 작업 트리) | H1 채택·H2·H3 기각(`missingEvidence` H1·H3 2문장·H2 4문장, H2는 DB `APPLY_FAILED` 0·로그 통로 생존 교차 확인), 장애 집합 FAULT 7·3·10 → RECOVERY·REPEAT·FOLLOWUP 10·0·10, create 증가 0, 기준 집합 10·0·10, fault 시점 자산 불변, 복구 뒤 증거 해시 같음. 기록: 7단계 H2 교차 확인 `20261126T140219Z-4ab238b7`, 6단계 `20261126T120742Z-f9dbdfde`, 11-25 코드 `20261125T082202Z-068161dd` |
 
 **변이(판별력)** — 결함을 넣어 테스트가 실패하는지 본 것. 모두 원복을 diff·바이트 비교로 확인했다.
 
@@ -889,6 +889,7 @@ REFUNDED일 때만 값이 있다. **우리가 본 경로**로 정한다.
 | 6단계 C2 자산 불변(42ee823, 커밋 메시지 근거) | 1 | 복구 경로 포인트 추가 차감(격리 복사본) | `CheckoutIncidentE2ETest` RECOVERY 단언 |
 | 7단계 APPLY_FAILED·기동 경로(e53e0f0, 커밋 메시지 근거) | 3 | 이상 기록을 반영 TX 안에서, counter 사전 등록 제거, 기동 INFO 연결 제거 | e53e0f0의 새 테스트(변이별 대응은 review 파일) |
 | 7단계 사고 E2E H2 교차 확인(7865fc4) | 2 | 판정식에서 DB 조건 제거, `APPLY_FAILED` 질의를 0으로 고정 | `h2Holds(0, 0, 0, 1)` 단언, 질의 대조군 |
+| 7단계 QA 반영 기록 시점(w10s7-P3) | 1 | 결과 반영 catch의 이상 기록을 반영 TX 람다 안으로 옮김(`REQUIRES_NEW`는 그대로) | `PaymentApplyFailureAnomalyTest` 4건(본인·관리자 reconcile, callback, 자동 재조회 — 호출 시점 실제 트랜잭션 `[true]`) |
 | 7단계 알림·가이드(c85a50a, 커밋 메시지 근거) | 7 | 로그 수집 끊김 규칙·가이드 교차 확인(변이별 내용은 review 파일) | promtool, `test_guide.py` |
 
 - 변이 기록 원본은 단계별 review 파일이다(저장소 밖). 이 표는 요지만 옮겼다.
@@ -921,9 +922,9 @@ REFUNDED일 때만 값이 있다. **우리가 본 경로**로 정한다.
 | Alertmanager 그룹 재통지 지연·누락 | 같은 그룹(`alertname`·`severity`)이 다시 울리면 통지가 최대 `group_interval`(5m) 늦고, 그 사이 풀리면 통지가 빠질 수 있다. 리허설 2회차에서 resolved 통지 뒤 다시 울린 PaymentUnresolvedPiling이 다음 통지 전에 풀려 Slack 자리에 오지 않았다(B6). 만료 알림(PaymentAbandonedPiling)이 겹으로 받친다 **[참모 22:32 A — Alertmanager 값 그대로]** | runbook: 알림이 늦거나 안 오면 Prometheus·Grafana firing 이력을 본다 |
 | 실제 Slack·LLM·Grafana MCP | 연결·호출하지 않았다(9-8·10-8). Viewer 토큰 생성은 승인 대상 | 가짜 수신기, 결정적 요약 |
 | 만료 경로 리허설 | ~~`PaymentAbandonedPiling`은 리허설하지 않았다(10-8)~~ → 6단계 2회차 장면 B·C에서 로컬로 1회 따라 했다(evidence `20261126T121317Z-965d8579`). 운영 규모·반복 실행은 없다 | promtool 테스트 + 로컬 리허설 1회 |
-| 사고 진단 H2 기각의 근거 | ~~H2 기각이 "반영 ERROR 0줄"이라는 로그 부재에 기댄다. 로그 수집이 끊겨도 0줄이다~~ → 고쳐짐(7단계, 13-2): DB `APPLY_FAILED` 0건 + 같은 주문 시작 INFO·Unknown WARN(로그 통로 생존)을 교차 확인한다. 근거 한 벌은 `docs/week10/evidence/20261126T140219Z-4ab238b7/` | E2E 단언(`CheckoutIncidentE2ETest` H2 `crossCheck`) |
-| 이상 기록 자체 실패 | `APPLY_FAILED` 기록(별도 TX)이 실패하면 DB에 남지 않는다. ERROR 로그 한 줄(`결제 반영 실패 이상 기록 실패`)만 남고 counter도 세지 않는다. 그때 DB 근거는 "0건"으로 보인다. 같은 주문의 첫 기록 두 개가 동시에 들면 고유 키(order_id, kind) 충돌로 하나가 실패할 수 있다(추론, 잠금 밖 기록) **[PL 결정 w10s7-P1]** | 원래 예외·응답은 그대로. runbook: DB 0건이어도 같은 시각 ERROR `결제 반영 실패 이상 기록 실패`가 있으면 반영 실패로 읽는다 |
-| 잠금 대기 초과도 `APPLY_FAILED` | 반영 TX의 잠금 대기 초과도 반영 실패로 남긴다. 경합(일시)과 DB·버그(지속)가 같은 kind다. summary의 `causeType`으로만 가른다 **[PL 결정 w10s7-P1]** | runbook: `latestAnomaly.summary`의 `causeType`을 본다 |
+| 사고 진단 H2 기각의 근거 | ~~H2 기각이 "반영 ERROR 0줄"이라는 로그 부재에 기댄다. 로그 수집이 끊겨도 0줄이다~~ → 고쳐짐(7단계, 13-2): DB `APPLY_FAILED` 0건 + 같은 주문 시작 INFO·Unknown WARN(로그 통로 생존)을 교차 확인한다. 근거 한 벌은 `docs/week10/evidence/20261126T142753Z-ca7bfc01/` | E2E 단언(`CheckoutIncidentE2ETest` H2 `crossCheck`) |
+| 이상 기록 자체 실패 | `APPLY_FAILED` 기록(별도 TX)이 실패하면 DB에 남지 않는다. ERROR 로그 한 줄(`결제 반영 실패 이상 기록 실패`)만 남고 counter도 세지 않는다. 그때 DB 근거는 "0건"으로 보인다. ~~같은 주문의 첫 기록 두 개가 동시에 들면 고유 키(order_id, kind) 충돌로 하나가 실패할 수 있다~~ → 고쳐짐(w10s7-P3, 13-1): upsert 한 문장이라 동시 기록도 원자적이다 **[PL 결정 w10s7-P1·P3]** | 원래 예외·응답은 그대로. runbook: DB 0건이어도 같은 시각 ERROR `결제 반영 실패 이상 기록 실패`가 있으면 반영 실패로 읽는다 |
+| 잠금 대기 초과도 `APPLY_FAILED` | 반영 TX의 잠금 대기 초과도 반영 실패로 남긴다. 경합(일시)과 DB·버그(지속)가 같은 kind이고 사고 진단에서는 H2 채택이다. summary의 `causeType`으로만 가른다(`PessimisticLockingFailureException` 계열이면 경합) **[PL 결정 w10s7-P1·P3]** | runbook: `latestAnomaly.summary`의 `causeType`을 본다 |
 | `APPLY_FAILED` counter 컨텍스트 안 등록 테스트 | `registersEverySourceAtStartup`은 실행 순서상 판별력이 약하다(다른 테스트가 먼저 counter를 만들 수 있음). 남겨 둔다 **[PL 결정 w10s7-P2]** | 판별은 `MicrometerPaymentApplyFailureCounterTest`가 맡는다(사전 등록 제거 변이 검출) |
 | `CommerceLogIngestionSilent` 적용 범위 | local·local-dev 파일 로그 + Alloy 구성 전제다. prd는 콘솔 로그라 이 규칙 대상이 아니다. 끊김 판정은 최대 약 20분 늦다(창 10m + for 10m). Loki에 앱별 구분이 없어 다른 로그가 들어오면 끊김을 못 본다 **[PL 결정 w10s7-P2]** | 그동안은 DB 근거(13-1)로 판단한다. 운영 수집 구성이 정해지면 규칙을 다시 본다 |
 | 로그 경로 한 출처의 실제 기동 | `docker/.env` 값을 바꿔 앱·Alloy를 함께 띄워 본 적은 없다. `docker compose config`와 기동 INFO 테스트로만 확인했다 | 기동 INFO의 경로와 `.env` 값을 비교(runbook) |
@@ -1010,7 +1011,10 @@ REFUNDED일 때만 값이 있다. **우리가 본 경로**로 정한다.
 
 ### 13-1. 결제 반영 실패 `APPLY_FAILED` [PL 결정 w10s7-P1]
 
-- `PaymentAnomalyRepository.Kind`에 `APPLY_FAILED`를 더했다. 테이블 `payment_anomalies`, 주문·kind당 한 행(고유 키 `(order_id, kind)`, 다시 나면 `last_summary`·`last_seen_at` 갱신).
+- `PaymentAnomalyRepository.Kind`에 `APPLY_FAILED`를 더했다. 테이블 `payment_anomalies`, 주문·kind당 한 행(고유 키 `(order_id, kind)`, 다시 나면 `occurrences`+1·`last_summary`·`last_seen_at` 갱신).
+- **원자적 기록 [PL 결정 w10s7-P3]**: `APPLY_FAILED`는 잠금 밖에서 기록되므로 같은 주문의 기록이 겹칠 수 있다. 예전 "찾고 없으면 insert"는 첫 기록이 겹치면 고유 키 충돌로 하나가 실패(기록 실패 ERROR·counter 미증가)하고, 행이 있으면 `occurrences` 갱신이 유실됐다(재현 테스트로 확인). 이제 기록은 고유 키 위 upsert 한 문장(`insert … on duplicate key update occurrences = occurrences + 1, …, resolved_at = null`)이다. 모든 kind에 같고 의미(첫 기록 1, 재발 +1, 다시 열림)는 그대로다.
+  - 잠금 TX 안의 기존 호출자: upsert 앞에서 같은 TX의 대기 변경을 먼저 DB로 보낸다(`flushAutomatically`). 해소(`resolveTransient`)가 읽은 엔티티는 메모리 값이 낡을 수 있어 `@DynamicUpdate`로 바꾼 칸(`resolved_at`)만 쓴다.
+  - 저장소 주석 "호출자가 주문 행을 잠근 트랜잭션에 참여한다"는 틀려 고쳤다(잠금을 가정하지 않는다).
 - 경로: 결제 결과 반영 TX가 예외로 끝나면 남긴다. source 4값 = 기존 `PaymentSource`.
 
 | source | 경로 |
@@ -1020,7 +1024,7 @@ REFUNDED일 때만 값이 있다. **우리가 본 경로**로 정한다.
 | `MANUAL` | 고객·관리자 reconcile, 일괄 확정 |
 | `AUTOMATIC` | 자동 재조회 |
 
-- **별도 TX**: 반영 TX가 rollback된 **뒤**(주문 행 잠금이 풀린 뒤) `order/app/PaymentApplyFailureRecorder`가 `REQUIRES_NEW`로 기록한다. 반영 TX 안에서 쓰면 rollback으로 함께 사라진다(변이로 확인, 12-1). 주문·결제 칸은 그대로다. 호출 위치는 `OrderApplicationService`의 confirm 저장 실패 catch와 결과 반영 catch 두 곳이다.
+- **별도 TX**: 반영 TX가 rollback된 **뒤**(주문 행 잠금이 풀린 뒤) `order/app/PaymentApplyFailureRecorder`가 `REQUIRES_NEW`로 기록한다. 반영 TX 안에서 쓰면 rollback으로 함께 사라진다(변이로 확인, 12-1). 기록기를 부르는 순간 실제 트랜잭션이 없음을 테스트가 단언한다(`PaymentApplyFailureAnomalyTest`의 기록기 대역이 호출 시점 `isActualTransactionActive()`를 남김. 반영 TX 람다 안에서 기록하게 바꾸면 실패함을 변이로 확인) [PL 결정 w10s7-P3]. 주문·결제 칸은 그대로다. 호출 위치는 `OrderApplicationService`의 confirm 저장 실패 catch와 결과 반영 catch 두 곳이다.
 - summary 규칙: `causeType=<예외 클래스 단순 이름>, source=<CREATE|CALLBACK|MANUAL|AUTOMATIC>`. 예외 메시지·PG 텍스트는 넣지 않는다(SQL·값이 섞일 수 있다).
 - 잠금 대기 초과도 `APPLY_FAILED`로 남긴다. `causeType`으로 가른다(12-2).
 - 기록 실패: 원래 예외·응답을 바꾸지 않는다. ERROR 한 줄(`결제 반영 실패 이상 기록 실패. orderId, source, applyCauseType, causeType`)만 남기고 삼킨다. 5c(11-19)와 같은 규칙이다. counter도 세지 않는다.
@@ -1045,7 +1049,9 @@ REFUNDED일 때만 값이 있다. **우리가 본 경로**로 정한다.
 - 질의 대조군: 진단 대상이 아닌 주문 ID로 `APPLY_FAILED` 한 행을 넣어 질의가 1을 세는지 확인하고 바로 지운다. 대상 주문의 0건이 질의 고장(항상 0)이 아님을 보인다.
 - 로그 통로가 살아 있으면 "반영 ERROR 0줄"을 수집 끊김이 아닌 부재로 읽을 수 있다. DB 0건은 로그와 독립인 근거다.
 - `missingEvidence`에서 "구분할 수 없다" 문장은 빠진다(E2E 단언). DB 쪽 오류 기록(MySQL error log 등)을 보지 않았다는 문장은 남는다.
-- 근거 한 벌: `docs/week10/evidence/20261126T140219Z-4ab238b7/`. 유실 주문 11·12·13 모두 `applyFailedAnomalies` 0, `paymentStartInfo` 1, `createUnknownWarn` 1, `logChannelAlive` true, H2 `REJECTED`.
+- H2 `missingEvidence`에 두 문장을 더했다(E2E 단언) [PL 결정 w10s7-P3]: "logChannelAlive는 JVM 안 로그 캡처 기준이다. Alloy→Loki 경로는 증명하지 않는다(운영은 가이드 교차 확인·CommerceLogIngestionSilent)" / "반영 중 프로세스가 죽으면 DB에도 로그에도 남지 않는다".
+- 잠금 대기 초과도 `APPLY_FAILED`라 H2 채택이다(내부 반영 실패가 실제로 일어났다). 판정식은 그대로다. `summary`의 `causeType`이 `PessimisticLockingFailureException` 계열(하위 클래스 `CannotAcquireLockException` 등)이면 경합(일시)으로, 그 밖이면 DB·버그(지속)로 구분해 읽는다 [PL 결정 w10s7-P3].
+- 근거 한 벌: `docs/week10/evidence/20261126T142753Z-ca7bfc01/`(직전 `20261126T140219Z-4ab238b7`와 판정·`crossCheck` 같음, H2 `missingEvidence`만 4문장). 유실 주문 11·12·13 모두 `applyFailedAnomalies` 0, `paymentStartInfo` 1, `createUnknownWarn` 1, `logChannelAlive` true, H2 `REJECTED`.
 
 ### 13-3. 로그 경로 한 출처·Alloy 읽기 위치 [PL 결정 w10s7-P1·P2]
 

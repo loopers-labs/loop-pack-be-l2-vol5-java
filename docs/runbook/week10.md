@@ -31,7 +31,7 @@ local·dev 전용. 셸에 `COMMERCE_ADMIN_USERNAME`·`COMMERCE_ADMIN_PASSWORD`�
 | 한 주문의 경계 로그(최근 1시간) | `scripts/ops/rehearsal.sh loki 101` |
 
 - `status` 필터 값: `SEND_STARTED`·`PENDING`·`UNKNOWN`·`NEEDS_REVIEW`(여러 개 가능). 항목의 `lookupAttempts`(자동 조회 횟수)·`nextLookupAt`·`latestAnomaly`(가장 최근 이상)를 본다.
-- `latestAnomaly.kind=APPLY_FAILED`는 PG 결과를 우리 DB에 반영하다 실패한 것이다(PG 문제 아님). `summary`의 `causeType`(잠금 대기 초과·DB·버그)과 `source`(경로)를 본다. 나중에 반영이 성공해도 지워지지 않는 이력이다. 기록 자체가 실패하면 DB에 없고 ERROR `결제 반영 실패 이상 기록 실패`만 남는다(설계 문서 13-1).
+- `latestAnomaly.kind=APPLY_FAILED`는 PG 결과를 우리 DB에 반영하다 실패한 것이다(PG 문제 아님). `summary`의 `causeType`(잠금 대기 초과·DB·버그)과 `source`(경로)를 본다. `causeType`이 `PessimisticLockingFailureException` 계열(`CannotAcquireLockException` 등)이면 잠금 경합(일시)으로 읽는다. 사고 진단 판정은 그대로 H2(내부 반영 실패) 채택이다. 나중에 반영이 성공해도 지워지지 않는 이력이다. 기록 자체가 실패하면 DB에 없고 ERROR `결제 반영 실패 이상 기록 실패`만 남는다(설계 문서 13-1).
 - 일괄 확정은 **PG 조회만** 한다. 결제를 다시 만들지 않는다. 같은 목록을 다시 보내도 `ALREADY_CLOSED`로 끝난다.
   - `outcome`: `RESOLVED` 확정됨 / `STOPPED` 멈춤(`reason` 참고) / `ALREADY_CLOSED` 이미 끝남 / `NOT_APPLICABLE` 대상 아님 / `SKIPPED` 연속 실패 3건으로 중단.
   - HTTP 503 = PG 조회 회로가 열림. 하나도 처리하지 않았다. 몇 분 뒤 같은 목록으로 다시 보낸다.
