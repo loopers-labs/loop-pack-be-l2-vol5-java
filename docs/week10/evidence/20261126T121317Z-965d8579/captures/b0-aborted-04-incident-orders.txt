@@ -1,0 +1,8 @@
+orderId=2
+{"meta":{"result":"SUCCESS"},"data":{"id":2,"status":"PAYMENT_PENDING","statusUrl":"/api/v1/orders/2","paymentResult":"PENDING","providerStatus":"UNKNOWN"}}
+orderId=3
+{"meta":{"result":"SUCCESS"},"data":{"id":3,"status":"PAYMENT_PENDING","statusUrl":"/api/v1/orders/3","paymentResult":"PENDING","providerStatus":"UNKNOWN"}}
+orderId=4
+{"meta":{"result":"SUCCESS"},"data":{"id":4,"status":"PAYMENT_PENDING","statusUrl":"/api/v1/orders/4","paymentResult":"PENDING","providerStatus":"UNKNOWN"}}
+orderId=5
+{"meta":{"result":"SUCCESS"},"data":{"id":5,"status":"PAYMENT_PENDING","statusUrl":"/api/v1/orders/5","paymentResult":"PENDING","providerStatus":"UNKNOWN"}}

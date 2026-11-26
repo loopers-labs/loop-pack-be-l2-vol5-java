@@ -856,9 +856,9 @@ REFUNDED일 때만 값이 있다. **우리가 본 경로**로 정한다.
 
 | 검사 | 결과 | 비고 |
 | --- | --- | --- |
-| `./gradlew :apps:commerce-api:check`(test·e2eTest·Checkstyle·ArchUnit) | `[회귀 결과: 6단계 2번]` | 직전 기록: 84dcede에서 test 1135·e2eTest 4, 실패·skip 0 |
-| 다른 모듈 검사 | `[회귀 결과: 6단계 2번]` | — |
-| `scripts/ops/check-alerting.sh`(promtool·amtool·대시보드·가이드 테스트) | `[회귀 결과: 6단계 2번]` | 직전 기록: rules 12, promtool 40, guide 16, ALL CHECKS PASSED |
+| `./gradlew :apps:commerce-api:check`(test·e2eTest·Checkstyle·ArchUnit) | test 1143·e2eTest 4, 실패·skip 0 (`docs/week10/evidence/20261126T120742Z-f9dbdfde/`) | 직전 기록: 84dcede에서 test 1135·e2eTest 4, 실패·skip 0 |
+| 다른 모듈 검사 | commerce-streamer test 47·commerce-batch test 54, 실패·skip 0 (`docs/week10/evidence/20261126T120742Z-f9dbdfde/`) | — |
+| `scripts/ops/check-alerting.sh`(promtool·amtool·대시보드·가이드 테스트) | promtool 40·guide 16 (6단계 2번 회귀) | 직전 기록: rules 12, promtool 40, guide 16, ALL CHECKS PASSED |
 | 사고 연결 E2E(8절) | 제출용 한 벌 `docs/week10/evidence/20261125T082202Z-068161dd/` | H1 채택·H2·H3 기각, 복구 뒤 증거 해시 같음 |
 
 **변이(판별력)** — 결함을 넣어 테스트가 실패하는지 본 것. 모두 원복을 diff·바이트 비교로 확인했다.
@@ -884,7 +884,7 @@ REFUNDED일 때만 값이 있다. **우리가 본 경로**로 정한다.
 | --- | --- | --- | --- |
 | 1 | `docs/week10/rehearsal.md`(2026-11-25, 로컬 1회) | 응답 유실 → 알림 → 가이드 → 대시보드 → Loki → 관리자 목록 → 일괄 확정 → 알림 해제 | 성공. 막힌 지점 B1·B3·B4 수정, B2·B5 기록 |
 | 6단계 1회차(중단된 사전 실행) | `docs/week10/evidence/20261126T113318Z-6d788078/` | 응답 유실 → 알림 → 일괄 확정(중간에 중단) | 중단. 측정값만 남김: 사고→알림 1m52s, 일괄 확정 4건, createCalls 7→7(증가 0). 제출 근거는 2회차로 한다 |
-| 2 | `[리허설 재실행: evidence 경로]` | — | — |
+| 2 | `docs/week10/evidence/20261126T121317Z-965d8579/` | — | — |
 
 ### 12-2. 증명하지 못한 것
 
@@ -974,4 +974,4 @@ REFUNDED일 때만 값이 있다. **우리가 본 경로**로 정한다.
 | --- | --- | --- |
 | 사고 E2E·e2eTest | Testcontainers가 띄운 MySQL·Redis·Kafka 컨테이너(테스트 종료 때 자동 정리) | 평소 `docker` compose 프로젝트 컨테이너·볼륨(`docker_mysql-8-data` 등), 다른 프로젝트 컨테이너 |
 | 리허설 1회(`docs/week10/rehearsal.md`)·6단계 1회차(중단) | 리허설 compose 프로젝트 `w10r-*`만 `scripts/ops/rehearsal.sh down`(`docker compose down -v`, 스크립트는 `w10r-infra`·`w10r-mon`만 내린다), 리허설로 띄운 test-pg·앱 프로세스(직접 종료, 스크립트 밖) | 위와 같음 |
-| 리허설 2회차 | `[리허설 2회차 결과]` | `[리허설 2회차 결과]` |
+| 리허설 2회차 | 앱(bootRun 2회)·test-pg(2회) 프로세스(직접 종료), 리허설 compose 프로젝트 `w10r-mon`·`w10r-infra`만 `rehearsal.sh down`(down -v). 종료 뒤 `w10r` 컨테이너 0, 실행 중 컨테이너 0, 8080~8083 LISTEN 없음 | 평소 `docker` 프로젝트 볼륨(`docker_mysql-8-data`·`docker_kafka-data`·`docker_redis_*`), 다른 프로젝트 볼륨·네트워크(시작 전과 목록 같음), 저장소 `logs/commerce-api.json` |
