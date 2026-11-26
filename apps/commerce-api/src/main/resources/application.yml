@@ -14,11 +14,11 @@ server:
 spring:
   main:
     web-application-type: servlet
-  # Relay·결제 주기 조회·Outbox 지표 갱신이 서로의 긴 대기에 밀리지 않도록 작업마다 스레드를 둔다.
+  # Relay·결제 주기 조회·Outbox 지표 갱신·결제 지표 갱신이 서로의 긴 대기에 밀리지 않도록 작업마다 스레드를 둔다.
   task:
     scheduling:
       pool:
-        size: 3
+        size: 4
   application:
     name: commerce-api
   profiles:
@@ -97,6 +97,12 @@ payment:
     idle-threshold: 1m
     batch-size: 100
     lookup-window: 24h
+  # 미종결 결제 시도 지표. 모든 인스턴스에서 켜고, 값은 DB 전체 기준이다.
+  # overdue-after가 지나도 UNKNOWN인 시도는 주기 조회가 풀지 못한 것으로 보고 경보한다.
+  attempt-metrics:
+    enabled: true
+    interval: 10s
+    overdue-after: 5m
 
 springdoc:
   use-fqn: true
@@ -143,6 +149,8 @@ payment:
   pg:
     read-timeout: 1s
   periodic-check:
+    enabled: false
+  attempt-metrics:
     enabled: false
 
 # Relay와 지표 갱신 스케줄을 끄고 테스트가 직접 호출해 시점을 정한다.
