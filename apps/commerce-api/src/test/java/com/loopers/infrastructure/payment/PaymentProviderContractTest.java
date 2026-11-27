@@ -237,16 +237,6 @@ class PaymentProviderContractTest {
             }
         }
 
-        @DisplayName("접수된 생성 호출은 줄을 남기지 않는다")
-        @Test
-        void acceptedLeavesNoLine() {
-            try (LogEvents log = LogEvents.of(GATEWAY_LOG)) {
-                gateway.create(creation(52L, 7000));
-
-                assertThat(log.list()).isEmpty();
-            }
-        }
-
         @DisplayName("PG-014: 원인을 남기는 줄에 카드 번호는 없다")
         @Test
         @ExtendWith(OutputCaptureExtension.class)

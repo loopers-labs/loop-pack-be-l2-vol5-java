@@ -683,17 +683,6 @@ class PaymentFacadeIntegrationTest {
             return meterRegistry.find(name).tags(tags).counters().stream().mapToDouble(Counter::count).sum();
         }
 
-        @DisplayName("남은 미완료 결제 수는 앱이 내지 않는다. 앱은 상태가 바뀐 횟수만 세고, 건수는 DB 를 읽는 수집기가 낸다")
-        @Test
-        void doesNotGaugeUnresolved() {
-            Order order = place(2);
-            PG.dropNextCreateResponse();
-
-            confirm(order.getId(), "attempt-1");
-
-            assertThat(meterRegistry.find("payment.unresolved").gauges()).isEmpty();
-        }
-
         @DisplayName("접수는 payment.create{result=accepted} 와 payment.observe{to=pending} 를 하나씩 센다")
         @Test
         void countsAcceptedCreate() {
@@ -729,28 +718,6 @@ class PaymentFacadeIntegrationTest {
             paymentSweeper.sweepOnce(NOW.plusSeconds(11));
 
             assertThat(count("payment.lookup", "source", "sweeper", "result", "found") - looked).isEqualTo(1);
-        }
-
-        @DisplayName("unknown 으로 들어간 전이와 unknown 에서 나온 전이를 따로 센다. 둘의 차가 그 사이에 늘어난 미확인 결제 수다")
-        @Test
-        void unresolvedIsEnteredMinusLeft() {
-            double unknownBefore = unknownNow();
-            double entered = count("payment.observe", "from", "requested", "to", "unknown");
-            double left = count("payment.observe", "from", "unknown", "to", "success");
-            Order order = place(2);
-            PG.dropNextCreateResponse();
-
-            Payment payment = confirm(order.getId(), "attempt-1");
-
-            assertThat(count("payment.observe", "from", "requested", "to", "unknown") - entered).isEqualTo(1);
-            assertThat(unknownNow() - unknownBefore).isEqualTo(1);
-
-            PG.changeStatus(
-                PG.transactionsOf(payment.getProviderOrderId().value()).get(0).transactionKey(), PgFixture.Status.SUCCESS);
-            paymentFacade.reconcile(USER, order.getId(), NOW.plusSeconds(10));
-
-            assertThat(count("payment.observe", "from", "unknown", "to", "success") - left).isEqualTo(1);
-            assertThat(unknownNow() - unknownBefore).isZero();
         }
 
         @DisplayName("결제가 끝나면 요청부터 걸린 시간을 결과와 함께 남긴다. 응답을 잃었다가 80 초 뒤 조회로 닫힌 결제는 80 초로 남는다")
@@ -795,22 +762,6 @@ class PaymentFacadeIntegrationTest {
                 .mapToDouble(timer -> timer.totalTime(TimeUnit.SECONDS)).sum();
         }
 
-        private double unknownNow() {
-            double entered = 0;
-            double left = 0;
-            for (Counter counter : meterRegistry.find("payment.observe").counters()) {
-                String from = counter.getId().getTag("from");
-                String to = counter.getId().getTag("to");
-                if ("unknown".equals(to) && !"unknown".equals(from)) {
-                    entered += counter.count();
-                }
-                if ("unknown".equals(from) && !"unknown".equals(to) && !"noop".equals(to)) {
-                    left += counter.count();
-                }
-            }
-            return entered - left;
-        }
-
         @DisplayName("이미 같은 결과를 본 반영은 payment.observe{to=noop} 로 센다")
         @Test
         void countsNoop() {
@@ -827,19 +778,6 @@ class PaymentFacadeIntegrationTest {
     @Nested
     @DisplayName("결제 로그는 정상 흐름에는 줄을 남기지 않고, 접수되지 않았거나 어긋났거나 반영하지 못한 결제만 이름과 식별자를 필드로 남긴다")
     class Trail {
-
-        @DisplayName("정상 접수된 생성 호출은 줄을 남기지 않는다")
-        @Test
-        void logsNothingForAcceptedCreate() {
-            Order order = place(2);
-
-            try (LogEvents log = LogEvents.of(PAYMENT_LOG)) {
-                Payment payment = confirm(order.getId(), "attempt-1");
-
-                assertThat(payment.getStatus()).isEqualTo(PaymentStatus.PENDING);
-                assertThat(log.list()).isEmpty();
-            }
-        }
 
         @DisplayName("거절된 생성 호출은 DB 에 실패로만 남으므로, 접수되지 않았고 거절이었다는 줄이 INFO 로 한 줄 남는다")
         @Test

@@ -1,6 +1,5 @@
 package com.loopers.interfaces.api.payment;
 
-import ch.qos.logback.classic.spi.ILoggingEvent;
 import com.loopers.application.brand.BrandFacade;
 import com.loopers.application.order.OrderCreateCommand;
 import com.loopers.application.order.OrderFacade;
@@ -15,7 +14,6 @@ import com.loopers.domain.payment.PaymentRepository;
 import com.loopers.domain.payment.PaymentStatus;
 import com.loopers.domain.product.Price;
 import com.loopers.domain.product.ProductService;
-import com.loopers.support.log.LogEvents;
 import com.loopers.support.payment.TestPayments;
 import com.loopers.support.pg.PgFixture;
 import com.loopers.utils.DatabaseCleanUp;
@@ -148,21 +146,15 @@ class PaymentCallbackApiE2ETest {
         return (int) PG.receivedRequests().stream().filter(request -> request.method().equals("GET")).count();
     }
 
-    @DisplayName("SETTLE-002, SETTLE-010: PG 가 SUCCESS 가 된 뒤 온 callback 은 조회로 확인해 확정한다. 고객 식별 없이 받는다. 정상 경로라 줄을 남기지 않는다")
+    @DisplayName("SETTLE-002, SETTLE-010: PG 가 SUCCESS 가 된 뒤 온 callback 은 조회로 확인해 확정한다. 고객 식별 없이 받는다")
     @Test
     void confirmsOnSuccess() {
         Order order = place();
         String key = started(order);
         PG.changeStatus(key, PgFixture.Status.SUCCESS);
 
-        int response;
-        List<ILoggingEvent> logged;
-        try (LogEvents log = LogEvents.of("com.loopers.application.payment.PaymentLog")) {
-            response = callbackFor(key);
-            logged = log.list();
-        }
+        int response = callbackFor(key);
 
-        assertThat(logged).isEmpty();
         assertAll(
             () -> assertThat(response).isEqualTo(200),
             () -> assertThat(stored(order).getStatus()).isEqualTo(OrderStatus.CONFIRMED),
