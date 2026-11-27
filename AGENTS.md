@@ -14,6 +14,12 @@
 
 | 문서 | 역할 |
 | --- | --- |
+| [W10 채점 기준](docs/week10/grading-criteria.md) | 11월 24일 제공된 health UP 결제 사고의 관측·경쟁 가설·동일 주문 복구·후속 랭킹·증거와 원문 10항목 |
+| [W10 과제 원문](docs/week10/assignment-original.md) | 정상 10건·별도 장애 10건, PG SUCCESS 후 응답 유실 3건, create 추가 0 복구·관측·runbook·누적 회귀 요구 원문 |
+| [W10 학습 자료 원문](docs/week10/learning-original.md) | 관측 신호·업무 SLI·경쟁 가설·완화/복구·같은 거래 대사·runbook의 개념 근거 |
+| [W10 구현 체크리스트](docs/week10/implementation-checklist.md) | 여섯 단계의 기대값과 TDD 기록, 실제 사고 데이터·진단·동일 주문 복구·랭킹의 확인 범위 |
+| [W10 사고 Runbook](docs/runbook/week10.md) | 격리 주문 20건에서 실행한 증거 보존·읽기 전용 진단·동일 주문 reconcile과 구매 활동·주간 랭킹 대사 절차 |
+| [W10 최종 회귀·채점 대조](docs/week10/final-verification.md) | 세 앱 누적 검사와 원문 10항목을 실행별 증거에 연결하고 기술 검증과 제출 상태를 구분 |
 | [W9 채점 기준](docs/week9/grading-criteria.md) | 11월 17일 제공된 주간 구매 랭킹·고정 입력·동일 instance 재시작·완성본 공개의 원문 9항목과 확인 증거 |
 | [W9 과제 원문](docs/week9/assignment-original.md) | 실제 구매 활동 snapshot·weeklyRanking·공개 API, chunk/checkpoint·늦은 구매 revision·검증·제출 요구 원문 보존 |
 | [W9 학습 자료 원문](docs/week9/learning-original.md) | Job/Step·영속 실행 식별·입력 고정·멱등 writer·공개 pointer와 복구 판단의 개념 근거 |
@@ -96,6 +102,20 @@
 
 기능 작업 시 전체 설계와 해당 기능의 API 계약·정책 선택·TDD 기대값을 함께 확인한다. 제안이나 미정 정책은 문서 분리만으로 확정되지 않는다.
 
+## W10 작업 기준
+
+현재 주차의 구현/검증 상태는 [W10 구현 체크리스트](docs/week10/implementation-checklist.md)를 따른다. W9까지의 기록은 과거 근거로 보존하고 새 사고 증거로 승계하지 않는다. 문서 변경 요청만으로 사고 주입이나 코드를 실행하지 않는다. 지표·시각·관찰 제어의 제안은 사용자 확정/구현 사실과 구분한다.
+
+[W10 채점 기준](docs/week10/grading-criteria.md)의 원문 10항목을 W10-C01~10으로 추적한다. 정상 10건과 별도 장애 10건을 실제 API로 만들고 같은 DB·PG 거래 상태에서 baseline → fault → 증거 보존 → recovery를 이어 간다. ID로 지정한 장애 3건은 PG SUCCESS 저장 뒤 응답을 잃도록 테스트 경계에서 제어한다. fault의 장애 집합 7·UNKNOWN 3·PG SUCCESS 10을 같은 집합의 10·0·10으로 복구하며 누적 거래 20과 복구 중 create 증가 0을 확인한다.
+
+실제 health·Prometheus 응답과 DB 기반 업무 지표 하나, 식별자별 경계 기록으로 최소 두 가설의 예상·실제를 비교한다. 진단 조회는 commerce 상태를 바꾸지 않으며 fault 원문을 먼저 보존한다. 복구는 사람이 범위·중단 조건을 확인한 뒤 기존 본인 주문 reconcile HTTP로 수행한다. 불확실한 거래를 재결제하거나 DB 강제 성공으로 바꾸지 않는다. metric label은 유한하게 두고 비밀값·개인정보를 기록하지 않는다.
+
+예약 유지·성공 시 추가 재고 차감 0·포인트/쿠폰 보존·반복 적용 방지를 확인하고 실제 Outbox → Kafka → 구매 활동 → 새 W9 snapshot → 랭킹 HTTP로 연결한다. 같은 주 baseline 활동도 점수에 포함하고 최초 내부 confirmedAt을 보존한다. `docs/runbook/week10.md`와 실행별 원문 증거·기능별 확인 범위를 준비한다. 관련 누적 회귀·Checkstyle·ArchUnit의 실제 새 실행과 소유 자원 정리를 확인한다. 분산 trace backend와 새 자동 reconcile scheduler는 선택 범위이며 세부 선택·판정 근거는 W10 채점 기준을 따른다.
+
+최초 confirm은 생성 응답 유실 뒤에도 제한 조회를 수행하므로 관찰 전에 복구될 수 있다. 테스트 대상 요청의 조회/알림 보류 방법을 명시하고 생산 timeout·회로·복구 기능은 유지한다. UNKNOWN은 PaymentAttempt 상태이며 주문은 PAYMENT_PENDING이다. 실제 연결 종료와 timeout을 구분하고, sendStartedAt·관찰 시각을 상태 시작 시각으로 해석하지 않는다. 내부 적용 시도와 실제 commit/rollback도 구분한다.
+
+업무 지표는 상태 범위·갱신 주기·조회 실패/stale 의미를 정하고 실패를 0건 정상으로 바꾸지 않는다. 테스트 관리 endpoint는 소유한 동적 포트·실제 주소로 호출하며 보호 완료를 추정하지 않는다. 복구의 PG GET은 필요하므로 W7 backfill의 PG 조회 0 조건을 W10에 적용하지 않는다. 사용자 DB·공유 Redis·기존 topic/group을 보호한다.
+
 ## W9 작업 기준
 
 [W9 과제 원문](docs/week9/assignment-original.md)의 Checklist 9항목을 W9-C01~09로 추적한다. 현재 주간 랭킹은 새 구현 범위이며 W8까지의 완료 기록을 W9 통과 근거로 승계하지 않는다. 2026-11-19 [구현 체크리스트](docs/week9/implementation-checklist.md)의 설계와 2~5단계 구현·검증을 전체 설계·API 계약·정책·TDD 문서에 연결했다. 사용자 선택은 구매 활동 DB에 계산/실행 저장을 모으는 A, 기간·revision 직접 지정 실행, 미공개 404·공개 빈 결과 200·기본 limit10/최대100이다. 원문 업무 규칙·사용자 선택·기술 설계와 실제 구현/검증 상태를 구분한다. 자세한 설계와 단계별 증거는 연결 문서에 두며 전체 회귀·채점 대조의 현재 결과와 남은 범위는 [6단계 최종 검증 기록](docs/week9/final-verification.md)을 따른다. 검사 결과와 커밋·푸시·제출 완료는 구분한다.
@@ -169,4 +189,5 @@ W7에서 구현한 Outbox·단일 polling relay와 W5의 포인트 결제 분리
 - W8 상세 설계는 예약 확보와 실제 발급의 커밋 시점, 총량·동시 실행 수·중복 처리, 정상 마감·장애 중 결과 불확실·반환 실패를 다룬다. BASIC 실험의 네 번째 429와 제품의 네 번째 예약 후 재신청 없는 발급은 별도 기대값으로 남긴다. 운영 수치·미정 응답은 임의 확정하지 않는다.
 - W9 설계는 기존 버드뷰에 구매 활동 → 입력 snapshot → chunk 점수/checkpoint → 완성본·공개 pointer → 고객 조회를 확장한다. 구조와 의존에는 Batch·API·streamer의 DB 접근과 transaction manager를, 도메인 관계에는 기간·revision·입력·점수·순위·pointer를, 대표 흐름에는 동일 작업 재시작과 늦은 구매의 새 계산을 함께 표현한다. 물리 DB 배치와 API 세부 계약은 선택한 뒤 반영한다.
 - 설계한 내용과 실제 구현된 내용을 구분한다. 문서 작성 요청만으로 코드를 구현하지 않는다.
+- W10 설계는 기존 결제·이벤트·랭킹 경계를 유지하고 관찰 위치·사고 주입/보류의 테스트 범위·동일 주문 복구 순서를 덧붙인다. 원문 기대값과 실행 결과, 진단 조회와 복구 조치, health와 업무 종결, broker 전달과 소비/랭킹 완료를 구분한다. 지표·시각·증거 보존의 미정 선택은 제안으로 표시한다.
 - 관계와 흐름은 표·다이어그램으로 읽기 쉽게 표현하고, 같은 내용을 불필요하게 반복하지 않는다.

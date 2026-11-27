@@ -209,16 +209,16 @@ public class OrderPaymentStockService {
 
     /** 신뢰한 adapter의 생성 응답·권위 조회 전용이다. raw callback을 전달하면 안 된다. */
     public AppliedPayment apply(long orderId, UUID attemptKey, PaymentTransaction observed) {
-        return observe(orderId, attemptKey, attempt -> attempt.observe(observed));
+        return observe(orderId, attemptKey, observed.status().name(), observed, attempt -> attempt.observe(observed));
     }
 
     public AppliedPayment markUnknown(long orderId, UUID attemptKey) {
-        return observe(orderId, attemptKey, PaymentAttempt::markUnknown);
+        return observe(orderId, attemptKey, "UNKNOWN", null, PaymentAttempt::markUnknown);
     }
 
     /** 복수 거래/adapter 충돌을 임의의 한 거래로 적용하지 않고 현재 저장 결과와 충돌 판정만 반환한다. */
     public AppliedPayment preserveConflict(long orderId, UUID attemptKey) {
-        return observe(orderId, attemptKey, attempt -> PaymentObservationResult.CONFLICT);
+        return observe(orderId, attemptKey, "CONFLICT", null, attempt -> PaymentObservationResult.CONFLICT);
     }
 
     /**
@@ -276,12 +276,13 @@ public class OrderPaymentStockService {
      */
     public AppliedPayment rejectBeforeCreate(long orderId, UUID attemptKey, String providerAccount,
                                              String providerOrderId, long amount) {
-        return observe(orderId, attemptKey,
+        return observe(orderId, attemptKey, "REJECTED_NO_EFFECT", null,
             attempt -> attempt.observeRejectedBeforeCreate(providerAccount, providerOrderId, amount));
     }
 
-    private AppliedPayment observe(long orderId, UUID attemptKey,
+    private AppliedPayment observe(long orderId, UUID attemptKey, String evidence, PaymentTransaction external,
                                    Function<PaymentAttempt, PaymentObservationResult> observation) {
+        var applicationLog = PaymentApplicationLog.start(orderId, attemptKey, evidence, external);
         Order order = lockOrder(orderId);
         order.validatePgPaymentState();
         Map<Long, Integer> quantities = quantities(order);
@@ -291,9 +292,11 @@ public class OrderPaymentStockService {
             .orElseThrow(() -> new IllegalStateException("Prepared order has no payment attempt"));
         validateStoredAttempt(order, attempt);
         if (!attempt.getAttemptKey().equals(attemptKey)) {
+            applicationLog.evaluated(attempt, PaymentObservationResult.CONFLICT);
             return snapshot(order, attempt, PaymentObservationResult.CONFLICT);
         }
         PaymentObservationResult result = observation.apply(attempt);
+        applicationLog.evaluated(attempt, result);
         if (result == PaymentObservationResult.CONFLICT) {
             // Fixed reason and internal identities only. Never log raw PG/callback content, card input or fingerprints.
             log.warn("payment_result_conflict source=RESULT_APPLICATION orderId={} attemptKey={} reason=OBSERVATION_MISMATCH",

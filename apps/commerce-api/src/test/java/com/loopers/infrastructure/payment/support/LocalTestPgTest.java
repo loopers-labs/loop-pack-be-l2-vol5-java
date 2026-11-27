@@ -101,6 +101,70 @@ class LocalTestPgTest {
     }
 
     @Test
+    void dropsOnlyTheSelectedOrdersResponseAfterStoringItsSuccess() throws Exception {
+        try (LocalTestPg pg = new LocalTestPg(); HttpClient client = client()) {
+            assertThat(pg.isCreateResponseLossDisabled()).isTrue();
+            pg.loseSuccessfulCreateResponseFor(ORDER);
+            try {
+                assertThat(pg.isCreateResponseLossDisabled()).isFalse();
+                String other = "LP-ORD-0000000043";
+                HttpResponse<String> unaffected = post(client, pg, body(pg).replace(ORDER, other), "135135");
+                assertThat(unaffected.statusCode()).isEqualTo(202);
+                assertThat(JSON.readTree(unaffected.body()).get("status").asText()).isEqualTo("PENDING");
+
+                assertThatThrownBy(() -> post(client, pg, body(pg), "135135")).isInstanceOf(java.io.IOException.class);
+                HttpResponse<String> lookup = get(client, pg.baseUri().resolve("/api/v1/payments?orderId=" + ORDER));
+                assertThat(lookup.statusCode()).isEqualTo(200);
+                JsonNode transactions = JSON.readTree(lookup.body());
+                assertThat(transactions).hasSize(1);
+                JsonNode successful = transactions.get(0);
+                assertThat(successful.get("orderId").asText()).isEqualTo(ORDER);
+                assertThat(successful.get("amount").longValue()).isEqualTo(7000);
+                assertThat(successful.get("status").asText()).isEqualTo("SUCCESS");
+                assertThat(pg.transactionCount()).isEqualTo(2);
+                assertThat(pg.createCalls()).isEqualTo(2);
+            } finally {
+                pg.restoreCreateResponseFor(ORDER);
+            }
+            assertThat(pg.isCreateResponseLossDisabled()).isTrue();
+
+            // A deliberate duplicate POST at the standalone fixture exposes a second transaction for this order.
+            HttpResponse<String> duplicate = post(client, pg, body(pg), "135135");
+            assertThat(duplicate.statusCode()).isEqualTo(202);
+            assertThat(JSON.readTree(duplicate.body()).get("status").asText()).isEqualTo("PENDING");
+            assertThat(pg.transactionCount()).isEqualTo(3);
+            assertThat(pg.createCalls()).isEqualTo(3);
+        }
+    }
+
+    @Test
+    void pendingAcceptanceAndSuccessLookupsIdentifyOneTransactionForTheSelectedOrder() throws Exception {
+        try (LocalTestPg pg = new LocalTestPg(); HttpClient client = client()) {
+            pg.acceptPendingThenSucceedFor(ORDER);
+            String other = "LP-ORD-0000000043";
+            post(client, pg, body(pg).replace(ORDER, other), "135135");
+            HttpResponse<String> accepted = post(client, pg, body(pg), "135135");
+            assertThat(accepted.statusCode()).isEqualTo(202);
+            JsonNode pending = JSON.readTree(accepted.body());
+            assertThat(pending.required("status").asText()).isEqualTo("PENDING");
+            String key = pending.required("transactionKey").asText();
+
+            JsonNode completed = JSON.readTree(get(client, pg.baseUri().resolve("/api/v1/payments/" + key)).body());
+            assertThat(completed.required("status").asText()).isEqualTo("SUCCESS");
+            assertThat(completed.required("transactionKey").asText()).isEqualTo(key);
+            assertThat(completed.required("orderId").asText()).isEqualTo(ORDER);
+            assertThat(completed.required("amount").asLong()).isEqualTo(7000);
+            JsonNode byOrder = JSON.readTree(get(client, pg.baseUri().resolve("/api/v1/payments?orderId=" + ORDER)).body());
+            assertThat(byOrder).hasSize(1);
+            assertThat(byOrder.get(0)).isEqualTo(completed);
+            JsonNode unaffected = JSON.readTree(get(client, pg.baseUri().resolve("/api/v1/payments?orderId=" + other)).body());
+            assertThat(unaffected.get(0).required("status").asText()).isEqualTo("PENDING");
+            assertThat(pg.createCalls()).isEqualTo(2);
+            assertThat(pg.transactionCount()).isEqualTo(2);
+        }
+    }
+
+    @Test
     void canHoldAndReleaseTheResponseWithoutRandomDelay() throws Exception {
         try (LocalTestPg pg = new LocalTestPg(); HttpClient client = client()) {
             pg.nextCreateMode(LocalTestPg.CreateMode.HOLD_RESPONSE_AFTER_CREATE);

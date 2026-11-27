@@ -14,6 +14,7 @@ import com.loopers.domain.product.ProductRepository;
 import com.loopers.infrastructure.payment.support.LocalTestPg;
 import com.loopers.infrastructure.user.FixtureUserInitializer;
 import com.loopers.support.AdminMockMvc;
+import com.loopers.testcontainers.RedisTestContainersConfig;
 import com.loopers.utils.DatabaseCleanUp;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
@@ -25,11 +26,14 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.actuate.observability.AutoConfigureObservability;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.boot.test.web.server.LocalManagementPort;
+import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -41,7 +45,6 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.convention.TestBean;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.io.IOException;
 import java.time.Duration;
@@ -52,9 +55,14 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 /** Real customer HTTP, isolated test DB, and real local PG HTTP; only synthetic card/key values are used. */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
+    "management.server.port=0", "management.server.address=127.0.0.1", "management.endpoint.health.show-components=always",
+    "commerce.payment-observation.enabled=true", "commerce.payment-observation.refresh-interval=250ms"
+})
+@AutoConfigureObservability
 @AutoConfigureMockMvc
 @ExtendWith(OutputCaptureExtension.class)
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
@@ -74,6 +82,8 @@ class PgOrderConfirmApiE2ETest {
     @Autowired private FixtureUserInitializer initializer;
     @Autowired private DatabaseCleanUp cleanup;
     @Autowired private JdbcTemplate jdbc;
+    @LocalManagementPort private int managementPort;
+    @LocalServerPort private int applicationPort;
 
     @TestBean(methodName = "com.loopers.infrastructure.payment.support.PaymentFingerprintTestConfiguration#create")
     private PaymentRequestFingerprinter fingerprinter;
@@ -87,6 +97,8 @@ class PgOrderConfirmApiE2ETest {
 
     @DynamicPropertySource
     static void configurePg(DynamicPropertyRegistry registry) {
+        // Point both Lettuce health contributors to the test container before binding their configuration.
+        new RedisTestContainersConfig();
         registry.add("commerce.test-pg.enabled", () -> true);
         registry.add("commerce.test-pg.base-url", () -> PG.baseUri().toString());
         registry.add("commerce.test-pg.callback-url", () -> PG.callbackUri().toString());
@@ -102,7 +114,7 @@ class PgOrderConfirmApiE2ETest {
         createsBefore = PG.createCalls();
         lookupsBefore = PG.lookupCalls();
         transactionsBefore = PG.transactionCount();
-        ((FastTiming) paymentConfirmationTiming).reset();
+        ((FastConfirmationTiming) paymentConfirmationTiming).reset();
     }
 
     @AfterEach
@@ -201,6 +213,114 @@ class PgOrderConfirmApiE2ETest {
     }
 
     @Test
+    void lostSuccessfulCreateLeavesCommittedPaymentUnknownAndStockHeldUntilObserved() {
+        Product product = products.save(new Product(brands.save(new Brand("브랜드")), "상품", 100, 5));
+        String items = "{\"items\":[{\"productId\":%d,\"quantity\":2}]}".formatted(product.getId());
+        JsonNode draft = success(request(HttpMethod.POST, "/api/v1/orders", "alice", items), 201);
+        Fixture fixture = new Fixture(draft.required("orderId").asLong(), product.getId(), UUID.randomUUID());
+        String providerOrderId = providerId(fixture.orderId());
+        PG.loseSuccessfulCreateResponseFor(providerOrderId);
+        ((FastConfirmationTiming) paymentConfirmationTiming).expireAfterPgCreate(confirmPath(fixture.orderId()), providerOrderId);
+
+        JsonNode result = success(confirm(fixture, fixture.key(), CARD), 202);
+
+        assertPayment(result, fixture, "PAYMENT_PENDING", "UNKNOWN");
+        assertThat(result.has("confirmedAt")).isFalse();
+        assertState(fixture, "PAYMENT_PENDING", "UNKNOWN", "HELD", 3);
+        assertThat(jdbc.queryForObject("SELECT quantity FROM order_item WHERE order_id=? AND product_id=?",
+            Integer.class, fixture.orderId(), fixture.productId())).isEqualTo(2);
+        assertThat(jdbc.queryForObject("SELECT transaction_key FROM payment_attempt WHERE order_id=?",
+            String.class, fixture.orderId())).isNull();
+        String storedProviderOrderId = jdbc.queryForObject("SELECT provider_order_id FROM payment_attempt WHERE order_id=?",
+            String.class, fixture.orderId());
+        assertThat(storedProviderOrderId).isEqualTo(providerOrderId);
+        assertCalls(1, 0, 1);
+
+        String lookup = PG.baseUri().resolve("/api/v1/payments?orderId=" + storedProviderOrderId).toString();
+        var pgResponse = request(HttpMethod.GET, lookup, "135135", null);
+        assertThat(pgResponse.getStatusCode().value()).isEqualTo(200);
+        JsonNode transactions = pgResponse.getBody();
+        assertThat(transactions.isArray()).isTrue();
+        assertThat(transactions.size()).isEqualTo(1);
+        JsonNode transaction = transactions.get(0);
+        assertThat(transaction.required("orderId").asText()).isEqualTo(storedProviderOrderId);
+        assertThat(transaction.required("amount").asLong()).isEqualTo(draft.required("totalAmount").asLong());
+        assertThat(transaction.required("status").asText()).isEqualTo("SUCCESS");
+        assertThat(transaction.required("transactionKey").textValue()).isNotBlank();
+        assertThat(success(get(fixture.orderId(), "alice"), 200)).isEqualTo(result);
+        assertState(fixture, "PAYMENT_PENDING", "UNKNOWN", "HELD", 3);
+        assertCalls(1, 1, 1);
+    }
+
+    @Test
+    void healthStaysUpWhilePrometheusShowsUnknownPaymentUntilSameOrderReconciles(CapturedOutput output) {
+        Fixture fixture = draft();
+        String providerOrderId = providerId(fixture.orderId());
+        assertThat(managementPort).isNotEqualTo(applicationPort);
+        assertHealthUp();
+        awaitUnknownCount(0);
+
+        PG.loseSuccessfulCreateResponseFor(providerOrderId);
+        ((FastConfirmationTiming) paymentConfirmationTiming).expireAfterPgCreate(confirmPath(fixture.orderId()), providerOrderId);
+        assertPayment(success(confirm(fixture, fixture.key(), CARD), 202), fixture, "PAYMENT_PENDING", "UNKNOWN");
+        assertState(fixture, "PAYMENT_PENDING", "UNKNOWN", "HELD", 3);
+        assertHealthUp();
+        awaitUnknownCount(1);
+        assertCalls(1, 0, 1);
+        assertOrderLog(output, fixture, "payment_gateway_result", "operation=CREATE", "result=UNKNOWN", "reason=NETWORK");
+        assertOrderLog(output, fixture, "payment_apply", "observation=UNKNOWN", "txOutcome=COMMITTED");
+
+        PG.restoreCreateResponseFor(providerOrderId);
+        var recovered = request(HttpMethod.POST, "/api/v1/orders/" + fixture.orderId() + "/payment/reconcile", "alice", null);
+        assertPayment(success(recovered, 200), fixture, "CONFIRMED", "SUCCESS");
+        assertState(fixture, "CONFIRMED", "SUCCESS", "CONSUMED", 3);
+        assertHealthUp();
+        awaitUnknownCount(0);
+        assertCalls(1, 1, 1);
+        assertOrderLog(output, fixture, "payment_gateway_result", "source=RECONCILE", "operation=LOOKUP_BY_ORDER", "pgStatus=SUCCESS");
+        assertOrderLog(output, fixture, "payment_apply", "observation=SUCCESS", "txOutcome=COMMITTED");
+    }
+
+    private void assertOrderLog(CapturedOutput output, Fixture fixture, String event, String... fields) {
+        var events = output.getAll().lines()
+            .filter(line -> line.contains(event) && line.contains("orderId=" + fixture.orderId() + " ")
+                && line.contains("attemptKey=" + fixture.key()) && line.contains("providerOrderId=" + providerId(fixture.orderId())))
+            .toList();
+        assertThat(events).anySatisfy(line -> assertThat(line).contains(fields));
+    }
+
+    private void assertHealthUp() {
+        var health = rest.getForEntity("http://127.0.0.1:" + managementPort + "/actuator/health", JsonNode.class);
+        assertThat(health.getStatusCode().value()).as("health %s", health.getBody()).isEqualTo(200);
+        assertThat(health.getBody().required("status").asText()).isEqualTo("UP");
+    }
+
+    private void awaitUnknownCount(int expected) {
+        await().atMost(Duration.ofSeconds(5)).pollInterval(Duration.ofMillis(150)).untilAsserted(() -> {
+            var scrape = rest.getForEntity("http://127.0.0.1:" + managementPort + "/actuator/prometheus", String.class);
+            assertThat(scrape.getStatusCode().value()).isEqualTo(200);
+            var samples = scrape.getBody().lines()
+                .filter(line -> line.startsWith("commerce_payment_unknown{") || line.startsWith("commerce_payment_unknown "))
+                .toList();
+            assertThat(samples).as("one UNKNOWN payment gauge").singleElement().satisfies(sample -> {
+                assertThat(sample).doesNotContain("orderId", "attemptKey", "userId", "transactionKey", "providerOrderId");
+                assertThat(Double.parseDouble(sample.substring(sample.lastIndexOf(' ') + 1))).isEqualTo((double) expected);
+            });
+        });
+    }
+
+    @Test
+    void lostSuccessfulCreateIsConfirmedByOneAutomaticLookupWhenTimeRemains() {
+        Fixture fixture = draft();
+        PG.loseSuccessfulCreateResponseFor(providerId(fixture.orderId()));
+
+        assertPayment(success(confirm(fixture, fixture.key(), CARD), 200), fixture, "CONFIRMED", "SUCCESS");
+
+        assertState(fixture, "CONFIRMED", "SUCCESS", "CONSUMED", 3);
+        assertCalls(1, 1, 1);
+    }
+
+    @Test
     void unresolvedCreateAndEmptyLookupsEndAsUnknownWithReservationStillHeld() {
         Fixture fixture = draft();
         PG.replyNext(500, "{}");
@@ -220,11 +340,11 @@ class PgOrderConfirmApiE2ETest {
     void firstRequestStopsEarlyWhenALaterLookupConfirmsFinalResult(String terminal) {
         Fixture fixture = draft();
         PG.nextCreateStatus("PENDING");
-        ((FastTiming) paymentConfirmationTiming).afterSleep = () -> {
+        ((FastConfirmationTiming) paymentConfirmationTiming).afterSleep(() -> {
             String transaction = jdbc.queryForObject("SELECT transaction_key FROM payment_attempt WHERE order_id=?",
                 String.class, fixture.orderId());
             PG.setStatus(transaction, terminal);
-        };
+        });
 
         JsonNode data = success(confirm(fixture, fixture.key(), CARD), 200);
 
@@ -616,35 +736,7 @@ class PgOrderConfirmApiE2ETest {
     }
 
     static PaymentConfirmationTiming paymentConfirmationTiming() {
-        return new FastTiming();
-    }
-
-    private static final class FastTiming implements PaymentConfirmationTiming {
-        private long elapsedNanos;
-        private Runnable afterSleep = () -> { };
-
-        @Override
-        public long nanoTime() {
-            return elapsedNanos;
-        }
-
-        @Override
-        public void sleep(Duration duration) {
-            assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
-            assertThat(duration.isNegative()).isFalse();
-            elapsedNanos += duration.toNanos();
-            afterSleep.run();
-        }
-
-        @Override
-        public double jitterFactor() {
-            return 1.0;
-        }
-
-        void reset() {
-            elapsedNanos = 0;
-            afterSleep = () -> { };
-        }
+        return new FastConfirmationTiming(PG);
     }
 
     private record Fixture(long orderId, long productId, UUID key) { }

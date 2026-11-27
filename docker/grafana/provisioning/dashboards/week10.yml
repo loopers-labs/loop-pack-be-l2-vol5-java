@@ -1,0 +1,10 @@
+apiVersion: 1
+providers:
+  - name: w10-payments
+    orgId: 1
+    folder: W10
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    options:
+      path: /etc/grafana/w10-dashboards

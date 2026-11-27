@@ -1,0 +1,103 @@
+{
+  "uid": "w10-payment-incident",
+  "title": "W10 결제 사고 · 보존 기록",
+  "description": "2026-11-26 W10 최종 검사에서 기록한 세 시점의 관측값입니다. 출처: docs/week10/evidence/checkout-incident-stage6.zip의 incident/ 디렉터리.",
+  "tags": ["W10", "payments", "recorded"],
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": false,
+  "timezone": "Asia/Seoul",
+  "time": {
+    "from": "2026-11-26T05:06:48.800Z",
+    "to": "2026-11-26T05:06:50.800Z"
+  },
+  "refresh": "",
+  "panels": [
+    {
+      "id": 1,
+      "title": "미확인 결제 건수",
+      "type": "timeseries",
+      "description": "각 점은 당시 /actuator/prometheus의 commerce_payment_unknown 값입니다. 가로축은 세 단계의 기록 시각(KST)입니다. 점과 점 사이의 값은 측정하지 않았습니다.",
+      "gridPos": {"x": 0, "y": 0, "w": 24, "h": 10},
+      "datasource": {"type": "grafana-testdata-datasource", "uid": "w10-evidence"},
+      "targets": [
+        {
+          "refId": "A",
+          "scenarioId": "csv_content",
+          "datasource": {"type": "grafana-testdata-datasource", "uid": "w10-evidence"},
+          "csvContent": "time,미확인 결제\n2026-11-26T05:06:49.343303Z,0\n2026-11-26T05:06:49.774792Z,3\n2026-11-26T05:06:50.094534Z,0"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "fixed", "fixedColor": "orange"},
+          "min": 0,
+          "max": 4,
+          "decimals": 0,
+          "unit": "short",
+          "custom": {
+            "axisLabel": "건",
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "lineInterpolation": "linear",
+            "showPoints": "always",
+            "pointSize": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {"showLegend": false},
+        "tooltip": {"mode": "single"}
+      }
+    },
+    {
+      "id": 2,
+      "title": "서버 상태와 결제 결과",
+      "type": "table",
+      "description": "health는 세 시점 모두 UP입니다. 장애 때 PG 승인 20건 중 17건만 내부에서 확정됐습니다. 복구 후 승인 건수는 그대로 20건이고 나머지 주문 3건이 확정됐습니다. PG 승인과 내부 확정은 각 단계의 state.json에서 집계한 누적 건수입니다.",
+      "gridPos": {"x": 0, "y": 10, "w": 24, "h": 6},
+      "datasource": {"type": "grafana-testdata-datasource", "uid": "w10-evidence"},
+      "targets": [
+        {
+          "refId": "A",
+          "scenarioId": "csv_content",
+          "datasource": {"type": "grafana-testdata-datasource", "uid": "w10-evidence"},
+          "csvContent": "관측 단계,미확인,PG 승인,내부 확정,health,가용 재고,시각(KST)\n정상,0,10,10,UP,20,14:06:49.343303\n응답 유실,3,20,17,UP,10,14:06:49.774792\n복구 후,0,20,20,UP,10,14:06:50.094534"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"custom": {"minWidth": 65}},
+        "overrides": [
+          {"matcher": {"id": "byName", "options": "관측 단계"}, "properties": [{"id": "custom.width", "value": 83}]},
+          {"matcher": {"id": "byName", "options": "시각(KST)"}, "properties": [{"id": "custom.width", "value": 150}]}
+        ]
+      },
+      "options": {"showHeader": true}
+    },
+    {
+      "id": 3,
+      "title": "영향 주문 12·15·19 중 12번의 대사",
+      "type": "table",
+      "description": "장애 직후 생성 요청의 reason=NETWORK, 로컬 UNKNOWN 커밋, 같은 거래의 PG SUCCESS가 함께 관측됐습니다. 기존 거래를 재조회해 예약을 소비하고 새 결제 생성 0회를 확인했습니다. 두 행은 같은 주문과 같은 PG 거래입니다.",
+      "gridPos": {"x": 0, "y": 16, "w": 24, "h": 5},
+      "datasource": {"type": "grafana-testdata-datasource", "uid": "w10-evidence"},
+      "targets": [
+        {
+          "refId": "A",
+          "scenarioId": "csv_content",
+          "datasource": {"type": "grafana-testdata-datasource", "uid": "w10-evidence"},
+          "csvContent": "관측 단계,내부 결제,PG 상태,PG 거래,재고 예약,내부 주문\n응답 유실,UNKNOWN,SUCCESS,TEST-TX-12,HELD,PAYMENT_PENDING\n복구 후,SUCCESS,SUCCESS,TEST-TX-12,CONSUMED,CONFIRMED"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"custom": {"minWidth": 99}},
+        "overrides": [
+          {"matcher": {"id": "byName", "options": "관측 단계"}, "properties": [{"id": "custom.width", "value": 83}]},
+          {"matcher": {"id": "byName", "options": "내부 주문"}, "properties": [{"id": "custom.width", "value": 163}]}
+        ]
+      },
+      "options": {"showHeader": true}
+    }
+  ]
+}

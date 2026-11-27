@@ -46,6 +46,8 @@ public final class LocalTestPg implements AutoCloseable {
     private final AtomicInteger sequence = new AtomicInteger();
     private final AtomicReference<CreateMode> nextMode = new AtomicReference<>(CreateMode.NORMAL);
     private final AtomicReference<String> nextCreateStatus = new AtomicReference<>("PENDING");
+    private final Set<String> ordersLosingSuccessResponses = ConcurrentHashMap.newKeySet();
+    private final Set<String> ordersCompletingAfterAcceptance = ConcurrentHashMap.newKeySet();
     private final AtomicReference<Reply> nextReply = new AtomicReference<>();
     private volatile CountDownLatch created = new CountDownLatch(1);
     private volatile CountDownLatch requestReceived = new CountDownLatch(1);
@@ -95,6 +97,8 @@ public final class LocalTestPg implements AutoCloseable {
         sequence.set(0);
         nextMode.set(CreateMode.NORMAL);
         nextCreateStatus.set("PENDING");
+        ordersLosingSuccessResponses.clear();
+        ordersCompletingAfterAcceptance.clear();
         nextReply.set(null);
         created = new CountDownLatch(1);
         requestReceived = new CountDownLatch(1);
@@ -119,6 +123,23 @@ public final class LocalTestPg implements AutoCloseable {
         created = new CountDownLatch(1);
         responsesReleased = new CountDownLatch(1);
         nextMode.set(Objects.requireNonNull(mode));
+    }
+
+    public void loseSuccessfulCreateResponseFor(String providerOrderId) {
+        ordersLosingSuccessResponses.add(providerOrderId);
+    }
+
+    public void restoreCreateResponseFor(String providerOrderId) {
+        ordersLosingSuccessResponses.remove(providerOrderId);
+    }
+
+    public boolean isCreateResponseLossDisabled() {
+        return ordersLosingSuccessResponses.isEmpty() && nextMode.get() != CreateMode.LOSE_RESPONSE_AFTER_CREATE;
+    }
+
+    /** For this order's next creation, complete the accepted transaction before the caller can issue its first lookup. */
+    public void acceptPendingThenSucceedFor(String providerOrderId) {
+        ordersCompletingAfterAcceptance.add(providerOrderId);
     }
 
     /** Deterministic terminal create responses still persist a real fixture transaction before responding. */
@@ -228,16 +249,22 @@ public final class LocalTestPg implements AutoCloseable {
         }
         String orderId = body.get("orderId").textValue();
         long amount = body.get("amount").longValue();
-        CreateMode mode = nextMode.getAndSet(CreateMode.NORMAL);
-        String initialStatus = nextCreateStatus.getAndSet("PENDING");
+        boolean loseSuccess = ordersLosingSuccessResponses.contains(orderId);
+        CreateMode mode = loseSuccess ? CreateMode.LOSE_RESPONSE_AFTER_CREATE : nextMode.getAndSet(CreateMode.NORMAL);
+        String initialStatus = loseSuccess ? "SUCCESS" : nextCreateStatus.getAndSet("PENDING");
         if (mode == CreateMode.REJECT_BEFORE_CREATE) {
             send(exchange, 422, JSON.writeValueAsString(Map.of("code", "TEST_PG_REJECTED_BEFORE_CREATE",
                 "orderId", orderId, "amount", amount, "transactionCreated", false)));
             return;
         }
         String key = "TEST-TX-" + sequence.incrementAndGet();
-        Transaction transaction = new Transaction(key, orderId, amount, initialStatus);
+        boolean completePending = !loseSuccess && ordersCompletingAfterAcceptance.remove(orderId);
+        Transaction transaction = new Transaction(key, orderId, amount, completePending ? "PENDING" : initialStatus);
         transactions.put(key, transaction);
+        if (completePending) {
+            // The create response retains the acceptance snapshot. GET only reads the persisted final transaction.
+            setStatus(key, "SUCCESS");
+        }
         created.countDown();
         if (mode == CreateMode.LOSE_RESPONSE_AFTER_CREATE) {
             return;

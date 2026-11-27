@@ -41,9 +41,8 @@ public class OrderPaymentRecoveryService {
         PaymentGatewayResult observation;
         try {
             requireOutsideTransaction();
-            observation = stored.transactionKey() == null
-                ? gateway.findByProviderOrderId(stored.providerOrderId())
-                : gateway.findByTransactionKey(stored.transactionKey());
+            observation = PaymentGatewayCall.lookup(gateway, PaymentGatewayCall.Source.RECONCILE, stored.orderId(),
+                stored.attemptKey(), stored.providerOrderId(), stored.transactionKey());
         } catch (PaymentLookupNotPermittedException denied) {
             // No external observation occurred. A concurrent completion may already have committed.
             return stocks.inspectRecovery(stored.orderId(), stored.attemptKey()).result();
@@ -65,7 +64,8 @@ public class OrderPaymentRecoveryService {
         PaymentGatewayResult observation;
         try {
             requireOutsideTransaction();
-            observation = gateway.findByTransactionKey(transactionKey);
+            observation = PaymentGatewayCall.lookupByKey(gateway, PaymentGatewayCall.Source.CALLBACK, stored.orderId(),
+                stored.attemptKey(), stored.providerOrderId(), transactionKey);
         } catch (PaymentLookupNotPermittedException denied) {
             // Acknowledging unverified notification would hide a recoverable failure. State is unchanged.
             throw resultUnavailable();

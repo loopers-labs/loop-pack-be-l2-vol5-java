@@ -25,12 +25,15 @@ import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.convention.TestBean;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -447,28 +450,41 @@ class OrderPaymentStockIntegrationTest {
 
     @ParameterizedTest
     @EnumSource(value = PaymentTransaction.Status.class, names = {"SUCCESS", "FAILED"})
-    void terminalApplicationRollsBackRealSqlAndTheSameObservationCanBeAppliedAgain(PaymentTransaction.Status result) {
+    @ExtendWith(OutputCaptureExtension.class)
+    void terminalApplicationRollsBackRealSqlAndTheSameObservationCanBeAppliedAgain(PaymentTransaction.Status result,
+                                                                                 CapturedOutput output) {
         Fixture fixture = prepared();
         apply(fixture, PaymentTransaction.Status.PENDING);
         var before = storedState();
         long beforeRevision = revisions.current();
         IllegalStateException injected = new IllegalStateException("after TX B flush");
+        String execution = " observation=" + result + " orderId=" + fixture.orderId() + " attemptKey=" + fixture.attemptKey();
+        String started = "payment_apply phase=STARTED" + execution;
+        String completed = "payment_apply phase=COMPLETED" + execution;
 
         assertThatThrownBy(() -> tx().executeWithoutResult(status -> {
             apply(fixture, result);
             entityManager.flush();
             assertTerminalState(fixture, result);
             assertThat(revisions.current()).isEqualTo(beforeRevision + (success(result) ? 0 : 1));
+            assertThat(output.getOut()).doesNotContain(completed);
             throw injected;
         })).isSameAs(injected);
 
         assertThat(storedState()).isEqualTo(before);
+        assertThat(output.getOut()).contains(started);
+        assertThat(output.getOut().lines().filter(line -> line.contains(completed))).singleElement()
+            .asString().contains("decision=APPLIED txOutcome=ROLLED_BACK");
         apply(fixture, result);
         assertTerminalState(fixture, result);
         assertThat(revisions.current()).isEqualTo(beforeRevision + (success(result) ? 0 : 1));
         var terminal = storedState();
         apply(fixture, result);
         assertThat(storedState()).isEqualTo(terminal);
+        assertThat(output.getOut().lines().filter(line -> line.contains(completed)))
+            .extracting(line -> line.substring(line.indexOf("decision=")))
+            .containsExactly("decision=APPLIED txOutcome=ROLLED_BACK", "decision=APPLIED txOutcome=COMMITTED",
+                "decision=UNCHANGED txOutcome=COMMITTED");
     }
 
     @Test
