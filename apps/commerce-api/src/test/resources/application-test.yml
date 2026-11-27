@@ -2,3 +2,5 @@
 commerce.order-events.enabled: false
 commerce.outbox-relay.enabled: false
 spring.kafka.bootstrap-servers: 127.0.0.1:1
+# Monitoring HTTP tests enable their own sampler. Unrelated test contexts should not poll their databases.
+commerce.payment-observation.enabled: false

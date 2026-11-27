@@ -1,6 +1,7 @@
 package com.loopers.infrastructure.payment;
 
 import com.loopers.domain.payment.PaymentAttempt;
+import com.loopers.domain.payment.PaymentAttemptStatus;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
@@ -11,6 +12,8 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface PaymentAttemptJpaRepository extends JpaRepository<PaymentAttempt, Long> {
+    long countByStatus(PaymentAttemptStatus status);
+
     Optional<PaymentAttempt> findByOrderId(long orderId);
 
     List<PaymentAttempt> findByOrderIdIn(List<Long> orderIds);
