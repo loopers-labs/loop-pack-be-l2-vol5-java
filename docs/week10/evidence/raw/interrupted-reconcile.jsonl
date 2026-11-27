@@ -1,0 +1,10 @@
+{"observedAt":"2026-11-27T01:57:12.479507Z","step":"plan","pgCreateRequests":20,"orderIds":[62,65,68],"before":{"availableStock":3,"pointBalance":50000,"ownedCouponIds":[]}}
+{"observedAt":"2026-11-27T01:57:12.479872Z","step":"started","orderId":62,"unattemptedOrderIds":[65,68]}
+{"observedAt":"2026-11-27T01:57:12.496604Z","step":"verified","orderId":62,"unattemptedOrderIds":[65,68],"httpStatus":200,"orderStatus":"CONFIRMED","paymentStatus":"SUCCESS","lookupAvailable":true,"transactionKey":"TEST-TX-62","after":{"availableStock":3,"pointBalance":50000,"ownedCouponIds":[]},"pgCreateRequests":20}
+{"observedAt":"2026-11-27T01:57:12.496894Z","step":"started","orderId":65,"unattemptedOrderIds":[68]}
+{"observedAt":"2026-11-27T01:57:12.511083Z","step":"stopped","orderId":65,"unattemptedOrderIds":[68],"httpStatus":202,"orderStatus":"PAYMENT_PENDING","paymentStatus":"UNKNOWN","lookupAvailable":false,"transactionKey":null,"after":{"availableStock":3,"pointBalance":50000,"ownedCouponIds":[]},"pgCreateRequests":20,"reason":"pg_lookup_unavailable"}
+{"observedAt":"2026-11-27T01:57:12.539448Z","step":"plan","pgCreateRequests":20,"orderIds":[65,68],"before":{"availableStock":3,"pointBalance":50000,"ownedCouponIds":[]}}
+{"observedAt":"2026-11-27T01:57:12.539759Z","step":"started","orderId":65,"unattemptedOrderIds":[68]}
+{"observedAt":"2026-11-27T01:57:12.557257Z","step":"verified","orderId":65,"unattemptedOrderIds":[68],"httpStatus":200,"orderStatus":"CONFIRMED","paymentStatus":"SUCCESS","lookupAvailable":true,"transactionKey":"TEST-TX-65","after":{"availableStock":3,"pointBalance":50000,"ownedCouponIds":[]},"pgCreateRequests":20}
+{"observedAt":"2026-11-27T01:57:12.557587Z","step":"started","orderId":68,"unattemptedOrderIds":[]}
+{"observedAt":"2026-11-27T01:57:12.578367Z","step":"verified","orderId":68,"unattemptedOrderIds":[],"httpStatus":200,"orderStatus":"CONFIRMED","paymentStatus":"SUCCESS","lookupAvailable":true,"transactionKey":"TEST-TX-68","after":{"availableStock":3,"pointBalance":50000,"ownedCouponIds":[]},"pgCreateRequests":20}
