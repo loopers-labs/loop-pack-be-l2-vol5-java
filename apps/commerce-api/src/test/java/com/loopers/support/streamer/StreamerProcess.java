@@ -77,6 +77,11 @@ public final class StreamerProcess implements AutoCloseable {
         throw new IllegalStateException("streamer 가 " + READY_TIMEOUT + " 안에 준비되지 않았습니다.\n" + logTail());
     }
 
+    /** streamer 로그 전체에 이 문자열이 있는지. traceId 처럼 처리 한 건의 흔적을 찾을 때 쓴다. */
+    public boolean logContains(String text) {
+        return readLog().contains(text);
+    }
+
     /** 실패 메시지에 붙일 streamer 로그의 마지막 40줄. */
     public String logTail() {
         List<String> lines = readLog().lines().toList();

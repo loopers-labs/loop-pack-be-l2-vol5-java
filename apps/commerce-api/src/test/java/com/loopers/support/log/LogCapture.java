@@ -36,6 +36,14 @@ public final class LogCapture implements AutoCloseable {
             .toList();
     }
 
+    /** 모은 경계 로그(event key 가 있는 사건) 전부. */
+    public List<Captured> all() {
+        return appender.list.stream()
+            .map(Captured::of)
+            .filter(captured -> captured.keyValues().containsKey("event"))
+            .toList();
+    }
+
     @Override
     public void close() {
         root.detachAppender(appender);

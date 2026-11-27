@@ -9,7 +9,7 @@
 - 계측이 안 붙는 곳 두 군데를 고친다.
   - `PgHttpClient`가 정적 `RestClient.builder()`로 만든다 → 자동 설정 `RestClient.Builder` 빈을 주입받아 만든다(observation·traceparent 헤더 주입).
   - `modules:kafka`의 `KafkaConfig`가 `KafkaTemplate`을 직접 만든다 → `setObservationEnabled(true)`. streamer listener container factory도 `getContainerProperties().setObservationEnabled(true)`.
-- test 프로필: OTLP 전송 끔. api 테스트는 in-memory span exporter 빈(`opentelemetry-sdk-testing`의 `InMemorySpanExporter`)으로 수집. 속성 이름은 Boot 3.4 문서로 구현 때 확인.
+- test·dev 프로필은 OTLP endpoint가 없어 exporter가 만들어지지 않는다(Boot 3.4.4). Spring Boot 테스트는 추적을 기본으로 끄므로 전파를 보는 테스트에 `@AutoConfigureObservability`를 붙인다.
 - 로컬: `docker/monitoring-compose.yml`에 Grafana Tempo 추가, Grafana datasource provisioning.
 
 | 대안 | 장점 | 탈락 이유 |
@@ -172,7 +172,7 @@ DB 진단은 SELECT만(UNKNOWN 시도 목록·나이, 주문·재고·Outbox 상
 | 진단·보존 | fixture 거래 읽기 조회, 경계 로그 수집, 가설 판정, fault 파일 저장·hash | 진단 전후 commerce 상태 동일, 가설 2 지지·3 기각(`apply.rolled_back` 없음) |
 | RECOVERY | drop 해제·OFF 확인 → B로 3건 reconcile → 1건 reconcile+callback 반복, A로 B 주문 reconcile 1회 | 같은 10건 성공 10·UNKNOWN 0, createCalls 증가 0, duplicateCreates 0, 재고 5, 포인트·쿠폰 기준값 동일, 반복 후 Outbox 행 수 불변, 타인 reconcile 404, gauge UNKNOWN 0 |
 | 후속 | relay 대기 → streamer 소비 대기 → BatchProcess → 랭킹 API | Outbox 20건 PUBLISHED, 구매 활동 20행(주문당 1), 랭킹 점수 20·1위, fault hash 재검증 일치 |
-| 추적 | (단계 중 수집) | PG 요청 `traceparent`의 traceId = create span traceId, Kafka 헤더 traceId = 해당 Outbox `trace_parent` traceId, streamer 로그에 같은 traceId, 장애 주문 Outbox trace ≠ 원 결제 trace |
+| 추적 | (단계 중 수집) | PG create 요청 `traceparent`의 traceId = 그 `create.result` 로그 MDC traceId, Kafka 헤더 traceId = 해당 Outbox `trace_parent` traceId, streamer 로그에 같은 traceId, 장애 주문 Outbox trace ≠ 원 결제 trace |
 | finally | 내가 켠 drop 해제, streamer 종료 | 거래·증거는 지우지 않음 |
 
 ## 5. 가설 판정표 (diagnosis.json)
