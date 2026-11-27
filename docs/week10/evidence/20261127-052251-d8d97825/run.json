@@ -1,0 +1,40 @@
+{
+  "runId" : "20261127-052251-d8d97825",
+  "startedAt" : "2026-11-27T05:22:51.093874Z",
+  "stages" : {
+    "baseline" : "PASSED",
+    "fault" : "PASSED",
+    "diagnose" : "PASSED",
+    "ranking-r1" : "PASSED",
+    "recovery" : "PASSED",
+    "downstream" : "PASSED"
+  },
+  "environment" : {
+    "managementPort" : 60423,
+    "metricDelay" : "PT0.2S",
+    "pgBaseUrl" : "http://127.0.0.1:60352",
+    "lookupCircuitBreaker" : {
+      "slidingWindowType" : "COUNT_BASED",
+      "slidingWindowSize" : 10,
+      "minimumNumberOfCalls" : 5,
+      "failureRateThreshold" : 50.0,
+      "waitDurationInOpenState" : "PT10S",
+      "permittedNumberOfCallsInHalfOpenState" : 2
+    },
+    "pgReadTimeout" : "PT0.5S",
+    "mysql" : "8.0.46",
+    "profiles" : [ "test" ],
+    "automaticPaymentLookup" : false,
+    "apiPort" : 60422,
+    "java" : "23.0.2"
+  },
+  "initialCounts" : {
+    "pgCreates" : 0,
+    "attempts" : 0,
+    "reservations" : 0,
+    "orders" : 0,
+    "pgTransactions" : 0
+  },
+  "result" : "PASSED",
+  "endedAt" : "2026-11-27T05:23:17.416263Z"
+}

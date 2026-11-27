@@ -1,0 +1,138 @@
+{
+  "runId" : "20261127-064920-a0cedcfa",
+  "phase" : "ranking-r1",
+  "startedAt" : "2026-11-27T06:49:47.217856Z",
+  "outboxPublished" : 17,
+  "activitiesBeforeRecovery" : 17,
+  "ledgerBeforeRecovery" : 17,
+  "periodStart" : "2026-11-23",
+  "snapshotId" : "weekly-20261123-r1",
+  "jobStatus" : "COMPLETED",
+  "jobExitDescription" : "",
+  "rankingResponse" : {
+    "status" : "PUBLISHED",
+    "periodStart" : "2026-11-23",
+    "periodEnd" : "2026-11-30",
+    "snapshotId" : "weekly-20261123-r1",
+    "frozenAt" : "2026-11-27T06:49:48Z",
+    "items" : [ {
+      "productId" : 1,
+      "productName" : "S5 synthetic product",
+      "score" : 17,
+      "rank" : 1,
+      "calcRank" : 1
+    } ]
+  },
+  "confirmedAtBeforeRecovery" : {
+    "1" : "2026-11-27T06:49:42.671",
+    "2" : "2026-11-27T06:49:42.832",
+    "3" : "2026-11-27T06:49:42.916",
+    "4" : "2026-11-27T06:49:43.035",
+    "5" : "2026-11-27T06:49:43.125",
+    "6" : "2026-11-27T06:49:43.217",
+    "7" : "2026-11-27T06:49:43.294",
+    "8" : "2026-11-27T06:49:43.364",
+    "9" : "2026-11-27T06:49:43.441",
+    "10" : "2026-11-27T06:49:43.502",
+    "14" : "2026-11-27T06:49:46.508",
+    "15" : "2026-11-27T06:49:46.570",
+    "16" : "2026-11-27T06:49:46.628",
+    "17" : "2026-11-27T06:49:46.694",
+    "18" : "2026-11-27T06:49:46.757",
+    "19" : "2026-11-27T06:49:46.824",
+    "20" : "2026-11-27T06:49:46.887"
+  },
+  "scores" : [ {
+    "product_id" : 1,
+    "score" : 17,
+    "ranking" : 1
+  } ],
+  "inputs" : [ {
+    "order_id" : 1,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-27T06:49:42.671"
+  }, {
+    "order_id" : 2,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-27T06:49:42.832"
+  }, {
+    "order_id" : 3,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-27T06:49:42.916"
+  }, {
+    "order_id" : 4,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-27T06:49:43.035"
+  }, {
+    "order_id" : 5,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-27T06:49:43.125"
+  }, {
+    "order_id" : 6,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-27T06:49:43.217"
+  }, {
+    "order_id" : 7,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-27T06:49:43.294"
+  }, {
+    "order_id" : 8,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-27T06:49:43.364"
+  }, {
+    "order_id" : 9,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-27T06:49:43.441"
+  }, {
+    "order_id" : 10,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-27T06:49:43.502"
+  }, {
+    "order_id" : 14,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-27T06:49:46.508"
+  }, {
+    "order_id" : 15,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-27T06:49:46.57"
+  }, {
+    "order_id" : 16,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-27T06:49:46.628"
+  }, {
+    "order_id" : 17,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-27T06:49:46.694"
+  }, {
+    "order_id" : 18,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-27T06:49:46.757"
+  }, {
+    "order_id" : 19,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-27T06:49:46.824"
+  }, {
+    "order_id" : 20,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-27T06:49:46.887"
+  } ],
+  "result" : "PASSED",
+  "endedAt" : "2026-11-27T06:49:48.566809Z"
+}

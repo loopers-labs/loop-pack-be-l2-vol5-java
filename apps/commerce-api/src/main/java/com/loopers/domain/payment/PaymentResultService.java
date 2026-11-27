@@ -13,8 +13,11 @@ import com.loopers.domain.product.StockReservationRepository;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.Clock;
 import java.time.ZonedDateTime;
@@ -26,6 +29,7 @@ import java.time.temporal.ChronoUnit;
  * 세 단계는 반드시 하나의 트랜잭션 안에 있어야 한다 (설계 5-2).
  * 7주차: ⑦ 이 주문을 처음 CONFIRMED 로 만들었으면 같은 TX 에 OrderConfirmed Outbox 를 PENDING 으로 insert 한다 (7주차 설계 D10·D16).
  */
+@Slf4j
 @RequiredArgsConstructor
 @Component
 public class PaymentResultService {
@@ -52,6 +56,11 @@ public class PaymentResultService {
         int settled = paymentAttemptRepository.settleIfOpen(
             attemptId, result.status(), result.failureReason(), result.transactionKey());
         if (settled == 0) {
+            // 조건부 UPDATE 가 0 행이라는 사실만 남긴다. 이것은 "적용하지 않았다"는 뜻이고, 그 자체로 중복 적용을 뜻하지는 않는다.
+            // storedStatus(이 TX 시작 시점에 읽은 저장 상태)와 targetStatus 가 같을 때만 "같은 결과로 이미 종결"로 읽을 수 있다.
+            // 다르면 다른 결과가 먼저 종결된 것이므로 중복이 아니다. 판단은 읽는 쪽이 두 값을 보고 한다.
+            log.info("payment.apply phase=attempt attemptId={} orderId={} storedStatus={} targetStatus={} settled=0 result=NOT_APPLIED",
+                attemptId, attempt.getOrderId(), attempt.getStatus(), result.status());
             return PaymentApplyResult.notApplied();
         }
 
@@ -76,6 +85,12 @@ public class PaymentResultService {
             orderRepository.finishIfPaymentPending(attempt.getOrderId(), Order.OrderStatus.PAYMENT_FAILED, 0L, at);
         }
 
+        // TX 안이므로 아직 커밋되지 않았다. 성공을 단정하는 문구를 쓰지 않고 phase=attempt 로만 남긴다.
+        // storedStatus 는 이 TX 시작 시점에 읽은 저장 상태, targetStatus 는 적용하려는 목표 상태다. 실제 저장 결과는 commit 뒤에야 확정된다.
+        log.info("payment.apply phase=attempt attemptId={} orderId={} storedStatus={} targetStatus={} settled=1 firstConfirmation={}",
+            attemptId, attempt.getOrderId(), attempt.getStatus(), result.status(), firstConfirmation != null);
+        registerCompletionLog(attemptId, attempt.getOrderId(), result.status(), at, firstConfirmation);
+
         for (StockReservation reservation : stockReservationRepository.findAllByOrderId(attempt.getOrderId())) {
             if (result.isSuccess()) {
                 stockReservationRepository.consumeIfReserved(reservation.getId());
@@ -93,9 +108,41 @@ public class PaymentResultService {
         try {
             return objectMapper.writeValueAsString(event);
         } catch (JsonProcessingException e) {
+            log.error("payment.apply phase=attempt orderId={} reason=payload-serialize", event.orderId());
             throw new CoreException(ErrorType.INTERNAL_ERROR,
                 "[eventId = " + event.eventId() + "] OrderConfirmed Outbox payload 직렬화에 실패해 확정을 취소합니다.");
         }
+    }
+
+    /**
+     * 적용 시도와 실제 반영을 로그에서 구분하기 위한 TX 완료 콜백 등록 (10주차 설계 3-2).
+     * phase=attempt 는 TX 안의 사실이라 뒤에서 rollback 될 수 있다. 그래서 실제 결과는 완료 상태를 확인한 뒤 남긴다.
+     * afterCompletion 이 불렸다는 사실만으로 rollback 이라고 쓰지 않고 status 를 보고 분기한다.
+     * 로그 전용이며 업무 로직·TX 경계·반환값을 바꾸지 않는다.
+     */
+    private void registerCompletionLog(
+        Long attemptId, Long orderId, PaymentAttempt.Status targetStatus, ZonedDateTime at, OrderConfirmedEvent firstConfirmation
+    ) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            return;
+        }
+        String eventId = firstConfirmation == null ? null : firstConfirmation.eventId();
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCompletion(int completionStatus) {
+                switch (completionStatus) {
+                    // committed 는 "내부 트랜잭션이 커밋됐다"는 뜻이다. 결제 성공을 뜻하지 않는다.
+                    // appliedStatus 가 FAILED 인 커밋도 정상이며, 그 경우 주문은 PAYMENT_FAILED 가 되고 예약은 반환된다.
+                    case STATUS_COMMITTED -> log.info(
+                        "payment.apply phase=committed attemptId={} orderId={} appliedStatus={} confirmedAt={} outboxEventId={}",
+                        attemptId, orderId, targetStatus, firstConfirmation == null ? null : at, eventId);
+                    case STATUS_ROLLED_BACK -> log.warn(
+                        "payment.apply phase=rolled-back attemptId={} orderId={} targetStatus={}", attemptId, orderId, targetStatus);
+                    default -> log.warn(
+                        "payment.apply phase=completion-unknown attemptId={} orderId={} targetStatus={}", attemptId, orderId, targetStatus);
+                }
+            }
+        });
     }
 
     /**

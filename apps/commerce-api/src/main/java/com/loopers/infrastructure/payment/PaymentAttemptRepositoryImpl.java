@@ -2,12 +2,15 @@ package com.loopers.infrastructure.payment;
 
 import com.loopers.domain.payment.PaymentAttempt;
 import com.loopers.domain.payment.PaymentAttemptRepository;
+import com.loopers.domain.payment.UnresolvedStatusSummary;
+import com.querydsl.core.Tuple;
 import com.querydsl.jpa.impl.JPAQueryFactory;
 import com.querydsl.jpa.impl.JPAUpdateClause;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.time.ZonedDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -16,6 +19,11 @@ import static com.loopers.domain.payment.QPaymentAttempt.paymentAttempt;
 @RequiredArgsConstructor
 @Component
 public class PaymentAttemptRepositoryImpl implements PaymentAttemptRepository {
+
+    /** 미종결 상태. 종결(SUCCESS·FAILED)은 미확인 집계에서 제외한다. */
+    private static final List<PaymentAttempt.Status> UNRESOLVED_STATUSES = List.of(
+        PaymentAttempt.Status.REQUESTED, PaymentAttempt.Status.PENDING, PaymentAttempt.Status.UNKNOWN);
+
     private final PaymentAttemptJpaRepository paymentAttemptJpaRepository;
     private final JPAQueryFactory queryFactory;
 
@@ -140,5 +148,32 @@ public class PaymentAttemptRepositoryImpl implements PaymentAttemptRepository {
             .set(paymentAttempt.manualCheckRequired, manualCheckRequired)
             .where(paymentAttempt.id.eq(attemptId))
             .execute();
+    }
+
+    /**
+     * 집계는 GROUP BY 한 번으로 끝낸다. 상태마다 쿼리를 날리면 같은 시점의 값이 아니게 되고 왕복도 늘어난다.
+     * 건수와 가장 오래된 생성 시각을 같은 쿼리에서 함께 뽑는다.
+     * 행이 없는 상태는 결과에 나오지 않으므로, 세 상태를 순서대로 돌며 조회 결과가 없으면 count 0 · 시각 null 로 채운다.
+     * 0 이나 epoch 로 시각을 채우지 않는다. 1970년부터 미확인이 있는 것처럼 보이기 때문이다.
+     */
+    @Override
+    public List<UnresolvedStatusSummary> summarizeUnresolved() {
+        List<Tuple> rows = queryFactory
+            .select(paymentAttempt.status, paymentAttempt.count(), paymentAttempt.createdAt.min())
+            .from(paymentAttempt)
+            .where(paymentAttempt.status.in(UNRESOLVED_STATUSES))
+            .groupBy(paymentAttempt.status)
+            .fetch();
+
+        List<UnresolvedStatusSummary> summaries = new ArrayList<>(UNRESOLVED_STATUSES.size());
+        for (PaymentAttempt.Status status : UNRESOLVED_STATUSES) {
+            summaries.add(rows.stream()
+                .filter(row -> status == row.get(paymentAttempt.status))
+                .findFirst()
+                .map(row -> new UnresolvedStatusSummary(
+                    status, row.get(paymentAttempt.count()), row.get(paymentAttempt.createdAt.min())))
+                .orElseGet(() -> new UnresolvedStatusSummary(status, 0L, null)));
+        }
+        return summaries;
     }
 }

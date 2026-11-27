@@ -6,6 +6,7 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.loopers.domain.payment.PaymentAttempt;
 import com.loopers.domain.payment.PaymentCreateCommand;
 import com.loopers.domain.payment.PaymentCreateResult;
@@ -18,6 +19,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
@@ -143,6 +146,36 @@ class HttpPaymentGatewayContractTest {
             assertThat(result.conflictReason()).isNull();
         }
 
+        @ParameterizedTest(name = "HTTP {0}: {1} = {2}")
+        @CsvSource({
+            "202, orderId, missing",
+            "202, orderId, 42",
+            "202, amount, missing",
+            "202, amount, '\"7000\"'",
+            "202, amount, 18446744073709558616",
+            "422, orderId, missing",
+            "422, orderId, 42",
+            "422, amount, missing",
+            "422, amount, '\"7000\"'",
+            "422, amount, 18446744073709558616",
+            "422, transactionCreated, missing"
+        })
+        @DisplayName("필수 필드가 없거나 형식이 잘못된 create 응답은 거래 결과 미확인으로 처리한다.")
+        void unknown_whenCreateResponseHasInvalidRequiredField(int status, String field, String jsonValue) throws IOException {
+            String validResponse = status == 202
+                ? transactionJson(TRANSACTION_KEY, ORDER_ID, AMOUNT, "PENDING")
+                : rejectedJson(REJECTED_CODE, "false", ORDER_ID, AMOUNT);
+            ObjectNode response = (ObjectNode) objectMapper.readTree(validResponse);
+            if ("missing".equals(jsonValue)) {
+                response.remove(field);
+            } else {
+                response.set(field, objectMapper.readTree(jsonValue));
+            }
+            server.respondToCreate(status, response.toString());
+
+            assertUnknownWithoutConflict(gateway.create(command()));
+        }
+
         @DisplayName("본문 없는 422 는 증거가 아니라 UNKNOWN 이다.")
         @Test
         void unknown_when422HasNoBody() {
@@ -254,6 +287,25 @@ class HttpPaymentGatewayContractTest {
         }
     }
 
+    @ParameterizedTest(name = "amount = {0}")
+    @CsvSource({"missing", "'\"7000\"'", "7000.0", "18446744073709558616", "-18446744073709544616"})
+    @DisplayName("유효하지 않은 금액이 있으면 단건과 목록 모두 조회 실패로 처리한다.")
+    void unavailable_whenLookupAmountIsInvalid(String jsonValue) throws IOException {
+        ObjectNode response = (ObjectNode) objectMapper.readTree(transactionJson(TRANSACTION_KEY, ORDER_ID, AMOUNT, "SUCCESS"));
+        if ("missing".equals(jsonValue)) {
+            response.remove("amount");
+        } else {
+            response.set("amount", objectMapper.readTree(jsonValue));
+        }
+        server.respondToTransaction(TRANSACTION_KEY, 200, response.toString());
+        server.respondToList(ORDER_ID, 200, "[" + response + "]");
+
+        PaymentLookupResult single = gateway.findByTransactionKey(TRANSACTION_KEY);
+        PaymentLookupResult list = gateway.findAllByOrderId(ORDER_ID);
+        PaymentLookupResult unavailable = PaymentLookupResult.unavailable(PaymentLookupResult.UnavailableReason.CALL_FAILED);
+        assertThat(List.of(single, list)).containsExactly(unavailable, unavailable);
+    }
+
     @DisplayName("transactionKey 로 단건 조회하면, ")
     @Nested
     class FindByTransactionKey {
@@ -348,6 +400,19 @@ class HttpPaymentGatewayContractTest {
             assertThat(result.transactions()).containsExactly(
                 new PaymentTransaction("TEST-TX-0001", ORDER_ID, AMOUNT, PaymentTransaction.Status.FAILED),
                 new PaymentTransaction("TEST-TX-0002", ORDER_ID, AMOUNT, PaymentTransaction.Status.PENDING));
+        }
+
+        @Test
+        @DisplayName("정상 거래와 범위 밖 금액을 가진 거래가 섞이면 목록 전체를 조회 실패로 처리한다.")
+        void unavailable_whenOneOfMultipleTransactionsHasInvalidAmount() {
+            server.respondToList(ORDER_ID, 200, "["
+                + transactionJson(TRANSACTION_KEY, ORDER_ID, AMOUNT, "SUCCESS") + ","
+                + """
+                {"transactionKey":"TEST-TX-OTHER","orderId":"%s","amount":9223372036854775808,"status":"FAILED"}
+                """.formatted(ORDER_ID) + "]");
+
+            assertThat(gateway.findAllByOrderId(ORDER_ID))
+                .isEqualTo(PaymentLookupResult.unavailable(PaymentLookupResult.UnavailableReason.CALL_FAILED));
         }
 
         @DisplayName("빈 목록이면 FOUND + 0건이다. UNAVAILABLE 이 아니다.")

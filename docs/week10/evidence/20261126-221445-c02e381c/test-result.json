@@ -1,0 +1,14 @@
+{
+  "runId": "20261126-221445-c02e381c",
+  "source": "apps/commerce-api/build/test-results/crossAppTest/TEST-com.loopers.crossapp.CheckoutIncidentE2ETest.xml",
+  "suite": "com.loopers.crossapp.CheckoutIncidentE2ETest",
+  "startedAt": "2026-11-26T22:15:06.860Z",
+  "durationSeconds": 5.366,
+  "cases": [
+    "baselineAndFaultInOneRun()"
+  ],
+  "tests": 1,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0
+}
