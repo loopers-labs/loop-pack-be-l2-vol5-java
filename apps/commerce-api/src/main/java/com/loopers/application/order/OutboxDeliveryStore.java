@@ -17,5 +17,5 @@ public interface OutboxDeliveryStore {
 
     boolean resume(String eventId, Instant now);
 
-    record DeliveryEvent(String eventId, String destinationTopic, String messageKey, String payload, int attemptInCycle) {}
+    record DeliveryEvent(String eventId, long orderId, String destinationTopic, String messageKey, String payload, int attemptInCycle) {}
 }

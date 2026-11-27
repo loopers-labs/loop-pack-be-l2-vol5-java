@@ -30,7 +30,8 @@ public class OrderOutboxRelay {
         try {
             int blocked = store.blockExpiredAttempts(clock.instant());
             if (blocked > 0) {
-                log.warn("order_outbox_expired_attempts_blocked count={}", blocked);
+                log.atError().addKeyValue("step", "order_outbox").addKeyValue("outcome", "blocked")
+                        .addKeyValue("count", blocked).log("order_outbox_expired_attempts_blocked count={}", blocked);
             }
             for (String eventId : store.readyEventIds(clock.instant(), BATCH_SIZE)) {
                 if (Thread.currentThread().isInterrupted()) {
@@ -63,11 +64,28 @@ public class OrderOutboxRelay {
                     ? null : clock.instant().plusMillis(delayMillis(current.attemptInCycle()));
             String errorType = errorType(failure);
             store.recordFailure(eventId, retryAt, errorType);
-            log.warn("order_outbox_send_failed eventId={} cycleAttempt={} autoRetry={} errorType={}",
-                    eventId, current.attemptInCycle(), retryAt != null, errorType);
+            logSendFailure(current, retryAt != null, errorType);
             return;
         }
-        store.markPublished(eventId, clock.instant());
+        try {
+            store.markPublished(eventId, clock.instant());
+        } catch (RuntimeException failure) {
+            log.warn("step=order_outbox orderId={} eventId={} outcome=mark_published_failed brokerAck=true errorType={}",
+                    current.orderId(), eventId, errorType(failure));
+            throw failure;
+        }
+        log.info("step=order_outbox orderId={} eventId={} outcome=published",
+                current.orderId(), eventId);
+    }
+
+    private void logSendFailure(OutboxDeliveryStore.DeliveryEvent event, boolean autoRetry, String errorType) {
+        var entry = autoRetry ? log.atWarn() : log.atError();
+        entry.addKeyValue("step", "order_outbox").addKeyValue("outcome", autoRetry ? "retry_scheduled" : "blocked")
+                .addKeyValue("orderId", Long.toString(event.orderId())).addKeyValue("eventId", event.eventId())
+                .addKeyValue("cycleAttempt", event.attemptInCycle()).addKeyValue("autoRetry", autoRetry)
+                .addKeyValue("errorType", errorType)
+                .log("order_outbox_send_failed eventId={} cycleAttempt={} autoRetry={} errorType={} orderId={}",
+                        event.eventId(), event.attemptInCycle(), autoRetry, errorType, event.orderId());
     }
 
     private long delayMillis(int attempt) {

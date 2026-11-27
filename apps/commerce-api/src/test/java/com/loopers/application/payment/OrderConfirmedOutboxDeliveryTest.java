@@ -2,6 +2,7 @@ package com.loopers.application.payment;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -36,10 +37,13 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.dao.InvalidDataAccessApiUsageException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -215,7 +219,8 @@ class OrderConfirmedOutboxDeliveryTest {
     }
 
     @Test
-    void 실제_broker_확인_뒤_상태_저장에_실패하면_같은_사건을_재발행한다() throws Exception {
+    @ExtendWith(OutputCaptureExtension.class)
+    void 실제_broker_확인_뒤_상태_저장에_실패하면_같은_사건을_재발행한다(CapturedOutput output) throws Exception {
         var order = fixture.createUnpaidOrder();
         var accepted = requestPayment.request(order.userId(), order.orderId(), fixture.createPaymentRequestCommand());
         PG.succeedPaymentForOrder(accepted.providerOrderId());
@@ -228,6 +233,10 @@ class OrderConfirmedOutboxDeliveryTest {
 
         assertThatThrownBy(relay::runOnce).hasMessageContaining("stop before status update");
         assertThat(status(order.orderId())).isEqualTo("PENDING");
+        String eventLog = "step=order_outbox orderId=" + order.orderId() + " eventId=order-confirmed:v1:" + order.orderId();
+        await().atMost(Duration.ofSeconds(5)).untilAsserted(() -> assertThat(output.getAll())
+                .contains(eventLog + " outcome=mark_published_failed brokerAck=true errorType=IllegalStateException")
+                .doesNotContain(eventLog + " outcome=published"));
         when(clock.instant()).thenReturn(firstRun.plusSeconds(6));
         relay.runOnce();
 

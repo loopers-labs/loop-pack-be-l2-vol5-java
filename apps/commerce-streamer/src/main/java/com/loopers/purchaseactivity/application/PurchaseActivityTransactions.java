@@ -16,6 +16,8 @@ import java.util.stream.Collectors;
 
 @Service
 public class PurchaseActivityTransactions {
+    public enum RecordOutcome { RECORDED, DUPLICATE }
+
     private final ProcessedOrderConfirmationRepository confirmations;
     private final PurchaseActivityRepository activities;
 
@@ -26,15 +28,16 @@ public class PurchaseActivityTransactions {
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW, isolation = Isolation.READ_COMMITTED)
-    public void record(OrderConfirmed event) {
+    public RecordOutcome record(OrderConfirmed event) {
         ProcessedOrderConfirmation confirmation = confirmationOf(event);
         if (matchesExisting(confirmation)) {
-            return;
+            return RecordOutcome.DUPLICATE;
         }
         confirmations.save(confirmation);
         for (OrderConfirmed.Item item : event.items()) {
             activities.save(new PurchaseActivity(event.orderId(), item.productId(), item.quantity(), event.confirmedAt()));
         }
+        return RecordOutcome.RECORDED;
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
