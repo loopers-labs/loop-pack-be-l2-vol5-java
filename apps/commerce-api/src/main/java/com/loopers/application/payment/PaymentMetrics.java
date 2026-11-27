@@ -5,25 +5,29 @@ import com.loopers.domain.payment.LookupResult;
 import com.loopers.domain.payment.PaymentDiscrepancy;
 import com.loopers.domain.payment.PaymentStatus;
 import io.micrometer.core.instrument.MeterRegistry;
-import lombok.RequiredArgsConstructor;
+import io.micrometer.core.instrument.Timer;
 import org.springframework.stereotype.Component;
 
+import java.time.Duration;
 import java.util.Locale;
 
 @Component
-@RequiredArgsConstructor
 public class PaymentMetrics {
+
+    private static final Duration[] SETTLE_BUCKETS = {
+        Duration.ofSeconds(1), Duration.ofSeconds(3), Duration.ofSeconds(10),
+        Duration.ofSeconds(30), Duration.ofSeconds(60), Duration.ofSeconds(300)
+    };
 
     private final MeterRegistry meterRegistry;
 
+    public PaymentMetrics(MeterRegistry meterRegistry) {
+        this.meterRegistry = meterRegistry;
+        CreateResult.names().forEach(result -> meterRegistry.counter("payment.create", "result", result));
+    }
+
     void created(CreateObservation observation) {
-        String result = switch (observation) {
-            case CreateObservation.Accepted accepted -> "accepted";
-            case CreateObservation.RejectedNoEffect rejected -> "rejected";
-            case CreateObservation.NotSent notSent -> "not_sent";
-            case CreateObservation.CreateUnknown unknown -> "unknown";
-        };
-        meterRegistry.counter("payment.create", "result", result).increment();
+        meterRegistry.counter("payment.create", "result", CreateResult.nameOf(observation)).increment();
     }
 
     void lookedUp(String source, LookupResult result) {
@@ -36,8 +40,17 @@ public class PaymentMetrics {
     }
 
     void observed(PaymentStatus before, PaymentStatus after) {
+        String from = before.name().toLowerCase(Locale.ROOT);
         String to = before == after ? "noop" : after.name().toLowerCase(Locale.ROOT);
-        meterRegistry.counter("payment.observe", "to", to).increment();
+        meterRegistry.counter("payment.observe", "from", from, "to", to).increment();
+    }
+
+    void settled(PaymentStatus outcome, Duration sinceRequested) {
+        Timer.builder("payment.settle")
+            .tag("outcome", outcome.name().toLowerCase(Locale.ROOT))
+            .serviceLevelObjectives(SETTLE_BUCKETS)
+            .register(meterRegistry)
+            .record(sinceRequested);
     }
 
     void discrepancy(PaymentDiscrepancy.Reason reason) {

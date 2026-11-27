@@ -218,6 +218,14 @@ public final class PgFixture implements AutoCloseable {
         dropNextResponse.set(true);
     }
 
+    public boolean willDropNextCreateResponse() {
+        return dropNextResponse.get();
+    }
+
+    public void keepCreateResponses() {
+        dropNextResponse.set(false);
+    }
+
     public CreateGate holdAllCreates() {
         CreateGate gate = new CreateGate();
         createGate.set(gate);

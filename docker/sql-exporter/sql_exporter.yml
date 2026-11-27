@@ -1,0 +1,15 @@
+global:
+  scrape_timeout: 5s
+  scrape_timeout_offset: 500ms
+  min_interval: 0s
+  max_connections: 2
+  max_idle_connections: 1
+
+# 로컬에는 복제본이 없어 주 DB 를 센다. 쿼리는 status 로 시작하는 인덱스만 읽는다.
+# 복제본이 있으면 아래 주소를 복제본으로 바꾼다.
+target:
+  data_source_name: 'mysql://exporter:exporter@host.docker.internal:3306/loopers'
+  collectors: [payment]
+
+collector_files:
+  - "*.collector.yml"

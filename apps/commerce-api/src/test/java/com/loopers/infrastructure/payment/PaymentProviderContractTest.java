@@ -1,5 +1,7 @@
 package com.loopers.infrastructure.payment;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.spi.ILoggingEvent;
 import com.loopers.domain.common.Money;
 import com.loopers.domain.payment.CardNumber;
 import com.loopers.domain.payment.CardType;
@@ -10,6 +12,7 @@ import com.loopers.domain.payment.PaymentGateway;
 import com.loopers.domain.payment.PgTransaction;
 import com.loopers.domain.payment.ProviderOrderId;
 import com.loopers.domain.payment.TransactionKey;
+import com.loopers.support.log.LogEvents;
 import com.loopers.support.pg.PgFixture;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import org.junit.jupiter.api.AfterAll;
@@ -17,6 +20,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -28,6 +32,8 @@ import org.springframework.boot.autoconfigure.ssl.SslAutoConfiguration;
 import org.springframework.boot.autoconfigure.web.client.RestClientAutoConfiguration;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
@@ -180,6 +186,67 @@ class PaymentProviderContractTest {
 
             assertThat(gateway.create(creation(48L, 7000)))
                 .isEqualTo(new CreateObservation.CreateUnknown());
+        }
+    }
+
+    @Nested
+    @DisplayName("결과를 모르게 된 생성 호출은 왜 모르는지를 PG 주문 식별자와 함께 WARN 한 줄로 남기고, 접수된 호출은 남기지 않는다")
+    class UnknownCause {
+
+        private static final String GATEWAY_LOG = "com.loopers.infrastructure.payment.PgPaymentGateway";
+
+        @DisplayName("응답이 끊기면 응답을 못 받았고 연결이 끊겼다는 줄이, 수락도 거절도 아닌 응답이면 해석하지 못했다는 줄이 상태 코드와 함께 남는다")
+        @Test
+        void namesLostAndUnexpectedResponses() {
+            try (LogEvents log = LogEvents.of(GATEWAY_LOG)) {
+                PG.dropNextCreateResponse();
+                gateway.create(creation(54L, 7000));
+                PG.respondNextCreateWith(500, "");
+                gateway.create(creation(55L, 7000));
+
+                List<ILoggingEvent> events = log.list();
+                assertThat(events).hasSize(2).allSatisfy(event -> assertThat(event.getLevel()).isEqualTo(Level.WARN));
+                assertThat(LogEvents.fieldsOf(events.get(0)))
+                    .containsEntry("event", "payment_create_no_response")
+                    .containsEntry("providerOrderId", "LP-ORD-0000000054")
+                    .containsEntry("cause", "connection_lost");
+                assertThat(LogEvents.fieldsOf(events.get(1)))
+                    .containsEntry("event", "payment_create_unexpected_response")
+                    .containsEntry("providerOrderId", "LP-ORD-0000000055")
+                    .containsEntry("cause", "unexpected_response")
+                    .containsEntry("status", 500);
+            }
+        }
+
+        @DisplayName("응답이 생성 timeout 보다 늦으면 응답을 못 받았고 timeout 이었다는 줄이 남는다")
+        @Test
+        void namesTimeout() {
+            PgFixture.HeldResponse held = PG.holdNextCreateResponse();
+            try (LogEvents log = LogEvents.of(GATEWAY_LOG)) {
+                gateway.create(creation(50L, 7000));
+
+                assertThat(log.list()).singleElement().satisfies(event -> {
+                    assertThat(event.getLevel()).isEqualTo(Level.WARN);
+                    assertThat(LogEvents.fieldsOf(event))
+                        .containsEntry("event", "payment_create_no_response")
+                        .containsEntry("providerOrderId", "LP-ORD-0000000050")
+                        .containsEntry("cause", "timeout");
+                });
+            } finally {
+                held.release();
+            }
+        }
+
+        @DisplayName("PG-014: 원인을 남기는 줄에 카드 번호는 없다")
+        @Test
+        @ExtendWith(OutputCaptureExtension.class)
+        void noCardNumber(CapturedOutput output) {
+            PG.dropNextCreateResponse();
+
+            gateway.create(creation(53L, 7000));
+
+            assertThat(output.getOut()).contains("providerOrderId=LP-ORD-0000000053");
+            assertThat(output.getOut()).doesNotContain("0000-0000-0000-0000");
         }
     }
 

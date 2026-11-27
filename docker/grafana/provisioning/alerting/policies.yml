@@ -1,0 +1,13 @@
+apiVersion: 1
+
+policies:
+  - orgId: 1
+    receiver: payment-slack-quiet
+    group_by: ['source_alert']
+    group_wait: 10s
+    group_interval: 1m
+    repeat_interval: 4h
+    routes:
+      - receiver: payment-slack
+        object_matchers:
+          - ['severity', '=', 'critical']

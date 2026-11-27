@@ -1,5 +1,7 @@
 package com.loopers.application.payment;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.spi.ILoggingEvent;
 import com.loopers.CommerceApiApplication;
 import com.loopers.application.brand.BrandFacade;
 import com.loopers.application.order.OrderCreateCommand;
@@ -24,10 +26,12 @@ import com.loopers.support.error.DomainError;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.DomainException;
 import com.loopers.support.error.ErrorType;
+import com.loopers.support.log.LogEvents;
 import com.loopers.support.pg.PgFixture;
 import com.loopers.utils.DatabaseCleanUp;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.Timer;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
@@ -39,6 +43,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.WebApplicationType;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.dao.DataAccessException;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -62,7 +67,6 @@ import java.util.function.IntFunction;
 import com.loopers.domain.common.Money;
 import com.loopers.domain.payment.CreateObservation;
 import com.loopers.domain.payment.LookupResult;
-import com.loopers.domain.payment.PaymentDiscrepancy;
 import com.loopers.domain.payment.PgTransaction;
 import com.loopers.domain.payment.TransactionKey;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -74,6 +78,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class PaymentFacadeIntegrationTest {
 
     private static final PgFixture PG = PgFixture.start();
+    private static final String PAYMENT_LOG = "com.loopers.application.payment.PaymentLog";
 
     private static final Long USER = 1L;
     private static final Instant NOW = Instant.parse("2026-10-23T00:00:00Z");
@@ -83,7 +88,6 @@ class PaymentFacadeIntegrationTest {
     private final PaymentTransactions paymentTransactions;
     private final PaymentGateway paymentGateway;
     private final PaymentSweeper paymentSweeper;
-    private final PaymentUnresolvedMetrics unresolvedMetrics;
     private final CircuitBreaker lookupCircuit;
     private final MeterRegistry meterRegistry;
     private final PaymentRepository paymentRepository;
@@ -105,7 +109,6 @@ class PaymentFacadeIntegrationTest {
         PaymentTransactions paymentTransactions,
         PaymentGateway paymentGateway,
         PaymentSweeper paymentSweeper,
-        PaymentUnresolvedMetrics unresolvedMetrics,
         CircuitBreaker lookupCircuit,
         MeterRegistry meterRegistry,
         PaymentRepository paymentRepository,
@@ -121,7 +124,6 @@ class PaymentFacadeIntegrationTest {
         this.paymentTransactions = paymentTransactions;
         this.paymentGateway = paymentGateway;
         this.paymentSweeper = paymentSweeper;
-        this.unresolvedMetrics = unresolvedMetrics;
         this.lookupCircuit = lookupCircuit;
         this.meterRegistry = meterRegistry;
         this.paymentRepository = paymentRepository;
@@ -265,8 +267,22 @@ class PaymentFacadeIntegrationTest {
             Order order = place(2);
             PG.dropNextCreateResponse();
 
-            Payment payment = confirm(order.getId(), "attempt-1");
+            Payment payment;
+            List<ILoggingEvent> logged;
+            try (LogEvents log = LogEvents.of(PAYMENT_LOG)) {
+                payment = confirm(order.getId(), "attempt-1");
+                logged = log.list();
+            }
 
+            assertThat(logged).singleElement().satisfies(event -> {
+                assertThat(event.getLevel()).isEqualTo(Level.WARN);
+                assertThat(LogEvents.fieldsOf(event))
+                    .containsEntry("event", "payment_create_unknown")
+                    .containsEntry("paymentId", payment.getId())
+                    .containsEntry("orderId", order.getId())
+                    .containsEntry("providerOrderId", payment.getProviderOrderId().value())
+                    .containsEntry("result", "unknown");
+            });
             assertThat(payment.getStatus()).isEqualTo(PaymentStatus.UNKNOWN);
             assertThat(creates()).isEqualTo(1);
             assertThat(orderFacade.get(USER, order.getId()).getStatus()).isEqualTo(OrderStatus.PENDING);
@@ -321,8 +337,22 @@ class PaymentFacadeIntegrationTest {
                 .map(PgFixture.Transaction::transactionKey).max(String::compareTo).orElseThrow();
             PG.changeStatus(key, PgFixture.Status.SUCCESS);
 
-            Payment reconciled = paymentFacade.reconcile(USER, order.getId(), NOW).payment();
+            Payment reconciled;
+            List<ILoggingEvent> logged;
+            try (LogEvents log = LogEvents.of(PAYMENT_LOG)) {
+                reconciled = paymentFacade.reconcile(USER, order.getId(), NOW).payment();
+                logged = log.list();
+            }
 
+            assertThat(logged).singleElement().satisfies(event -> {
+                assertThat(event.getLevel()).isEqualTo(Level.INFO);
+                assertThat(LogEvents.fieldsOf(event))
+                    .containsEntry("event", "payment_status_changed")
+                    .containsEntry("orderId", order.getId())
+                    .containsEntry("source", "reconcile")
+                    .containsEntry("from", "REQUESTED")
+                    .containsEntry("to", "SUCCESS");
+            });
             assertThat(returned.getStatus()).isEqualTo(PaymentStatus.REQUESTED);
             assertThat(reconciled.getStatus()).isEqualTo(PaymentStatus.SUCCESS);
             assertThat(reconciled.getTransactionKey().value()).isEqualTo(key);
@@ -495,9 +525,23 @@ class PaymentFacadeIntegrationTest {
             confirm(order.getId(), "attempt-1");
             PG.changeStatus(keyOf(order), PgFixture.Status.SUCCESS);
 
-            int checked = paymentSweeper.sweepOnce(LATER);
+            int checked;
+            List<ILoggingEvent> logged;
+            try (LogEvents log = LogEvents.of(PAYMENT_LOG)) {
+                checked = paymentSweeper.sweepOnce(LATER);
+                logged = log.list();
+            }
 
             assertThat(checked).isEqualTo(1);
+            assertThat(logged).singleElement().satisfies(event -> {
+                assertThat(event.getLevel()).isEqualTo(Level.INFO);
+                assertThat(LogEvents.fieldsOf(event))
+                    .containsEntry("event", "payment_status_changed")
+                    .containsEntry("orderId", order.getId())
+                    .containsEntry("source", "sweeper")
+                    .containsEntry("from", "UNKNOWN")
+                    .containsEntry("to", "SUCCESS");
+            });
             assertThat(orderFacade.get(USER, order.getId()).getStatus()).isEqualTo(OrderStatus.CONFIRMED);
             assertThat(creates()).isEqualTo(1);
         }
@@ -636,33 +680,7 @@ class PaymentFacadeIntegrationTest {
     class Metrics {
 
         private double count(String name, String... tags) {
-            Counter counter = meterRegistry.find(name).tags(tags).counter();
-            return counter == null ? 0 : counter.count();
-        }
-
-        private double gauge(String name, String status) {
-            return meterRegistry.get(name).tag("status", status).gauge().value();
-        }
-
-        @DisplayName("9.1: 미완료 결제를 상태별로 세고, 가장 오래된 요청의 나이를 초로 낸다. 끝난 결제는 세지 않는다")
-        @Test
-        void gaugesUnresolvedPayments() {
-            productFacade.adjustStock(coat, Quantity.of(100));
-            confirm(place(1).getId(), "attempt-pending");
-            Order unknown = place(1);
-            PG.dropNextCreateResponse();
-            paymentFacade.confirm(new PaymentConfirmCommand(
-                USER, unknown.getId(), PaymentAttemptKey.of("attempt-unknown"), CardType.TEST, CARD), NOW.plusSeconds(30));
-            PG.rejectNextCreate();
-            confirm(place(1).getId(), "attempt-failed");
-
-            unresolvedMetrics.refresh(NOW.plusSeconds(90));
-
-            assertThat(gauge("payment.unresolved", "pending")).isEqualTo(1);
-            assertThat(gauge("payment.unresolved.oldest", "pending")).isEqualTo(90);
-            assertThat(gauge("payment.unresolved", "unknown")).isEqualTo(1);
-            assertThat(gauge("payment.unresolved.oldest", "unknown")).isEqualTo(60);
-            assertThat(gauge("payment.unresolved", "conflict")).isZero();
+            return meterRegistry.find(name).tags(tags).counters().stream().mapToDouble(Counter::count).sum();
         }
 
         @DisplayName("접수는 payment.create{result=accepted} 와 payment.observe{to=pending} 를 하나씩 센다")
@@ -702,6 +720,48 @@ class PaymentFacadeIntegrationTest {
             assertThat(count("payment.lookup", "source", "sweeper", "result", "found") - looked).isEqualTo(1);
         }
 
+        @DisplayName("결제가 끝나면 요청부터 걸린 시간을 결과와 함께 남긴다. 응답을 잃었다가 80 초 뒤 조회로 닫힌 결제는 80 초로 남는다")
+        @Test
+        void recordsTimeToSettle() {
+            long settled = settledCount("success");
+            double seconds = settledSeconds("success");
+            Order order = place(2);
+            PG.dropNextCreateResponse();
+            Payment payment = confirm(order.getId(), "attempt-1");
+
+            assertThat(settledCount("success") - settled).isZero();
+
+            PG.changeStatus(
+                PG.transactionsOf(payment.getProviderOrderId().value()).get(0).transactionKey(), PgFixture.Status.SUCCESS);
+            paymentFacade.reconcile(USER, order.getId(), NOW.plusSeconds(80));
+
+            assertThat(settledCount("success") - settled).isEqualTo(1);
+            assertThat(settledSeconds("success") - seconds).isEqualTo(80);
+        }
+
+        @DisplayName("거절로 바로 끝난 결제도 걸린 시간을 실패로 남기고, 이미 끝난 결제를 다시 봐도 더 남기지 않는다")
+        @Test
+        void recordsSettleOnce() {
+            long failed = settledCount("failed");
+            Order order = place(2);
+            PG.rejectNextCreate();
+
+            confirm(order.getId(), "attempt-1");
+            paymentFacade.reconcile(USER, order.getId(), NOW.plusSeconds(10));
+
+            assertThat(settledCount("failed") - failed).isEqualTo(1);
+        }
+
+        private long settledCount(String outcome) {
+            return meterRegistry.find("payment.settle").tags("outcome", outcome).timers().stream()
+                .mapToLong(Timer::count).sum();
+        }
+
+        private double settledSeconds(String outcome) {
+            return meterRegistry.find("payment.settle").tags("outcome", outcome).timers().stream()
+                .mapToDouble(timer -> timer.totalTime(TimeUnit.SECONDS)).sum();
+        }
+
         @DisplayName("이미 같은 결과를 본 반영은 payment.observe{to=noop} 로 센다")
         @Test
         void countsNoop() {
@@ -712,6 +772,166 @@ class PaymentFacadeIntegrationTest {
             paymentFacade.reconcile(USER, order.getId(), NOW.plusSeconds(10));
 
             assertThat(count("payment.observe", "to", "noop") - noop).isEqualTo(1);
+        }
+    }
+
+    @Nested
+    @DisplayName("결제 로그는 정상 흐름에는 줄을 남기지 않고, 접수되지 않았거나 어긋났거나 반영하지 못한 결제만 이름과 식별자를 필드로 남긴다")
+    class Trail {
+
+        @DisplayName("거절된 생성 호출은 DB 에 실패로만 남으므로, 접수되지 않았고 거절이었다는 줄이 INFO 로 한 줄 남는다")
+        @Test
+        void logsRejectedCreate() {
+            Order order = place(2);
+            PG.rejectNextCreate();
+
+            try (LogEvents log = LogEvents.of(PAYMENT_LOG)) {
+                Payment payment = confirm(order.getId(), "attempt-1");
+
+                assertThat(log.list()).singleElement().satisfies(event -> {
+                    assertThat(event.getLevel()).isEqualTo(Level.INFO);
+                    assertThat(LogEvents.fieldsOf(event))
+                        .containsEntry("event", "payment_create_not_accepted")
+                        .containsEntry("paymentId", payment.getId())
+                        .containsEntry("orderId", order.getId())
+                        .containsEntry("result", "rejected");
+                });
+            }
+        }
+
+        @DisplayName("reconcile 이 조회했지만 상태가 그대로면 줄을 남기지 않는다")
+        @Test
+        void logsNothingWhenReconcileChangesNothing() {
+            Order order = place(2);
+            confirm(order.getId(), "attempt-1");
+            int before = lookups();
+
+            try (LogEvents log = LogEvents.of(PAYMENT_LOG)) {
+                paymentFacade.reconcile(USER, order.getId(), NOW.plusSeconds(10));
+
+                assertThat(lookups()).isEqualTo(before + 1);
+                assertThat(log.list()).isEmpty();
+            }
+        }
+
+        @DisplayName("PENDING 을 callback 이 닫는 것은 정상 경로라 줄을 남기지 않는다")
+        @Test
+        void logsNothingWhenCallbackSettlesPending() {
+            Order order = place(2);
+            Payment payment = confirm(order.getId(), "attempt-1");
+            PG.changeStatus(payment.getTransactionKey().value(), PgFixture.Status.SUCCESS);
+
+            try (LogEvents log = LogEvents.of(PAYMENT_LOG)) {
+                paymentFacade.onCallback(payment.getProviderOrderId(), NOW.plusSeconds(1));
+
+                assertThat(paymentRepository.findByOrderId(order.getId()).orElseThrow().getStatus())
+                    .isEqualTo(PaymentStatus.SUCCESS);
+                assertThat(log.list()).isEmpty();
+            }
+        }
+
+        @DisplayName("응답을 잃어 UNKNOWN 이던 결제를 callback 이 닫으면, 무엇이 닫았는지 INFO 로 한 줄 남는다")
+        @Test
+        void logsWhenCallbackSettlesUnknown() {
+            Order order = place(2);
+            PG.dropNextCreateResponse();
+            Payment payment = confirm(order.getId(), "attempt-1");
+            String providerOrderId = payment.getProviderOrderId().value();
+            PG.changeStatus(PG.transactionsOf(providerOrderId).get(0).transactionKey(), PgFixture.Status.SUCCESS);
+
+            try (LogEvents log = LogEvents.of(PAYMENT_LOG)) {
+                paymentFacade.onCallback(payment.getProviderOrderId(), NOW.plusSeconds(1));
+
+                assertThat(log.list()).singleElement().satisfies(event -> {
+                    assertThat(event.getLevel()).isEqualTo(Level.INFO);
+                    assertThat(LogEvents.fieldsOf(event))
+                        .containsEntry("event", "payment_status_changed")
+                        .containsEntry("orderId", order.getId())
+                        .containsEntry("source", "callback")
+                        .containsEntry("from", "UNKNOWN")
+                        .containsEntry("to", "SUCCESS");
+                });
+            }
+        }
+
+        @DisplayName("PENDING 을 sweeper 가 닫아도 줄을 남기지 않는다. 응답을 잃은 적이 없는 결제이고 조회 지표가 센다")
+        @Test
+        void logsNothingWhenSweeperSettlesPending() {
+            Order order = place(2);
+            Payment payment = confirm(order.getId(), "attempt-1");
+            PG.changeStatus(payment.getTransactionKey().value(), PgFixture.Status.SUCCESS);
+
+            try (LogEvents log = LogEvents.of(PAYMENT_LOG)) {
+                paymentSweeper.sweepOnce(NOW.plusSeconds(11));
+
+                assertThat(paymentRepository.findByOrderId(order.getId()).orElseThrow().getStatus())
+                    .isEqualTo(PaymentStatus.SUCCESS);
+                assertThat(log.list()).isEmpty();
+            }
+        }
+
+        @DisplayName("조회한 금액이 요청과 달라 CONFLICT 로 멈추면, 어긋났다는 줄이 WARN 으로 한 줄 남고 payment.discrepancy 를 한 번 센다")
+        @Test
+        void logsConflict() {
+            Order order = place(2);
+            PG.dropNextCreateResponse();
+            Payment payment = confirm(order.getId(), "attempt-1");
+            String providerOrderId = payment.getProviderOrderId().value();
+            PG.respondNextLookupWith(200, """
+                [{"transactionKey":"%s","orderId":"%s","amount":1,"status":"SUCCESS"}]"""
+                .formatted(PG.transactionsOf(providerOrderId).get(0).transactionKey(), providerOrderId));
+
+            double discrepancies = meterRegistry.find("payment.discrepancy").counters().stream()
+                .mapToDouble(Counter::count).sum();
+
+            try (LogEvents log = LogEvents.of(PAYMENT_LOG)) {
+                Payment reconciled = paymentFacade.reconcile(USER, order.getId(), NOW.plusSeconds(10)).payment();
+
+                assertThat(reconciled.getStatus()).isEqualTo(PaymentStatus.CONFLICT);
+                assertThat(meterRegistry.find("payment.discrepancy").counters().stream()
+                    .mapToDouble(Counter::count).sum() - discrepancies).isEqualTo(1);
+                assertThat(log.list()).singleElement().satisfies(event -> {
+                    assertThat(event.getLevel()).isEqualTo(Level.WARN);
+                    assertThat(LogEvents.fieldsOf(event))
+                        .containsEntry("event", "payment_conflict")
+                        .containsEntry("orderId", order.getId())
+                        .containsEntry("source", "reconcile")
+                        .containsEntry("from", "UNKNOWN")
+                        .containsEntry("to", "CONFLICT");
+                });
+            }
+        }
+
+        @DisplayName("reconcile 이 조회 결과를 반영하지 못하면 실패를 그대로 올리되, 어느 결제에서 어떤 오류였는지 WARN 으로 한 줄 남는다. "
+            + "같은 실패가 몰릴 때 줄이 불어나지 않게 stack trace 는 싣지 않는다")
+        @Test
+        void logsFailedApplyByReconcile() throws Exception {
+            Order order = place(2);
+            PG.dropNextCreateResponse();
+            Payment payment = confirm(order.getId(), "attempt-1");
+            String providerOrderId = payment.getProviderOrderId().value();
+            PG.changeStatus(PG.transactionsOf(providerOrderId).get(0).transactionKey(), PgFixture.Status.SUCCESS);
+
+            try (Connection holder = dataSource.getConnection(); LogEvents log = LogEvents.of(PAYMENT_LOG)) {
+                holder.setAutoCommit(false);
+                lockOrder(holder, order.getId());
+
+                assertThatThrownBy(() -> paymentFacade.reconcile(USER, order.getId(), NOW.plusSeconds(10)))
+                    .isInstanceOf(DataAccessException.class);
+                holder.rollback();
+
+                assertThat(log.list()).singleElement().satisfies(event -> {
+                    assertThat(event.getLevel()).isEqualTo(Level.WARN);
+                    assertThat(LogEvents.fieldsOf(event))
+                        .containsEntry("event", "payment_apply_failed")
+                        .containsEntry("paymentId", payment.getId())
+                        .containsEntry("orderId", order.getId())
+                        .containsEntry("providerOrderId", providerOrderId)
+                        .containsEntry("source", "reconcile")
+                        .containsKey("error");
+                    assertThat(event.getThrowableProxy()).isNull();
+                });
+            }
         }
     }
 
@@ -1022,7 +1242,7 @@ class PaymentFacadeIntegrationTest {
         private Payment lookup(PgTransaction.Status status, long amount) {
             LookupResult.Found found = new LookupResult.Found(List.of(new PgTransaction(
                 TX_KEY, ProviderOrderId.of(order.getId()), Money.of(amount), status)));
-            return paymentTransactions.observe(payment.getId(), found, PaymentDiscrepancy.Source.CALLBACK, LATER);
+            return paymentTransactions.observe(payment.getId(), found, PaymentTransactions.Origin.CALLBACK, LATER);
         }
 
         private Order storedOrder() {
@@ -1244,7 +1464,7 @@ class PaymentFacadeIntegrationTest {
 
                 paymentTransactions.observe(payment.getId(), new LookupResult.Found(List.of(new PgTransaction(
                     TX_KEY, ProviderOrderId.of(order.getId()), Money.of(6_000), PgTransaction.Status.SUCCESS))),
-                    PaymentDiscrepancy.Source.LOOKUP, LATER.plusSeconds(60));
+                    PaymentTransactions.Origin.RECONCILE, LATER.plusSeconds(60));
 
                 assertThat(storedOrder().getConfirmedAt()).isEqualTo(LATER);
             }

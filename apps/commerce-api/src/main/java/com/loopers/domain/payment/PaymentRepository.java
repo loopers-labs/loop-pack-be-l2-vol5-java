@@ -19,9 +19,4 @@ public interface PaymentRepository {
     Optional<Payment> findByIdForUpdate(Long paymentId);
 
     List<Payment> findDueForCheckSkippingLocked(Instant requestedBefore, Instant checkedBefore, int limit);
-
-    List<Unresolved> summarizeUnresolved();
-
-    record Unresolved(PaymentStatus status, long count, Instant oldestRequestedAt) {
-    }
 }

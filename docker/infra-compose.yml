@@ -118,6 +118,16 @@ services:
       KAFKA_CLUSTERS_0_NAME: local  # kafka-ui 에서 보이는 클러스터명
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092 # kafka-ui 가 연겷할 브로커 주소
 
+  kafka-exporter:
+    image: danielqsj/kafka-exporter:v1.9.0
+    container_name: kafka-exporter
+    depends_on:
+      kafka:
+        condition: service_healthy
+    command: ["--kafka.server=kafka:9092"]
+    ports:
+      - "9308:9308"
+
 volumes:
   mysql-8-data:
   redis_master_data:

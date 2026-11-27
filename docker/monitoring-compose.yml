@@ -6,6 +6,15 @@ services:
       - "9090:9090"
     volumes:
       - ./grafana/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./grafana/rules:/etc/prometheus/rules
+
+  sql-exporter:
+    image: burningalchemist/sql_exporter:0.17
+    command: ["--config.file=/etc/sql-exporter/sql_exporter.yml"]
+    ports:
+      - "9399:9399"
+    volumes:
+      - ./sql-exporter:/etc/sql-exporter
 
   grafana:
     image: grafana/grafana
@@ -16,6 +25,10 @@ services:
     environment:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin
+      # Slack 주소는 저장소에 두지 않는다. 환경 변수로 주지 않으면 아무 데도 보내지 않는다.
+      # critical 은 SLACK_WEBHOOK_URL 로, 그 밖(warning)은 SLACK_QUIET_WEBHOOK_URL 로 간다.
+      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL:-http://127.0.0.1:9/not-configured}
+      - SLACK_QUIET_WEBHOOK_URL=${SLACK_QUIET_WEBHOOK_URL:-http://127.0.0.1:9/not-configured}
 
 networks:
   default:

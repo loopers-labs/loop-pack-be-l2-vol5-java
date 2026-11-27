@@ -3,7 +3,6 @@ package com.loopers.application.payment;
 import com.loopers.domain.order.OrderService;
 import com.loopers.domain.payment.CreateObservation;
 import com.loopers.domain.payment.LookupResult;
-import com.loopers.domain.payment.PaymentDiscrepancy;
 import com.loopers.domain.payment.Payment;
 import com.loopers.domain.payment.PaymentCreation;
 import com.loopers.domain.payment.PaymentGateway;
@@ -45,6 +44,7 @@ public class PaymentFacade {
     private final OrderService orderService;
     private final Bulkhead createBulkhead;
     private final PaymentMetrics paymentMetrics;
+    private final PaymentLog paymentLog;
 
     public Payment confirm(PaymentConfirmCommand command, Instant now) {
         if (!createBulkhead.tryAcquirePermission()) {
@@ -68,6 +68,7 @@ public class PaymentFacade {
                 CreateObservation observation = paymentGateway.create(new PaymentCreation(
                     payment.getProviderOrderId(), command.cardType(), command.cardNumber(), payment.getAmount()));
                 paymentMetrics.created(observation);
+                paymentLog.created(payment, observation);
                 yield observeOrKeep(payment, observation, now);
             }
         };
@@ -99,8 +100,7 @@ public class PaymentFacade {
         return switch (result) {
             case LookupResult.Unavailable unavailable -> CallbackResult.LOOKUP_UNAVAILABLE;
             case LookupResult.Observation observation -> {
-                paymentTransactions.observe(
-                    payment.get().getId(), observation, PaymentDiscrepancy.Source.CALLBACK, now);
+                observeOrLog(payment.get(), observation, PaymentTransactions.Origin.CALLBACK, now);
                 yield CallbackResult.APPLIED;
             }
         };
@@ -119,8 +119,18 @@ public class PaymentFacade {
         paymentMetrics.lookedUp("reconcile", result);
         return switch (result) {
             case LookupResult.Unavailable unavailable -> new ReconcileResult(payment, true);
-            case LookupResult.Observation observation -> new ReconcileResult(paymentTransactions.observe(
-                payment.getId(), observation, PaymentDiscrepancy.Source.LOOKUP, now), false);
+            case LookupResult.Observation observation -> new ReconcileResult(
+                observeOrLog(payment, observation, PaymentTransactions.Origin.RECONCILE, now), false);
         };
+    }
+
+    private Payment observeOrLog(Payment payment, LookupResult.Observation observation,
+                                 PaymentTransactions.Origin origin, Instant now) {
+        try {
+            return paymentTransactions.observe(payment.getId(), observation, origin, now);
+        } catch (DataAccessException e) {
+            paymentLog.applyFailed(payment, origin, e);
+            throw e;
+        }
     }
 }
