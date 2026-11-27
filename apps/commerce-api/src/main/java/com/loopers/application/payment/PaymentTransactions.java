@@ -62,10 +62,6 @@ public class PaymentTransactions {
             return discrepancySource;
         }
 
-        boolean isLookup() {
-            return this != CONFIRM;
-        }
-
         String label() {
             return name().toLowerCase(Locale.ROOT);
         }
@@ -75,7 +71,6 @@ public class PaymentTransactions {
     private final PaymentService paymentService;
     private final StockDeduction stockDeduction;
     private final StockRestoration stockRestoration;
-    private final PaymentMetrics paymentMetrics;
     private final OrderEventOutbox orderEventOutbox;
     private final ApplicationEventPublisher events;
 
@@ -134,7 +129,8 @@ public class PaymentTransactions {
         PaymentOutcome outcome = observation.apply(payment);
         events.publishEvent(new PaymentTransitioned(
             paymentId, payment.getOrderId(), payment.getProviderOrderId().value(), before, payment.getStatus(),
-            payment.isSettled(), Duration.between(payment.getRequestedAt(), now), origin));
+            payment.isSettled(), Duration.between(payment.getRequestedAt(), now),
+            outcome.discrepancy() == null ? null : outcome.discrepancy().reason(), origin));
 
         switch (outcome.effect()) {
             case NONE -> {
@@ -153,7 +149,6 @@ public class PaymentTransactions {
             }
         }
         if (outcome.discrepancy() != null) {
-            paymentMetrics.discrepancy(outcome.discrepancy().reason());
             paymentService.recordDiscrepancy(paymentId, outcome.discrepancy(), origin.discrepancySource(), now);
         }
         return paymentService.save(payment);

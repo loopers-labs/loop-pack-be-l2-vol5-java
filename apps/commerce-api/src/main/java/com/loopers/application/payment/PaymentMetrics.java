@@ -6,12 +6,14 @@ import com.loopers.domain.payment.PaymentDiscrepancy;
 import com.loopers.domain.payment.PaymentStatus;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
 import java.util.Locale;
 
 @Component
+@RequiredArgsConstructor
 public class PaymentMetrics {
 
     private static final Duration[] SETTLE_BUCKETS = {
@@ -20,10 +22,6 @@ public class PaymentMetrics {
     };
 
     private final MeterRegistry meterRegistry;
-
-    public PaymentMetrics(MeterRegistry meterRegistry) {
-        this.meterRegistry = meterRegistry;
-    }
 
     void created(CreateObservation observation) {
         meterRegistry.counter("payment.create", "result", CreateResult.nameOf(observation)).increment();

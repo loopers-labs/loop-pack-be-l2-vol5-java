@@ -15,13 +15,13 @@ class PaymentObservability {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void on(PaymentTransitioned transition) {
         paymentMetrics.observed(transition.from(), transition.to());
-        if (!transition.changed()) {
-            return;
+        if (transition.discrepancy() != null) {
+            paymentMetrics.discrepancy(transition.discrepancy());
         }
-        if (transition.settled()) {
+        if (transition.changed() && transition.settled()) {
             paymentMetrics.settled(transition.to(), transition.sinceRequested());
         }
-        if (transition.origin().isLookup()) {
+        if (transition.resolvesUnknownCreateOrConflicts()) {
             paymentLog.changed(transition);
         }
     }

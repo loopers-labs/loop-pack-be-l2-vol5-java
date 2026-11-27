@@ -132,7 +132,16 @@ Loki 라면 조회할 때 JSON 을 풀어 필드로 거른다. 로컬에서 이 
 | 해석하지 못한 응답 | `event = "payment_create_unexpected_response"`, 상태 코드는 `status` |
 | 결과를 모르게 된 결제 | `event = "payment_create_unknown"` |
 | 내부 반영 실패 | `event = "payment_apply_failed"`, 경로는 `source`, 오류 종류는 `error` |
-| 상태가 바뀐 기록 | `event = "payment_status_changed"`, `source` · `from` · `to` |
+| 결과를 모르던 결제가 닫힌 기록 | `event = "payment_status_changed"`, `source` · `from` · `to` |
+| PG 와 어긋나 멈춘 결제 | `event = "payment_conflict"`, `source` · `from` · `to` |
+
+정상 결제는 줄을 남기지 않는다. 접수된 생성 호출도, callback 이나 sweeper 가 `PENDING` 을 닫은 것도 로그에 없다. 그 수는 지표로 본다. 상태가 바뀐 줄은 세 경우에만 남는다.
+
+- `UNKNOWN` 이던 결제가 닫혔다. 앞서 남은 "결과를 모른다" 줄의 끝이다.
+- 생성 응답을 반영하지 못해 `REQUESTED` 로 남았던 결제가 조회로 닫혔다. 앞서 남은 "반영하지 못했다" 줄의 끝이다.
+- `CONFLICT` 가 됐다.
+
+그래서 한 주문을 `providerOrderId` 로 검색해 아무 줄도 없으면 그 결제는 정상 경로로 끝난 것이다.
 
 adapter 의 줄은 `providerOrderId` 만, application 의 줄은 `paymentId` · `orderId` · `providerOrderId` 를 갖는다. 두 줄을 잇는 값은 `providerOrderId` 다.
 

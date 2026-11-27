@@ -44,7 +44,6 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -91,6 +90,17 @@ class CheckoutIncidentTest {
     private int managementPort;
 
     private Long coat;
+    private CapturedOutput output;
+    private IncidentEvidence evidence;
+    private String phase;
+    private int enteredBefore;
+    private int leftBefore;
+    private Map<String, Object> pointsAndCouponsBefore;
+    private List<Long> baseline;
+    private List<Long> fault;
+    private List<Long> lost;
+    private List<String> faultKeys;
+    private String faultRecordHash;
 
     @Autowired
     CheckoutIncidentTest(TestRestTemplate testRestTemplate, OrderEventRelay relay,
@@ -133,22 +143,30 @@ class CheckoutIncidentTest {
 
     @Test
     @DisplayName("PG 는 성공했는데 응답이 timeout 되거나 끊겨 잃은 세 주문은 UNKNOWN 으로 남고, 같은 세 주문을 reconcile 하면 PG 생성 호출을 더 보내지 않고 확정된다")
-    void lostResponsesStayUnknownUntilTheSameOrdersAreReconciled(CapturedOutput output) {
-        IncidentEvidence evidence = IncidentEvidence.start();
-        String[] phase = {"baseline"};
+    void lostResponsesStayUnknownUntilTheSameOrdersAreReconciled(CapturedOutput captured) {
+        output = captured;
+        evidence = IncidentEvidence.start();
         try {
-            runIncident(output, evidence, phase);
+            phase = "baseline";
+            confirmTenOrdersNormally();
+            phase = "fault";
+            loseThreeOfTenResponses();
+            phase = "recovery";
+            reconcileTheSameThreeOrders();
+            faultRecordSurvivesRecovery();
+            phase = "follow-up";
+            confirmedOrdersReachKafkaOnce();
         } catch (RuntimeException | Error failure) {
-            evidence.recordFailure(phase[0], failure);
+            evidence.recordFailure(phase, failure);
             throw failure;
         }
     }
 
-    private void runIncident(CapturedOutput output, IncidentEvidence evidence, String[] phase) {
+    private void confirmTenOrdersNormally() {
         assertThat(PG.willDropNextCreateResponse()).isFalse();
-        int enteredBefore = unknownEntered();
-        int leftBefore = unknownLeft();
-        List<Long> baseline = placeOrders(10);
+        enteredBefore = unknownEntered();
+        leftBefore = unknownLeft();
+        baseline = placeOrders(10);
         baseline.forEach(this::confirm);
         succeedAtPg(baseline);
         baseline.forEach(this::reconcile);
@@ -164,19 +182,20 @@ class CheckoutIncidentTest {
         assertThat(unknownEntered() - enteredBefore).isZero();
         assertThat(unknownLeft() - leftBefore).isZero();
         assertThat(scrape()).doesNotContain("payment_unresolved");
-        Map<String, Object> pointsAndCoupons = pointsAndCoupons();
-        assertThat(pointsAndCoupons.get("pointBalance")).isEqualTo(50_000L);
-        assertThat((List<?>) pointsAndCoupons.get("pointTransactions")).hasSize(1);
-        assertThat((List<?>) pointsAndCoupons.get("coupons")).hasSize(1);
+        pointsAndCouponsBefore = pointsAndCoupons();
+        assertThat(pointsAndCouponsBefore.get("pointBalance")).isEqualTo(50_000L);
+        assertThat((List<?>) pointsAndCouponsBefore.get("pointTransactions")).hasSize(1);
+        assertThat((List<?>) pointsAndCouponsBefore.get("coupons")).hasSize(1);
         evidence.record("baseline", facts(baseline, List.of(), output.getOut()));
         evidence.recordRaw("baseline-prometheus.txt", scrape());
+    }
 
-        phase[0] = "fault";
+    private void loseThreeOfTenResponses() {
         int faultStart = output.getOut().length();
-        List<Long> fault = placeOrders(10);
+        fault = placeOrders(10);
         List<Long> timedOut = List.of(fault.get(2), fault.get(8));
         List<Long> disconnected = List.of(fault.get(5));
-        List<Long> lost = fault.stream()
+        lost = fault.stream()
             .filter(orderId -> timedOut.contains(orderId) || disconnected.contains(orderId)).toList();
         List<Long> answered = fault.stream().filter(orderId -> !lost.contains(orderId)).toList();
         try {
@@ -196,7 +215,7 @@ class CheckoutIncidentTest {
         succeedAtPg(fault);
         answered.forEach(this::reconcile);
 
-        List<String> faultKeys = pgSuccessKeys(fault);
+        faultKeys = pgSuccessKeys(fault);
         assertThat(withPaymentStatus(fault, PaymentStatus.SUCCESS)).containsExactlyElementsOf(answered);
         assertThat(withPaymentStatus(fault, PaymentStatus.UNKNOWN)).containsExactlyElementsOf(lost);
         assertThat(confirmedOrders(fault)).containsExactlyElementsOf(answered);
@@ -208,7 +227,7 @@ class CheckoutIncidentTest {
         assertThat(health()).isEqualTo("UP");
         assertThat(unknownEntered() - enteredBefore).isEqualTo(3);
         assertThat(unknownLeft() - leftBefore).isZero();
-        assertThat(pointsAndCoupons()).isEqualTo(pointsAndCoupons);
+        assertThat(pointsAndCoupons()).isEqualTo(pointsAndCouponsBefore);
         String faultLog = output.getOut().substring(faultStart);
         assertThat(timedOut).allSatisfy(orderId -> assertThat(linesWith(faultLog, providerOrderIdOf(orderId)))
             .singleElement().asString().contains("cause=timeout"));
@@ -224,9 +243,10 @@ class CheckoutIncidentTest {
         assertThat(linesWith(faultLog, "from=UNKNOWN")).isEmpty();
         evidence.record("fault", facts(baseline, fault, faultLog));
         evidence.recordRaw("fault-prometheus.txt", scrape());
-        String faultRecordHash = evidence.sha256("fault.json");
+        faultRecordHash = evidence.sha256("fault.json");
+    }
 
-        phase[0] = "recovery";
+    private void reconcileTheSameThreeOrders() {
         assertThat(PG.willDropNextCreateResponse()).isFalse();
         int recoveryStart = output.getOut().length();
         lost.forEach(this::reconcile);
@@ -242,13 +262,13 @@ class CheckoutIncidentTest {
         assertThat(health()).isEqualTo("UP");
         assertThat(unknownEntered() - enteredBefore).isEqualTo(3);
         assertThat(unknownLeft() - leftBefore).isEqualTo(3);
-        assertThat(pointsAndCoupons()).isEqualTo(pointsAndCoupons);
+        assertThat(pointsAndCoupons()).isEqualTo(pointsAndCouponsBefore);
 
         fault.forEach(this::reconcile);
 
         assertThat(unknownEntered() - enteredBefore).isEqualTo(3);
         assertThat(unknownLeft() - leftBefore).isEqualTo(3);
-        assertThat(pointsAndCoupons()).isEqualTo(pointsAndCoupons);
+        assertThat(pointsAndCoupons()).isEqualTo(pointsAndCouponsBefore);
 
         assertThat(confirmedOrders(fault)).containsExactlyElementsOf(fault);
         assertThat(fault).allSatisfy(orderId -> assertThat(outboxRows(orderId)).isEqualTo(1));
@@ -262,7 +282,9 @@ class CheckoutIncidentTest {
         recovered.put("faultRecordSha256", faultRecordHash);
         evidence.record("recovery", recovered);
         evidence.recordRaw("recovery-prometheus.txt", scrape());
+    }
 
+    private void faultRecordSurvivesRecovery() {
         JsonNode faultRecord = evidence.read("fault");
         JsonNode recoveryRecord = evidence.read("recovery");
         assertThat(evidence.sha256("fault.json")).isEqualTo(faultRecordHash);
@@ -281,8 +303,9 @@ class CheckoutIncidentTest {
         assertThat(recoveryRecord.get("unknownEntered").asInt() - recoveryRecord.get("unknownLeft").asInt()).isZero();
         assertThat(faultRecord.get("observeMetricLines").toString()).contains("to=\\\"unknown\\\"");
         assertThat(recoveryRecord.get("boundaryLogLines")).hasSize(3);
+    }
 
-        phase[0] = "follow-up";
+    private void confirmedOrdersReachKafkaOnce() {
         List<Long> confirmed = Stream.concat(baseline.stream(), fault.stream()).toList();
         assertThat(outboxStatuses(confirmed)).hasSize(20).containsOnly("PENDING");
 
@@ -483,14 +506,6 @@ class CheckoutIncidentTest {
 
     private String management(String path) {
         return "http://127.0.0.1:" + managementPort + path;
-    }
-
-    private static void pause(Duration wait) {
-        try {
-            Thread.sleep(wait);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
     }
 
     private String providerOrderIdOf(Long orderId) {

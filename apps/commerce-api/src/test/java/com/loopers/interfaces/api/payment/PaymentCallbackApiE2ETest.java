@@ -1,6 +1,5 @@
 package com.loopers.interfaces.api.payment;
 
-import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import com.loopers.application.brand.BrandFacade;
 import com.loopers.application.order.OrderCreateCommand;
@@ -149,7 +148,7 @@ class PaymentCallbackApiE2ETest {
         return (int) PG.receivedRequests().stream().filter(request -> request.method().equals("GET")).count();
     }
 
-    @DisplayName("SETTLE-002, SETTLE-010: PG 가 SUCCESS 가 된 뒤 온 callback 은 조회로 확인해 확정한다. 고객 식별 없이 받는다")
+    @DisplayName("SETTLE-002, SETTLE-010: PG 가 SUCCESS 가 된 뒤 온 callback 은 조회로 확인해 확정한다. 고객 식별 없이 받는다. 정상 경로라 줄을 남기지 않는다")
     @Test
     void confirmsOnSuccess() {
         Order order = place();
@@ -163,15 +162,7 @@ class PaymentCallbackApiE2ETest {
             logged = log.list();
         }
 
-        assertThat(logged).singleElement().satisfies(event -> {
-            assertThat(event.getLevel()).isEqualTo(Level.INFO);
-            assertThat(LogEvents.fieldsOf(event))
-                .containsEntry("event", "payment_status_changed")
-                .containsEntry("orderId", order.getId())
-                .containsEntry("source", "callback")
-                .containsEntry("from", "PENDING")
-                .containsEntry("to", "SUCCESS");
-        });
+        assertThat(logged).isEmpty();
         assertAll(
             () -> assertThat(response).isEqualTo(200),
             () -> assertThat(stored(order).getStatus()).isEqualTo(OrderStatus.CONFIRMED),

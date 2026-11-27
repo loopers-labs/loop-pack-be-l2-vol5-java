@@ -876,7 +876,63 @@ class PaymentFacadeIntegrationTest {
             }
         }
 
-        @DisplayName("조회한 금액이 요청과 달라 CONFLICT 로 멈추면, 어긋났다는 줄이 WARN 으로 한 줄 남는다")
+        @DisplayName("PENDING 을 callback 이 닫는 것은 정상 경로라 줄을 남기지 않는다")
+        @Test
+        void logsNothingWhenCallbackSettlesPending() {
+            Order order = place(2);
+            Payment payment = confirm(order.getId(), "attempt-1");
+            PG.changeStatus(payment.getTransactionKey().value(), PgFixture.Status.SUCCESS);
+
+            try (LogEvents log = LogEvents.of(PAYMENT_LOG)) {
+                paymentFacade.onCallback(payment.getProviderOrderId(), NOW.plusSeconds(1));
+
+                assertThat(paymentRepository.findByOrderId(order.getId()).orElseThrow().getStatus())
+                    .isEqualTo(PaymentStatus.SUCCESS);
+                assertThat(log.list()).isEmpty();
+            }
+        }
+
+        @DisplayName("응답을 잃어 UNKNOWN 이던 결제를 callback 이 닫으면, 무엇이 닫았는지 INFO 로 한 줄 남는다")
+        @Test
+        void logsWhenCallbackSettlesUnknown() {
+            Order order = place(2);
+            PG.dropNextCreateResponse();
+            Payment payment = confirm(order.getId(), "attempt-1");
+            String providerOrderId = payment.getProviderOrderId().value();
+            PG.changeStatus(PG.transactionsOf(providerOrderId).get(0).transactionKey(), PgFixture.Status.SUCCESS);
+
+            try (LogEvents log = LogEvents.of(PAYMENT_LOG)) {
+                paymentFacade.onCallback(payment.getProviderOrderId(), NOW.plusSeconds(1));
+
+                assertThat(log.list()).singleElement().satisfies(event -> {
+                    assertThat(event.getLevel()).isEqualTo(Level.INFO);
+                    assertThat(LogEvents.fieldsOf(event))
+                        .containsEntry("event", "payment_status_changed")
+                        .containsEntry("orderId", order.getId())
+                        .containsEntry("source", "callback")
+                        .containsEntry("from", "UNKNOWN")
+                        .containsEntry("to", "SUCCESS");
+                });
+            }
+        }
+
+        @DisplayName("PENDING 을 sweeper 가 닫아도 줄을 남기지 않는다. 응답을 잃은 적이 없는 결제이고 조회 지표가 센다")
+        @Test
+        void logsNothingWhenSweeperSettlesPending() {
+            Order order = place(2);
+            Payment payment = confirm(order.getId(), "attempt-1");
+            PG.changeStatus(payment.getTransactionKey().value(), PgFixture.Status.SUCCESS);
+
+            try (LogEvents log = LogEvents.of(PAYMENT_LOG)) {
+                paymentSweeper.sweepOnce(NOW.plusSeconds(11));
+
+                assertThat(paymentRepository.findByOrderId(order.getId()).orElseThrow().getStatus())
+                    .isEqualTo(PaymentStatus.SUCCESS);
+                assertThat(log.list()).isEmpty();
+            }
+        }
+
+        @DisplayName("조회한 금액이 요청과 달라 CONFLICT 로 멈추면, 어긋났다는 줄이 WARN 으로 한 줄 남고 payment.discrepancy 를 한 번 센다")
         @Test
         void logsConflict() {
             Order order = place(2);
@@ -887,10 +943,15 @@ class PaymentFacadeIntegrationTest {
                 [{"transactionKey":"%s","orderId":"%s","amount":1,"status":"SUCCESS"}]"""
                 .formatted(PG.transactionsOf(providerOrderId).get(0).transactionKey(), providerOrderId));
 
+            double discrepancies = meterRegistry.find("payment.discrepancy").counters().stream()
+                .mapToDouble(Counter::count).sum();
+
             try (LogEvents log = LogEvents.of(PAYMENT_LOG)) {
                 Payment reconciled = paymentFacade.reconcile(USER, order.getId(), NOW.plusSeconds(10)).payment();
 
                 assertThat(reconciled.getStatus()).isEqualTo(PaymentStatus.CONFLICT);
+                assertThat(meterRegistry.find("payment.discrepancy").counters().stream()
+                    .mapToDouble(Counter::count).sum() - discrepancies).isEqualTo(1);
                 assertThat(log.list()).singleElement().satisfies(event -> {
                     assertThat(event.getLevel()).isEqualTo(Level.WARN);
                     assertThat(LogEvents.fieldsOf(event))

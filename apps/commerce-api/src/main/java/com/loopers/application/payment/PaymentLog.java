@@ -32,11 +32,8 @@ public class PaymentLog {
     void changed(PaymentTransitioned transition) {
         boolean conflict = transition.to() == PaymentStatus.CONFLICT;
         String source = transition.origin().label();
-        (conflict ? log.atWarn() : log.atInfo())
-            .addKeyValue("event", conflict ? "payment_conflict" : "payment_status_changed")
-            .addKeyValue("paymentId", transition.paymentId())
-            .addKeyValue("orderId", transition.orderId())
-            .addKeyValue("providerOrderId", transition.providerOrderId())
+        about(conflict ? log.atWarn() : log.atInfo(), conflict ? "payment_conflict" : "payment_status_changed",
+            transition.paymentId(), transition.orderId(), transition.providerOrderId())
             .addKeyValue("source", source)
             .addKeyValue("from", transition.from().name())
             .addKeyValue("to", transition.to().name())
@@ -56,10 +53,15 @@ public class PaymentLog {
     }
 
     private static LoggingEventBuilder about(LoggingEventBuilder line, String event, Payment payment) {
+        return about(line, event, payment.getId(), payment.getOrderId(), payment.getProviderOrderId().value());
+    }
+
+    private static LoggingEventBuilder about(LoggingEventBuilder line, String event,
+                                             Long paymentId, Long orderId, String providerOrderId) {
         return line
             .addKeyValue("event", event)
-            .addKeyValue("paymentId", payment.getId())
-            .addKeyValue("orderId", payment.getOrderId())
-            .addKeyValue("providerOrderId", payment.getProviderOrderId().value());
+            .addKeyValue("paymentId", paymentId)
+            .addKeyValue("orderId", orderId)
+            .addKeyValue("providerOrderId", providerOrderId);
     }
 }
