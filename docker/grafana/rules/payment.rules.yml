@@ -9,12 +9,20 @@ groups:
           summary: '최근 5 분 동안 PG 생성 응답을 3 건 이상 잃었다'
           runbook: 'docs/runbook/week10.md'
 
-      - alert: PaymentUnknownStuck
-        expr: max(payment_unresolved_oldest_seconds{job="payment-db",status="unknown"}) > 120
+      - alert: PaymentUnresolvedStuck
+        expr: max by (status) (payment_unresolved_oldest_seconds{job="payment-db",status=~"unknown|requested|pending"}) > 120
         labels:
           severity: critical
         annotations:
-          summary: '가장 오래 남은 미확인 결제가 요청된 지 {{ $value }} 초가 지났다. 남은 미확인 결제는 {{ with query "sum(payment_unresolved{job=\"payment-db\",status=\"unknown\"})" }}{{ . | first | value }}{{ end }} 건이다'
+          summary: '{{ $labels.status }} 상태로 가장 오래 남은 결제가 요청된 지 {{ $value }} 초가 지났다. 그 상태의 결제는 {{ with printf "sum(payment_unresolved{job=\"payment-db\",status=\"%s\"})" $labels.status | query }}{{ . | first | value }}{{ end }} 건이다'
+          runbook: 'docs/runbook/week10.md'
+
+      - alert: PaymentConflict
+        expr: sum(payment_unresolved{job="payment-db",status="conflict"}) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: 'PG 와 어긋나 멈춘 결제가 {{ $value }} 건 있다. 저절로 닫히지 않으니 대사가 필요하다'
           runbook: 'docs/runbook/week10.md'
 
       - alert: PaymentDbExporterDown

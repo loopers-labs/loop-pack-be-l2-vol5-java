@@ -44,12 +44,13 @@ health 가 `UP` 인 것은 이 사고와 모순이 아니다. health 는 프로�
 
 ### 알림
 
-지표를 사람이 보고 있지 않아도 사고를 알 수 있게 Prometheus 규칙 넷을 둔다. 규칙은 `docker/grafana/rules/payment.rules.yml` 에 있다.
+지표를 사람이 보고 있지 않아도 사고를 알 수 있게 Prometheus 규칙 다섯을 둔다. 규칙은 `docker/grafana/rules/payment.rules.yml` 에 있다.
 
 | 알림 | 조건 | 뜻 | 먼저 할 일 |
 |---|---|---|---|
 | `PaymentResponsesLost` (warning) | 최근 5 분 동안 `UNKNOWN` 으로 들어온 결제가 3 건 이상 | PG 응답을 잃고 있다. 기다리지 않고 바로 울린다 | 이 문서 1 장부터. sweeper 가 닫고 있는지 `payment_unresolved` 를 본다 |
-| `PaymentUnknownStuck` (critical) | 가장 오래 남은 `UNKNOWN` 결제가 요청된 지 120 초를 넘겼다 | sweeper 가 닫지 못한 결제가 있다. 사람이 봐야 한다 | 2 장에서 목록을 고정하고 4 장으로 간다 |
+| `PaymentUnresolvedStuck` (critical) | `UNKNOWN` · `REQUESTED` · `PENDING` 중 가장 오래 남은 결제가 요청된 지 120 초를 넘겼다. 상태별로 따로 울리고 메시지에 상태가 나온다 | sweeper 가 닫지 못한 결제가 있다. 사람이 봐야 한다. `unknown` 은 응답 유실, `requested` 는 내부 반영 실패, `pending` 은 callback 이 오지 않은 것이다 | 2 장에서 목록을 고정하고 4 장으로 간다 |
+| `PaymentConflict` (critical) | `CONFLICT` 결제가 한 건이라도 있다. 기다리지 않고 울린다 | PG 와 어긋나 멈췄다. sweeper 도 reconcile 도 더 건드리지 않아 저절로 닫히지 않는다 | 6 장의 중단 조건. 대사가 필요하다 |
 | `PaymentDbExporterDown` (warning) | `up{job="payment-db"}` 가 0 인 채로 1 분 | 남은 건수를 못 세고 있다. 위 알림이 조용한 것은 이 때문일 수 있다 | exporter 와 DB 연결을 살리고, 그동안 2 장의 조회로 직접 센다 |
 | `PurchaseActivityLagStuck` (warning) | `purchase-activity` 컨슈머의 lag 이 0 보다 큰 채로 2 분 | 확정된 주문이 구매 활동과 랭킹에 반영되지 않고 있다 | streamer 가 살아 있는지 본다. 결제 복구와는 별개다 |
 
@@ -57,7 +58,7 @@ health 가 `UP` 인 것은 이 사고와 모순이 아니다. health 는 프로�
 
 sweeper 는 요청된 지 10 초가 지난 미완료 결제를, 앞의 실행이 끝나고 10 초 뒤에 다시 조회해 닫는다. 한 번에 50 건까지 보고, 가장 오래 안 본 것부터 본다. 그래서 PG 가 결과를 정했고 밀린 결제가 50 건 이하이며 조회가 빨리 끝나는 평소에는, 결제가 요청된 뒤 **약 20 초** 안에 닫힌다(대상이 되기까지 10 초, 다음 실행까지 최대 10 초). 로컬에서 본 값도 20 초였다.
 
-- **`PaymentUnknownStuck` 의 120 초는 그 여섯 배다.** sweeper 가 그 결제를 열 번 넘게 볼 기회가 있었는데도 닫지 못했다는 뜻이다. 울리면 넷 중 하나다.
+- **`PaymentUnresolvedStuck` 의 120 초는 그 여섯 배다.** sweeper 가 그 결제를 열 번 넘게 볼 기회가 있었는데도 닫지 못했다는 뜻이다. 울리면 넷 중 하나다.
   - PG 조회가 안 된다. `payment_lookup_total{source="sweeper"}` 의 `unavailable` 과 조회 회로를 본다.
   - sweeper 가 돌지 않는다. `payment_lookup_total{source="sweeper"}` 이 오르지 않는다.
   - 밀린 결제가 많다. 한 대가 10 초에 50 건을 닫으니 1,800 건이 밀리면 맨 뒤는 약 6 분을 기다린다(로컬 측정). `payment_unresolved` 의 합을 본다.
@@ -66,7 +67,7 @@ sweeper 는 요청된 지 10 초가 지난 미완료 결제를, 앞의 실행이
 - **`PurchaseActivityLagStuck` 의 2 분도 같은 식이다.** 컨슈머는 평소 lag 을 10 초 안에 따라잡는다(로컬 측정).
 - **sweeper 설정을 바꾸면 이 기준도 다시 계산한다.** 대상이 되는 시간(10 초)과 한 번에 보는 건수(50)는 `PaymentSweeper` 의 상수이고, 주기는 `payment.sweeper.interval` 이다. 주기를 60 초로 늘리면 120 초는 두 번 볼 기회밖에 안 된다. 둘을 묶어 주는 장치는 없다.
 - **응답 유실을 세는 숫자는 앱이 뜰 때 0 으로 시작한다.** 처음 잃는 순간에 숫자가 생기면 Prometheus 는 0 에서 오른 것으로 보지 못해 `PaymentResponsesLost` 가 울리지 않는다. 그래서 `payment_create_total` 은 결과 네 가지를 모두 0 으로 미리 낸다. 새로 띄운 앱에서 3 건을 잃었을 때 증가량이 3 으로 잡히고 10 초 안에 울리는 것을 봤다.
-- **건수가 아니라 지난 시간을 본다.** 응답 유실이 계속 들어와도 sweeper 가 하나씩 닫고 있으면 건수는 0 보다 크지만 묶인 결제는 없다. `PaymentUnknownStuck` 은 그때 울리지 않고, 결제 하나가 120 초를 넘겨 남았을 때만 울린다. 알림 문구에 지난 초와 남은 건수가 들어간다.
+- **건수가 아니라 지난 시간을 본다.** 응답 유실이 계속 들어와도 sweeper 가 하나씩 닫고 있으면 건수는 0 보다 크지만 묶인 결제는 없다. `PaymentUnresolvedStuck` 은 그때 울리지 않고, 결제 하나가 120 초를 넘겨 남았을 때만 울린다. 알림 문구에 지난 초와 남은 건수가 들어간다.
 - **뒤집을 조건**: 사고가 아닌데 울리면 올리고, 고객 문의가 알림보다 먼저 오면 내린다.
 - **판정 주기는 15 초다.** 알림은 조건이 채워진 뒤 최대 15 초 늦게 울리고 꺼진다. `PaymentResponsesLost` 는 5 분 창을 보므로 유실이 멈춘 뒤에도 최대 5 분 동안 울린다.
 - **전달은 Grafana 가 맡는다.** 조건은 Prometheus 규칙에만 있고, Grafana 에는 "울리고 있는 Prometheus 알림(`ALERTS{alertstate="firing"}`)을 Slack 으로 보낸다"는 규칙 하나만 있다(`docker/grafana/provisioning/alerting/`). 그래서 조건을 고칠 때는 Prometheus 규칙 파일만 고친다. Slack 메시지에는 알림 이름, 심각도, 이 문서의 링크가 들어가고 건수는 들어가지 않는다. 건수는 Prometheus 의 `/alerts` 나 대시보드에서 본다.
@@ -238,5 +239,5 @@ lag 이 0 이면 streamer 가 메시지를 읽었다는 뜻이다. 읽은 메시
 | 그동안 health 는 `UP`, `UNKNOWN` 으로 들어온 수는 0 → 3, 나간 수는 0 → 3 | 알림의 기준값이 운영에서 맞는지. 전달은 로컬에서 테스트용 Slack 채널로만 보내 봤다 |
 | 로컬에서 앱을 띄워 같은 사고를 재현하고 Prometheus · Loki · Tempo 에서 지표, 로그, trace 를 본다 | sql exporter 가 내는 값을 자동 테스트로. 로컬에서 초당 30 건 부하를 걸어 DB 를 직접 센 값과 5 초 안에 같아지는 것, 앱을 내려도 값이 그대로 나오는 것을 손으로 봤다 |
 | 가설 2 와 3 을 로그로 가른다 | 가설 3(내부 반영 실패)이 실제로 난 상태에서의 복구 절차 전체 |
-| 알림 넷이 조건대로 울리고 꺼진다(`promtool` 로 조건을 확인했고, 로컬에서 응답을 잃고 streamer 와 exporter 를 내려 실제로 울리는 것을 봤다. 규칙 테스트 파일은 저장소에 두지 않았다) | 실제 Kafka · DB 장애에서 exporter 자신이 어떻게 동작하는지 |
+| 알림 다섯이 조건대로 울리고 꺼진다(`promtool` 로 조건을 확인했고 규칙 테스트 파일은 저장소에 두지 않았다. 로컬에서 실제로 울려 본 것은 응답 유실, `UNKNOWN` 정체, exporter 중단, 컨슈머 lag 넷이다. `REQUESTED` · `PENDING` 정체와 `CONFLICT` 알림은 `promtool` 로만 확인했다) | 실제 Kafka · DB 장애에서 exporter 자신이 어떻게 동작하는지 |
 | 복구한 주문의 메시지가 실제 Kafka 에 주문당 한 번 나간다 | 그 메시지가 구매 활동과 주간 랭킹까지 이어지는 것을 같은 실행으로 |
