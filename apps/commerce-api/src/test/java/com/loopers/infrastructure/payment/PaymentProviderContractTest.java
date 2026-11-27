@@ -10,11 +10,14 @@ import com.loopers.support.payment.FakePaymentServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.boot.Banner;
 import org.springframework.boot.WebApplicationType;
 import org.springframework.boot.builder.SpringApplicationBuilder;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
@@ -50,12 +53,15 @@ class PaymentProviderContractTest {
     }
 
     @Test
-    void createsPendingTransactionUsingTheExactHttpContractAndLooksUpSuccess() throws Exception {
+    @ExtendWith(OutputCaptureExtension.class)
+    void createsPendingTransactionUsingTheExactHttpContractAndLooksUpSuccess(CapturedOutput output) throws Exception {
         PaymentObservation created = provider.create(payment());
 
         assertThat(created.kind()).isEqualTo(PaymentObservation.Kind.OBSERVED);
         assertThat(created.transactions()).containsExactly(
             new PaymentTransaction("TEST-TX-1", "LP-ORD-0000000042", 7000, PaymentTransaction.Status.PENDING));
+        assertThat(output).contains("PG 응답: op=create providerOrderId=LP-ORD-0000000042 httpStatus=202"
+            + " result=OBSERVED transactions=[TEST-TX-1:LP-ORD-0000000042:PENDING:7000]");
         var request = pg.requests().getFirst();
         assertThat(request.method()).isEqualTo("POST");
         assertThat(request.path()).isEqualTo("/api/v1/payments");
@@ -76,6 +82,8 @@ class PaymentProviderContractTest {
 
         assertThat(found.transactions()).containsExactly(
             new PaymentTransaction("TEST-TX-1", "LP-ORD-0000000042", 7000, PaymentTransaction.Status.SUCCESS));
+        assertThat(output).contains("PG 응답: op=lookup transactionKey=TEST-TX-1 httpStatus=200"
+            + " result=OBSERVED transactions=[TEST-TX-1:LP-ORD-0000000042:SUCCESS:7000]");
         assertThat(pg.requests().getLast().path()).isEqualTo("/api/v1/payments/TEST-TX-1");
         assertThat(pg.requests().getLast().method()).isEqualTo("GET");
         assertThat(pg.requests().getLast().userId()).isEqualTo("135135");
@@ -85,7 +93,8 @@ class PaymentProviderContractTest {
     }
 
     @Test
-    void responseLossLeavesOneExternalTransactionAndNeverRetriesCreate() {
+    @ExtendWith(OutputCaptureExtension.class)
+    void responseLossLeavesOneExternalTransactionAndNeverRetriesCreate(CapturedOutput output) {
         pg.dropNextCreateResponse();
 
         PaymentObservation created = provider.create(payment());
@@ -99,6 +108,8 @@ class PaymentProviderContractTest {
 
         assertThat(recovered.transactions()).containsExactly(
             new PaymentTransaction("TEST-TX-1", "LP-ORD-0000000042", 7000, PaymentTransaction.Status.SUCCESS));
+        assertThat(output).contains("PG 응답: op=lookup providerOrderId=LP-ORD-0000000042 httpStatus=200"
+            + " result=OBSERVED transactions=[TEST-TX-1:LP-ORD-0000000042:SUCCESS:7000]");
         assertThat(pg.requests().getLast().path()).isEqualTo("/api/v1/payments");
         assertThat(pg.requests().getLast().rawQuery()).isEqualTo("orderId=LP-ORD-0000000042");
         assertThat(pg.requests().getLast().userId()).isEqualTo("135135");
@@ -169,20 +180,26 @@ class PaymentProviderContractTest {
     }
 
     @Test
-    void mismatchedCreateResponseIsPassedOnAsObservedForResultCheck() {
+    @ExtendWith(OutputCaptureExtension.class)
+    void mismatchedCreateResponseIsPassedOnAsObservedForResultCheck(CapturedOutput output) {
         pg.replyNext(202, "{\"transactionKey\":\"T-1\",\"orderId\":\"OTHER-ORDER\",\"amount\":8000,\"status\":\"PENDING\"}");
 
         assertThat(provider.create(payment())).isEqualTo(PaymentObservation.observed(List.of(
             new PaymentTransaction("T-1", "OTHER-ORDER", 8000, PaymentTransaction.Status.PENDING))));
         assertThat(pg.createCalls()).isEqualTo(1);
+        // 요청한 주문 번호와 PG가 돌려준 주문 번호를 한 줄에서 대조할 수 있다.
+        assertThat(output).contains("PG 응답: op=create providerOrderId=LP-ORD-0000000042 httpStatus=202"
+            + " result=OBSERVED transactions=[T-1:OTHER-ORDER:PENDING:8000]");
     }
 
     @Test
-    void provenRejectionBeforeCreateIsRejectedWithoutTransaction() {
+    @ExtendWith(OutputCaptureExtension.class)
+    void provenRejectionBeforeCreateIsRejectedWithoutTransaction(CapturedOutput output) {
         pg.replyNext(422, "{\"code\":\"TEST_PG_REJECTED_BEFORE_CREATE\",\"orderId\":\"LP-ORD-0000000042\","
             + "\"amount\":7000,\"transactionCreated\":false}");
 
         assertThat(provider.create(payment())).isEqualTo(PaymentObservation.rejected());
+        assertThat(output).contains("PG 응답: op=create providerOrderId=LP-ORD-0000000042 httpStatus=422 result=REJECTED");
         assertThat(pg.transactionCount()).isZero();
         assertThat(pg.createCalls()).isEqualTo(1);
     }
@@ -206,11 +223,16 @@ class PaymentProviderContractTest {
     }
 
     @Test
-    void serverErrorAndUnprovenRejectionAreUnknownWithoutRetries() {
+    @ExtendWith(OutputCaptureExtension.class)
+    void serverErrorAndUnprovenRejectionAreUnknownWithoutRetries(CapturedOutput output) {
         pg.replyNext(503, "");
         assertThat(provider.create(payment())).isEqualTo(PaymentObservation.unknown(PaymentObservation.UnknownCause.TEMPORARY_FAILURE));
+        assertThat(output).contains("PG 응답: op=create providerOrderId=LP-ORD-0000000042 httpStatus=503"
+            + " result=UNKNOWN cause=TEMPORARY_FAILURE error=ServiceUnavailable");
         pg.replyNext(422, "");
         assertThat(provider.create(payment())).isEqualTo(PaymentObservation.unknown(PaymentObservation.UnknownCause.UNEXPECTED_RESPONSE));
+        assertThat(output).contains("PG 응답: op=create providerOrderId=LP-ORD-0000000042 httpStatus=422"
+            + " result=UNKNOWN cause=UNEXPECTED_RESPONSE");
         pg.replyNext(503, "");
         assertThat(provider.findByOrderId("LP-ORD-0000000042")).isEqualTo(PaymentObservation.unknown(PaymentObservation.UnknownCause.TEMPORARY_FAILURE));
         assertThat(pg.createCalls()).isEqualTo(2);
@@ -218,7 +240,8 @@ class PaymentProviderContractTest {
     }
 
     @Test
-    void lookupTimeoutAndServerErrorAreTemporaryFailures() {
+    @ExtendWith(OutputCaptureExtension.class)
+    void lookupTimeoutAndServerErrorAreTemporaryFailures(CapturedOutput output) {
         provider.create(payment());
         pg.delayNextResponse(Duration.ofSeconds(1));
 
@@ -229,6 +252,10 @@ class PaymentProviderContractTest {
 
         assertThat(slow).isEqualTo(PaymentObservation.unknown(PaymentObservation.UnknownCause.TEMPORARY_FAILURE));
         assertThat(unavailable).isEqualTo(PaymentObservation.unknown(PaymentObservation.UnknownCause.TEMPORARY_FAILURE));
+        assertThat(output).contains("PG 응답 없음: op=lookup transactionKey=TEST-TX-1 result=UNKNOWN"
+            + " cause=TEMPORARY_FAILURE error=SocketTimeoutException");
+        assertThat(output).contains("PG 응답: op=lookup providerOrderId=LP-ORD-0000000042 httpStatus=503"
+            + " result=UNKNOWN cause=TEMPORARY_FAILURE error=ServiceUnavailable");
         assertThat(pg.lookupCalls()).isEqualTo(2);
     }
 
@@ -324,7 +351,8 @@ class PaymentProviderContractTest {
     }
 
     @Test
-    void unusableLookupResponseIsAnUnexpectedResponse() {
+    @ExtendWith(OutputCaptureExtension.class)
+    void unusableLookupResponseIsAnUnexpectedResponse(CapturedOutput output) {
         pg.replyNext(401, "");
         assertThat(provider.findByTransactionKey("TEST-TX-1")).isEqualTo(PaymentObservation.unknown(PaymentObservation.UnknownCause.UNEXPECTED_RESPONSE));
         pg.replyNext(200, "not-json");
@@ -332,6 +360,10 @@ class PaymentProviderContractTest {
         pg.replyNext(200, "{}");
         assertThat(provider.findByOrderId("LP-ORD-0000000042")).isEqualTo(PaymentObservation.unknown(PaymentObservation.UnknownCause.UNEXPECTED_RESPONSE));
         assertThat(pg.lookupCalls()).isEqualTo(3);
+        assertThat(output).contains("PG 응답: op=lookup transactionKey=TEST-TX-1 httpStatus=200"
+            + " result=UNKNOWN cause=UNEXPECTED_RESPONSE error=JsonParseException");
+        assertThat(output).contains("PG 응답: op=lookup providerOrderId=LP-ORD-0000000042 httpStatus=200"
+            + " result=UNKNOWN cause=UNEXPECTED_RESPONSE error=IllegalArgumentException");
     }
 
     @Test

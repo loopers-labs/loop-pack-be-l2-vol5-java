@@ -1,6 +1,7 @@
 package com.loopers.infrastructure.payment;
 
 import com.loopers.domain.payment.PaymentAttempt;
+import com.loopers.domain.payment.PaymentAttemptStatus;
 import com.loopers.domain.order.OrderStatus;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Pageable;
@@ -15,6 +16,8 @@ import java.util.List;
 import java.util.Optional;
 
 public interface PaymentAttemptJpaRepository extends JpaRepository<PaymentAttempt, Long> {
+    long countByStatus(PaymentAttemptStatus status);
+
     Optional<PaymentAttempt> findByOrderId(Long orderId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
@@ -26,6 +29,10 @@ public interface PaymentAttemptJpaRepository extends JpaRepository<PaymentAttemp
     List<PaymentAttempt> findByOrderIdIn(Collection<Long> orderIds);
 
     Optional<PaymentAttempt> findByProviderOrderId(String providerOrderId);
+
+    /** 주어진 주문 상태에 머문 주문 중 결제를 가장 먼저 시작한(결제 시도를 만든) 시각. 없으면 비어 있다. */
+    @Query("select min(a.createdAt) from PaymentAttempt a, OrderModel o where o.id = a.orderId and o.status = :status")
+    Optional<ZonedDateTime> findEarliestPaymentStartByOrderStatus(@Param("status") OrderStatus status);
 
     @Query("select a from PaymentAttempt a, OrderModel o where o.id = a.orderId and o.status = :status"
         + " and a.createdAt <= :cutoff and a.id > :afterId order by a.id")

@@ -8,6 +8,7 @@ import com.loopers.domain.payment.PaymentObservation.UnknownCause;
 import com.loopers.domain.payment.PaymentProvider;
 import com.loopers.domain.payment.PaymentRequest;
 import com.loopers.domain.payment.PaymentTransaction;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.hc.client5.http.ConnectTimeoutException;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.apache.hc.client5.http.impl.classic.HttpClientBuilder;
@@ -17,8 +18,10 @@ import org.apache.hc.core5.http.ConnectionRequestTimeoutException;
 import org.apache.hc.core5.util.DeadlineTimeoutException;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
+import org.springframework.web.client.DefaultResponseErrorHandler;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.HttpServerErrorException;
+import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
@@ -28,11 +31,19 @@ import java.net.ConnectException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Supplier;
 
+/**
+ * PG HTTP 경계. 요청 한 줄과 결과 한 줄을 남겨, 응답을 받지 못한 것과 받은 뒤 내부에서 실패한 것을 구분할 수 있게 한다.
+ * 카드 정보는 남기지 않는다. 우리 쪽 주문은 providerOrderId로 찾는다.
+ */
+@Slf4j
 public class TestPgPaymentAdapter implements PaymentProvider, AutoCloseable {
 
     private static final String REJECTED_BEFORE_CREATE = "TEST_PG_REJECTED_BEFORE_CREATE";
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+
+    private static final DefaultResponseErrorHandler LOOKUP_ERRORS = new DefaultResponseErrorHandler();
 
     private final CloseableHttpClient httpClient;
     private final RestClient client;
@@ -72,30 +83,36 @@ public class TestPgPaymentAdapter implements PaymentProvider, AutoCloseable {
 
     @Override
     public PaymentObservation create(PaymentRequest request) {
+        log.info("PG 요청: op=create providerOrderId={} amount={}", request.providerOrderId(), request.amount());
+        return answered("create", "providerOrderId=" + request.providerOrderId(), () -> sendCreate(request));
+    }
+
+    private Answer sendCreate(PaymentRequest request) {
         String providerOrderId = request.providerOrderId();
         var body = new CreateBody(providerOrderId, request.cardType(), request.cardNo(), request.amount(), callbackUrl);
         try {
             var response = client.post().uri("/api/v1/payments").contentType(MediaType.APPLICATION_JSON)
                 .body(body).retrieve().toEntity(JsonNode.class);
             if (response.getStatusCode().value() != 202) {
-                return PaymentObservation.unknown(UnknownCause.UNEXPECTED_RESPONSE);
+                return new Answer(PaymentObservation.unknown(UnknownCause.UNEXPECTED_RESPONSE), null);
             }
             // 주문 번호·금액 대조는 조회 결과와 같이 TX B가 맡아 불일치 근거를 이력에 남긴다.
             PaymentTransaction transaction = toTransaction(response.getBody());
             if (transaction.status() != PaymentTransaction.Status.PENDING) {
-                return PaymentObservation.unknown(UnknownCause.UNEXPECTED_RESPONSE);
+                return new Answer(PaymentObservation.unknown(UnknownCause.UNEXPECTED_RESPONSE), null);
             }
-            return PaymentObservation.observed(List.of(transaction));
+            return new Answer(PaymentObservation.observed(List.of(transaction)), null, response.getStatusCode().value());
         } catch (HttpClientErrorException.UnprocessableEntity exception) {
             boolean proven = isProvenRejection(exception.getResponseBodyAsString(), providerOrderId, request.amount());
-            return proven ? PaymentObservation.rejected() : PaymentObservation.unknown(UnknownCause.UNEXPECTED_RESPONSE);
+            return new Answer(proven ? PaymentObservation.rejected()
+                : PaymentObservation.unknown(UnknownCause.UNEXPECTED_RESPONSE), exception);
         } catch (ResourceAccessException exception) {
-            return endedBeforeSending(exception)
-                ? PaymentObservation.notSent() : PaymentObservation.unknown(UnknownCause.TEMPORARY_FAILURE);
+            return new Answer(endedBeforeSending(exception)
+                ? PaymentObservation.notSent() : PaymentObservation.unknown(UnknownCause.TEMPORARY_FAILURE), exception);
         } catch (HttpServerErrorException exception) {
-            return PaymentObservation.unknown(UnknownCause.TEMPORARY_FAILURE);
+            return new Answer(PaymentObservation.unknown(UnknownCause.TEMPORARY_FAILURE), exception);
         } catch (RestClientException | IllegalArgumentException exception) {
-            return PaymentObservation.unknown(UnknownCause.UNEXPECTED_RESPONSE);
+            return new Answer(PaymentObservation.unknown(UnknownCause.UNEXPECTED_RESPONSE), exception);
         }
     }
 
@@ -146,46 +163,103 @@ public class TestPgPaymentAdapter implements PaymentProvider, AutoCloseable {
 
     @Override
     public PaymentObservation findByTransactionKey(String transactionKey) {
-        try {
-            var response = lookupClient.get().uri("/api/v1/payments/{transactionKey}", transactionKey)
-                .retrieve().toEntity(JsonNode.class);
-            if (response.getStatusCode().value() != 200) {
-                return PaymentObservation.unknown(UnknownCause.UNEXPECTED_RESPONSE);
-            }
-            return PaymentObservation.observed(List.of(toTransaction(response.getBody())));
-        } catch (HttpClientErrorException.NotFound exception) {
-            return PaymentObservation.observed(List.of());
-        } catch (ResourceAccessException exception) {
-            return lookupNotAnswered(exception);
-        } catch (HttpServerErrorException exception) {
-            return PaymentObservation.unknown(UnknownCause.TEMPORARY_FAILURE);
-        } catch (RestClientException | IllegalArgumentException exception) {
-            return PaymentObservation.unknown(UnknownCause.UNEXPECTED_RESPONSE);
-        }
+        log.info("PG 요청: op=lookup transactionKey={}", transactionKey);
+        return answered("lookup", "transactionKey=" + transactionKey, () -> sendLookup(transactionKey));
+    }
+
+    private Answer sendLookup(String transactionKey) {
+        var request = lookupClient.get().uri("/api/v1/payments/{transactionKey}", transactionKey);
+        return readLookup(request, false);
     }
 
     @Override
     public PaymentObservation findByOrderId(String providerOrderId) {
+        log.info("PG 요청: op=lookup providerOrderId={}", providerOrderId);
+        return answered("lookup", "providerOrderId=" + providerOrderId, () -> sendLookupByOrderId(providerOrderId));
+    }
+
+    private Answer sendLookupByOrderId(String providerOrderId) {
+        var request = lookupClient.get()
+            .uri(builder -> builder.path("/api/v1/payments").queryParam("orderId", "{orderId}").build(providerOrderId));
+        return readLookup(request, true);
+    }
+
+    private Answer readLookup(RestClient.RequestHeadersSpec<?> request, boolean byOrderId) {
         try {
-            var response = lookupClient.get()
-                .uri(builder -> builder.path("/api/v1/payments").queryParam("orderId", "{orderId}").build(providerOrderId))
-                .retrieve().toEntity(JsonNode.class);
-            JsonNode body = response.getBody();
-            if (response.getStatusCode().value() != 200 || body == null || !body.isArray()) {
-                return PaymentObservation.unknown(UnknownCause.UNEXPECTED_RESPONSE);
-            }
-            List<PaymentTransaction> transactions = new ArrayList<>();
-            for (JsonNode transaction : body) {
-                transactions.add(toTransaction(transaction));
-            }
-            return PaymentObservation.observed(transactions);
+            return request.exchange((sent, response) -> {
+                int status = response.getStatusCode().value();
+                if (LOOKUP_ERRORS.hasError(response)) {
+                    LOOKUP_ERRORS.handleError(sent.getURI(), sent.getMethod(), response);
+                }
+                if (status != 200) {
+                    return new Answer(PaymentObservation.unknown(UnknownCause.UNEXPECTED_RESPONSE), null, status);
+                }
+                try {
+                    JsonNode body = response.bodyTo(JsonNode.class);
+                    List<PaymentTransaction> transactions = byOrderId ? toTransactions(body) : List.of(toTransaction(body));
+                    return new Answer(PaymentObservation.observed(transactions), null, status);
+                } catch (RestClientException | IllegalArgumentException exception) {
+                    return new Answer(PaymentObservation.unknown(UnknownCause.UNEXPECTED_RESPONSE), exception, status);
+                }
+            });
+        } catch (HttpClientErrorException.NotFound exception) {
+            PaymentObservation observation = byOrderId ? PaymentObservation.unknown(UnknownCause.UNEXPECTED_RESPONSE)
+                : PaymentObservation.observed(List.of());
+            return new Answer(observation, exception);
         } catch (ResourceAccessException exception) {
-            return lookupNotAnswered(exception);
+            return new Answer(lookupNotAnswered(exception), exception);
         } catch (HttpServerErrorException exception) {
-            return PaymentObservation.unknown(UnknownCause.TEMPORARY_FAILURE);
+            return new Answer(PaymentObservation.unknown(UnknownCause.TEMPORARY_FAILURE), exception);
         } catch (RestClientException | IllegalArgumentException exception) {
-            return PaymentObservation.unknown(UnknownCause.UNEXPECTED_RESPONSE);
+            return new Answer(PaymentObservation.unknown(UnknownCause.UNEXPECTED_RESPONSE), exception);
         }
+    }
+
+    private static List<PaymentTransaction> toTransactions(JsonNode body) {
+        if (body == null || !body.isArray()) {
+            throw new IllegalArgumentException("PG 주문 조회 응답은 거래 목록이어야 합니다.");
+        }
+        List<PaymentTransaction> transactions = new ArrayList<>();
+        for (JsonNode transaction : body) {
+            transactions.add(toTransaction(transaction));
+        }
+        return transactions;
+    }
+
+    /**
+     * 결과 한 줄을 남긴다. 받은 거래는 key·PG가 준 주문 번호·상태·금액을, 받지 못했으면 이유와 가장 안쪽 예외 이름(timeout·연결 끊김 구분)을 쓴다.
+     * 결과를 확인하지 못한 경우만 WARN이다.
+     */
+    private static PaymentObservation answered(String op, String target, Supplier<Answer> call) {
+        long started = System.nanoTime();
+        Answer answer = call.get();
+        long elapsedMs = Duration.ofNanos(System.nanoTime() - started).toMillis();
+        PaymentObservation observation = answer.observation();
+        String responseFields = answer.httpStatus() == null ? target : target + " httpStatus=" + answer.httpStatus();
+        if (observation.kind() == PaymentObservation.Kind.OBSERVED || observation.kind() == PaymentObservation.Kind.REJECTED) {
+            String transactions = observation.transactions().stream()
+                .map(t -> t.transactionKey() + ":" + t.providerOrderId() + ":" + t.status() + ":" + t.amount()).toList().toString();
+            log.info("PG 응답: op={} {} result={} transactions={} elapsedMs={}",
+                op, responseFields, observation.kind(), transactions, elapsedMs);
+        } else if (answer.httpStatus() != null) {
+            log.warn("PG 응답: op={} {} result={} cause={} error={} elapsedMs={}",
+                op, responseFields, observation.kind(), observation.unknownCause(), rootName(answer.error()), elapsedMs);
+        } else {
+            log.warn("PG 응답 없음: op={} {} result={} cause={} error={} elapsedMs={}",
+                op, target, observation.kind(), observation.unknownCause(), rootName(answer.error()), elapsedMs);
+        }
+        return observation;
+    }
+
+    private static String rootName(Throwable error) {
+        if (error == null) {
+            return "none";
+        }
+        Throwable root = error;
+        while (root.getCause() != null) {
+            root = root.getCause();
+        }
+        return root.getClass().getSimpleName();
     }
 
     private static PaymentTransaction toTransaction(JsonNode body) {
@@ -201,6 +275,12 @@ public class TestPgPaymentAdapter implements PaymentProvider, AutoCloseable {
     @Override
     public void close() throws IOException {
         httpClient.close();
+    }
+
+    private record Answer(PaymentObservation observation, Throwable error, Integer httpStatus) {
+        private Answer(PaymentObservation observation, Throwable error) {
+            this(observation, error, error instanceof HttpStatusCodeException response ? response.getStatusCode().value() : null);
+        }
     }
 
     private record CreateBody(String orderId, String cardType, String cardNo, long amount, String callbackUrl) {

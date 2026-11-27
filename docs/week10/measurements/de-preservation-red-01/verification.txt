@@ -1,0 +1,12 @@
+격리한 복사본에서 첫 reconcile 직전 포인트 기대값만 5,000에서 5,001로 바꿨다.
+첫 실행은 recovery 단계에서 의도한 차이로 중단됐다. 기대값을 복원하고 같은 작업공간에서 다시 실행했다.
+실패 폴더 run-12473475804928757025
+후속 통과 폴더 run-15472923635207322400
+후속 실행 뒤에도 실패 실행의 다섯 파일이 사전 복사본과 바이트 단위로 일치했다. SHA-256:
+e53df672edd63125bd99508f6b929223f4162548364b812a4cf9d3ccd45a4f94  baseline.txt
+64e6d8c58d7aa8f69d27c5e3a4d57ca6d234f0e174530f789d707daa618a87c0  failure.txt
+9d5a01ae54193f3df1541974ab533434b6fa3cd895fd0a00fd0e8a550f8f1d31  fault.txt
+ccd260dbdb812c7c0dfdf09cc38114532aa7525e88cb051eda60ef14ddcc5aee  ranking.txt
+2810a7d64ed066b4f69c8a383eb7e188cad478d0088c50e15bf222b8fca8790d  recovery.txt
+name=com.loopers.application.order.PaymentIncidentExperimentTest tests=1 failures=0 errors=0 skipped=0
+name=com.loopers.architecture.LayeredArchitectureTest tests=1 failures=0 errors=0 skipped=0

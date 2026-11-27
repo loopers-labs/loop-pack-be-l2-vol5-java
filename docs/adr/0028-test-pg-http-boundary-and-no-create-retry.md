@@ -3,6 +3,8 @@
 Status: Accepted
 Date: 2026-10-18
 
+Follow-up: PG 생성·조회 요청과 결과에 남기는 로그 필드는 [ADR 0096](0096-log-pg-boundary-and-failed-result-save.md)에서 정한다.
+
 ## Context
 
 5주차 로컬 PG는 호출자의 멱등 키를 받거나 같은 주문의 새 POST를 중복 제거하지 않는다. 거래 생성 뒤 응답만 유실될 수 있으므로 HTTP 오류를 결제 실패로 확정하거나 create를 자동 재시도하면 중복 거래를 만들 수 있다. 기존 레이어드 구조 안에서 이 외부 계약을 격리한다.

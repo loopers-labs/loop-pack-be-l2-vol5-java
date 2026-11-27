@@ -1,0 +1,25 @@
+수정 전 — 같은 Gradle test 작업에서 실행한 세 클래스 (JUnit XML 발췌)
+name=com.loopers.application.order.PaymentIncidentExperimentTest tests=1 failures=0 errors=0 skipped=0 time=35.161
+name=com.loopers.application.ranking.WeeklyRankingFlowE2ETest tests=1 failures=1 errors=0 skipped=0 time=16.512
+Caused by: org.springframework.batch.core.repository.JobInstanceAlreadyCompleteException: A job instance already exists and is complete for identifying parameters={'periodStart':'{value=2026-11-23, type=class java.lang.String, identifying=true}','snapshotId':'{value=weekly-20261123-r1, type=class java.lang.String, identifying=true}'}.  If you want to run this job again, change the parameters.
+name=com.loopers.architecture.LayeredArchitectureTest tests=1 failures=0 errors=0 skipped=0 time=1.983
+
+수정 후 — 같은 Gradle test 작업에서 실행한 세 클래스 (JUnit XML 발췌)
+name=com.loopers.application.order.PaymentIncidentExperimentTest tests=1 failures=0 errors=0 skipped=0 time=35.084
+name=com.loopers.application.ranking.WeeklyRankingFlowE2ETest tests=1 failures=0 errors=0 skipped=0 time=21.661
+name=com.loopers.architecture.LayeredArchitectureTest tests=1 failures=0 errors=0 skipped=0 time=2.218
+
+수정 후 Gradle 결과: BUILD SUCCESSFUL
+:apps:commerce-api:checkstyleMain UP-TO-DATE
+:apps:commerce-api:checkstyleTest 통과
+
+재현 명령 (Java 21, Docker 사용 가능 환경)
+./gradlew :apps:commerce-api:test --tests '*WeeklyRankingFlowE2ETest' --tests '*PaymentIncidentExperimentTest' --tests '*LayeredArchitectureTest' :apps:commerce-api:checkstyleMain :apps:commerce-api:checkstyleTest --offline
+
+관련 결제·배치 회귀 (별도 Gradle 실행의 JUnit XML 발췌)
+name=com.loopers.application.order.OrderPaymentIntegrationTest tests=44 failures=0 errors=0 skipped=0 time=25.353
+name=com.loopers.application.order.PaymentBoundaryLogTest tests=5 failures=0 errors=0 skipped=0 time=5.38
+name=com.loopers.application.order.PaymentResultApplicationTest tests=10 failures=0 errors=0 skipped=0 time=5.508
+name=com.loopers.architecture.LayeredArchitectureTest tests=1 failures=0 errors=0 skipped=0 time=3.498
+name=com.loopers.job.ranking.RankingJobRestartTest tests=6 failures=0 errors=0 skipped=0 time=3.388
+name=com.loopers.job.ranking.WeeklyRankingPublishTest tests=6 failures=0 errors=0 skipped=0 time=3.488

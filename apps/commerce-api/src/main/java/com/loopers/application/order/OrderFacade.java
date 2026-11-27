@@ -14,6 +14,7 @@ import com.loopers.domain.user.UserService;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,8 +23,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.Supplier;
 
 @RequiredArgsConstructor
+@Slf4j
 @Component
 public class OrderFacade {
 
@@ -64,7 +67,8 @@ public class OrderFacade {
             payment.providerOrderId(), command.cardType(), command.cardNo(), payment.amount()
         );
         PaymentObservation observation = paymentProvider.create(request);
-        OrderPaymentInfo recorded = applyFinalResult(paymentTransactions.recordCreateResponse(orderId, observation));
+        OrderPaymentInfo recorded = applyFinalResult(
+            saving(orderId, "TX_B:CREATE_RESPONSE", () -> paymentTransactions.recordCreateResponse(orderId, observation)));
         return observation.kind() == PaymentObservation.Kind.UNKNOWN ? recorded.notChecked() : recorded;
     }
 
@@ -109,18 +113,36 @@ public class OrderFacade {
             return payment;
         }
         if (payment.hasFinalPaymentResult()) {
-            return paymentTransactions.applyRecordedResult(payment.order().id());
+            return applyFinalResult(payment);
         }
         PaymentObservation observation = lookup(payment);
+        Long orderId = payment.order().id();
         if (observation.kind() == PaymentObservation.Kind.UNKNOWN) {
+            // 저장 없이 끝나 DB에 흔적이 없다. 회로가 열린 조회는 PG 어댑터 로그도 없다.
+            log.warn("결제 결과 확인 보류: orderId={} source={} cause={}", orderId, source, observation.unknownCause());
             return payment.notChecked();
         }
-        return applyFinalResult(paymentTransactions.applyLookup(payment.order().id(), observation, source));
+        return applyFinalResult(
+            saving(orderId, "TX_B:" + source, () -> paymentTransactions.applyLookup(orderId, observation, source)));
     }
 
     private OrderPaymentInfo applyFinalResult(OrderPaymentInfo payment) {
+        Long orderId = payment.order().id();
         return payment.hasFinalPaymentResult()
-            ? paymentTransactions.applyRecordedResult(payment.order().id()) : payment;
+            ? saving(orderId, "TX_C", () -> paymentTransactions.applyRecordedResult(orderId)) : payment;
+    }
+
+    /**
+     * TX B·C가 실패하면 rollback되어 DB에는 시도한 흔적이 남지 않는다. PG 응답 로그와 맞춰 볼 수 있게 실패를 남기고 그대로 던진다.
+     */
+    private OrderPaymentInfo saving(Long orderId, String step, Supplier<OrderPaymentInfo> transaction) {
+        try {
+            return transaction.get();
+        } catch (RuntimeException exception) {
+            log.error("결제 결과 저장 실패: orderId={} step={} error={}", orderId, step,
+                exception.getClass().getSimpleName(), exception);
+            throw exception;
+        }
     }
 
     private PaymentObservation lookup(OrderPaymentInfo payment) {

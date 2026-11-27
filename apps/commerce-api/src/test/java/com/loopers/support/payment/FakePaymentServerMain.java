@@ -11,7 +11,6 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Executors;
@@ -88,13 +87,8 @@ public final class FakePaymentServerMain {
 
     private static String stats(FakePaymentServer pg) throws IOException {
         List<FakePaymentServer.Handled> handled = pg.handled();
-        var orders = new HashSet<String>();
+        var orders = pg.createCallsByOrder().keySet();
         ObjectMapper mapper = new ObjectMapper();
-        for (FakePaymentServer.Request request : pg.requests()) {
-            if (request.method().equals("POST")) {
-                orders.add(mapper.readTree(request.body()).path("orderId").asText());
-            }
-        }
         return "{\"createCalls\":" + pg.createCalls() + ",\"lookupCalls\":" + pg.lookupCalls()
             + ",\"transactionCount\":" + pg.transactionCount() + ",\"distinctCreateOrders\":" + orders.size()
             + ",\"createOrderIds\":" + mapper.writeValueAsString(orders)
