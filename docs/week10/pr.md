@@ -95,5 +95,6 @@ health는 **UP**인데 결제 3건이 **UNKNOWN**으로 남은 사고(PG는 SUCC
 
 - 설계·결정: `docs/week10/plan.md` (D-1 ~ D-12, 실행 결과, 변경 이력)
 - runbook: `docs/runbook/week10.md`
+- 기술 글: `docs/week10/blog.md`
 - 증거: `docs/week10/results/w10-20261125-192654/` (`summary.txt` · `checks.tsv` · `5-monitoring/` · `ai-diagnosis/`) · 마지막 커밋 실행 `docs/week10/results/w10-20261127-123517/`
 - 다시 돌리기: `bash docs/week10/run.sh` (`KEEP=1`이면 끝난 뒤 대시보드 http://127.0.0.1:33000/d/w10-incident · `PAUSE_AFTER_FAULT=1`이면 fault에서 멈춤 → `docs/week10/ai-diagnose.sh`)
