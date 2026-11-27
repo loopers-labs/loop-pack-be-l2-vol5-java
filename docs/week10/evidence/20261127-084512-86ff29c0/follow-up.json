@@ -1,9 +1,0 @@
-{
-  "runId" : "20261127-084512-86ff29c0",
-  "phase" : "follow-up",
-  "observedAt" : "2026-11-26T23:45:18.572703Z",
-  "relayedOrderIds" : [ "1", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "2", "20", "3", "4", "5", "6", "7", "8", "9" ],
-  "relayedEventIds" : [ "order-confirmed:v1:1", "order-confirmed:v1:10", "order-confirmed:v1:11", "order-confirmed:v1:12", "order-confirmed:v1:13", "order-confirmed:v1:14", "order-confirmed:v1:15", "order-confirmed:v1:16", "order-confirmed:v1:17", "order-confirmed:v1:18", "order-confirmed:v1:19", "order-confirmed:v1:2", "order-confirmed:v1:20", "order-confirmed:v1:3", "order-confirmed:v1:4", "order-confirmed:v1:5", "order-confirmed:v1:6", "order-confirmed:v1:7", "order-confirmed:v1:8", "order-confirmed:v1:9" ],
-  "outboxStatuses" : [ "PUBLISHED", "PUBLISHED", "PUBLISHED", "PUBLISHED", "PUBLISHED", "PUBLISHED", "PUBLISHED", "PUBLISHED", "PUBLISHED", "PUBLISHED", "PUBLISHED", "PUBLISHED", "PUBLISHED", "PUBLISHED", "PUBLISHED", "PUBLISHED", "PUBLISHED", "PUBLISHED", "PUBLISHED", "PUBLISHED" ],
-  "notLinkedInThisRun" : [ "purchase_activity", "weekly_ranking" ]
-}
