@@ -6,6 +6,7 @@ import ch.qos.logback.core.read.ListAppender;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.loopers.application.order.OrderConfirmedOutboxRelay;
+import com.loopers.application.order.OutboxMessageSender;
 import com.loopers.batch.job.ranking.WeeklyRankingJobConfig;
 import com.loopers.domain.payment.PaymentAttempt;
 import com.loopers.domain.payment.PaymentGateway;
@@ -25,6 +26,10 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
+import org.apache.kafka.clients.admin.AdminClient;
+import org.apache.kafka.clients.admin.AdminClientConfig;
+import org.apache.kafka.clients.consumer.OffsetAndMetadata;
+import org.apache.kafka.common.TopicPartition;
 import org.springframework.batch.core.BatchStatus;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.JobExecution;
@@ -68,6 +73,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -108,6 +114,7 @@ import static org.awaitility.Awaitility.await;
 class CheckoutIncidentE2ETest {
     static final String TOPIC = "order-events-CheckoutIncidentE2ETest";
     static final String GROUP = "purchase-activity-CheckoutIncidentE2ETest";
+    private static final TopicPartition PARTITION = new TopicPartition(TOPIC, 0);
     private static final String CARD = "0000-0000-0000-0000";
     private static final int INITIAL_STOCK = 30;
     private static final String COUNT = "commerce_payment_unresolved";
@@ -135,6 +142,7 @@ class CheckoutIncidentE2ETest {
     @Autowired private PaymentGateway gateway;
     @Autowired private PaymentGatewayProperties pgProperties;
     @Autowired private OrderConfirmedOutboxRelay relay;
+    @Autowired private OutboxMessageSender outboxSender;
     @Autowired private JobLauncher jobLauncher;
     @Autowired @Qualifier(WeeklyRankingJobConfig.JOB_NAME) private Job weeklyRankingJob;
     @Value("${local.server.port}") private int apiPort;
@@ -208,6 +216,14 @@ class CheckoutIncidentE2ETest {
             assertThat(gateway).isInstanceOf(HttpPaymentGateway.class);
 
             long userId = users.save(new User()).getId();
+            // 포인트·쿠폰 불변 조건을 "빈 상태 유지"가 아니라 실제 데이터 보존으로 보기 위해 미리 심는다.
+            // 포인트는 기존 충전 API 를 쓰고, 쿠폰은 PG 결제 경로와 무관하므로 행만 심는다 (도메인 구조는 바꾸지 않는다).
+            assertThat(post("/api/v1/points/charge", Map.of("amount", 500_000L), userId, 200)
+                .path("balance").asLong()).isEqualTo(500_000L);
+            jdbc.update("insert into coupon (created_at, updated_at, campaign_id, user_id, issued_at, expires_at,"
+                + " benefit_type, benefit_value, status) values (now(6), now(6), 9001, ?, now(6),"
+                + " date_add(now(6), interval 30 day), 'FIXED', 1000, 'ISSUED')", userId);
+            assertThat(count("select count(*) from coupon where user_id = " + userId)).isEqualTo(1);
             Product product = new Product(1L, "S5 synthetic product", new Price(1000L));
             product.changeStock(INITIAL_STOCK);
             long productId = products.save(product).getId();
@@ -225,6 +241,7 @@ class CheckoutIncidentE2ETest {
                 diagnose(fault, productId, boundaryLogs(appender, 0), stages);
                 Ranking r1 = publishRankingBeforeRecovery(productId, stages);
                 recover(fault, userId, productId, appender, stages, r1);
+                downstream(fault, productId, r1, stages);
             } finally {
                 databaseCleanUp.truncateAllTables();
             }
@@ -535,8 +552,16 @@ class CheckoutIncidentE2ETest {
             assertThat(item.path("productId").asLong()).isEqualTo(productId);
             assertThat(item.path("score").asLong()).isEqualTo(17);
             assertThat(item.path("rank").asInt()).isEqualTo(1);
+            Map<Long, String> confirmedAt = confirmedAtByOrder();
+            assertThat(confirmedAt).hasSize(17).allSatisfy((orderId, at) -> assertThat(at).isNotNull());
+            List<Map<String, Object>> r1Scores = jdbc.queryForList(
+                "select product_id, score, ranking from weekly_ranking_scores where snapshot_id = ? order by product_id", snapshotId);
+            List<Map<String, Object>> r1Inputs = frozenInputs(snapshotId);
+            data.put("confirmedAtBeforeRecovery", confirmedAt);
+            data.put("scores", r1Scores);
+            data.put("inputs", r1Inputs);
             data.put("result", "PASSED");
-            return new Ranking(periodStart, revision, snapshotId, 17L);
+            return new Ranking(periodStart, revision, snapshotId, 17L, confirmedAt, r1Scores, r1Inputs);
         } catch (Throwable e) {
             failure = e;
             data.put("result", e instanceof AssertionError ? "FAILED" : "ERROR");
@@ -630,6 +655,24 @@ class CheckoutIncidentE2ETest {
             assertThat(outboxAfter).isEqualTo(outboxBefore + 3).isEqualTo(20);
             assertThat(count("select count(distinct event_id) from order_confirmed_outbox")).isEqualTo(20);
             assertThat(count("select count(*) from order_confirmed_outbox where status = 'PENDING'")).isEqualTo(3);
+            // 주문 1건마다 Outbox 1건이고 event_id 가 그 주문에서 유도된다.
+            assertThat(jdbc.queryForList(
+                "select order_id, event_id from order_confirmed_outbox order by order_id"))
+                .hasSize(20).allSatisfy(row -> assertThat(row.get("event_id"))
+                    .isEqualTo("order-confirmed:v1:" + ((Number) row.get("order_id")).longValue()));
+
+            // 기존 17건의 최초 확정 시각은 그대로고, 복구된 3건에만 새 확정 시각이 생겼으며 같은 주에 속한다.
+            Map<Long, String> confirmedAtAfter = confirmedAtByOrder();
+            data.put("confirmedAtAfter", confirmedAtAfter);
+            assertThat(confirmedAtAfter).hasSize(20);
+            assertThat(confirmedAtAfter).containsAllEntriesOf(r1.confirmedAtBeforeRecovery());
+            for (long orderId : fault.faultTargets().keySet()) {
+                String at = confirmedAtAfter.get(orderId);
+                assertThat(r1.confirmedAtBeforeRecovery()).doesNotContainKey(orderId);
+                assertThat(at).isNotNull();
+                LocalDate day = LocalDate.parse(at.substring(0, 10));
+                assertThat(day).isBetween(r1.periodStart(), r1.periodStart().plusDays(6));
+            }
 
             Map<String, List<Map<String, Object>>> sideAfter = sideState();
             data.put("sideStateAfter", sideAfter);
@@ -720,6 +763,203 @@ class CheckoutIncidentE2ETest {
         }
     }
 
+
+    /**
+     * 복구된 사실의 후속 결과. 실제 relay·Kafka·consumer 로 구매 활동을 20 으로 만들고 r2 를 공개한다.
+     * 이미 공개한 r1 의 frozen input 과 점수 행은 끝까지 바뀌지 않아야 한다.
+     */
+    private void downstream(Stage fault, long productId, Ranking r1, Map<String, Object> stages) throws Throwable {
+        var faultFile = evidence.directory.resolve("fault.json");
+        var checksumFile = evidence.directory.resolve("fault.json.sha256");
+        byte[] originalFault = Files.readAllBytes(faultFile);
+        byte[] originalChecksum = Files.readAllBytes(checksumFile);
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("runId", evidence.runId);
+        data.put("phase", "downstream");
+        data.put("startedAt", Instant.now().toString());
+        data.put("r1SnapshotId", r1.snapshotId());
+        Throwable failure = null;
+        try {
+            // 1) 복구 3건의 Outbox 발행
+            int published = 0;
+            for (int round = 0; round < 10 && count("select count(*) from order_confirmed_outbox where status = 'PENDING'") > 0; round++) {
+                published += relay.runOnce().published();
+            }
+            data.put("outboxPublishedInThisStage", published);
+            assertThat(published).isEqualTo(3);
+            assertThat(count("select count(*) from order_confirmed_outbox where status = 'PUBLISHED'")).isEqualTo(20);
+            assertThat(count("select count(*) from order_confirmed_outbox where status <> 'PUBLISHED'")).isZero();
+
+            // 2) 실제 소비로 구매 활동 20 · 장부 20
+            await().atMost(Duration.ofSeconds(60)).pollInterval(Duration.ofMillis(200)).untilAsserted(() -> {
+                assertThat(count("select count(*) from product_purchase_activity")).isEqualTo(20);
+                assertThat(count("select count(*) from processed_order_confirmation")).isEqualTo(20);
+            });
+            data.put("activities", jdbc.queryForList(
+                "select order_id, product_id, quantity, confirmed_at from product_purchase_activity order by order_id"));
+            data.put("ledger", jdbc.queryForList(
+                "select event_id, order_id, confirmed_at from processed_order_confirmation order by order_id"));
+
+            // 3) 주문·이벤트·상품·수량 단위 연결. 주문 1건마다 활동 1행, 장부 1행이다.
+            assertThat(count("select count(*) from product_purchase_activity where product_id = " + productId)).isEqualTo(20);
+            assertThat(count("select coalesce(sum(quantity), 0) from product_purchase_activity")).isEqualTo(20);
+            assertThat(count("""
+                select count(*) from product_purchase_activity a
+                join orders o on o.id = a.order_id
+                join order_items i on i.order_id = o.id and i.product_id = a.product_id and i.quantity = a.quantity
+                where a.confirmed_at = o.confirmed_at
+                """)).as("order/product/quantity/confirmedAt must line up per row").isEqualTo(20);
+            assertThat(count("""
+                select count(*) from processed_order_confirmation l
+                where l.event_id = concat('order-confirmed:v1:', l.order_id)
+                """)).isEqualTo(20);
+            assertThat(count("select count(distinct order_id) from product_purchase_activity")).isEqualTo(20);
+            // Outbox 의 event_id 집합과 처리 장부의 event_id 집합이 정확히 일치한다 (양방향 차집합 0).
+            assertThat(count("""
+                select count(*) from (
+                    select event_id from order_confirmed_outbox
+                    union all select event_id from processed_order_confirmation
+                ) all_ids
+                where event_id not in (select event_id from order_confirmed_outbox)
+                   or event_id not in (select event_id from processed_order_confirmation)
+                """)).as("outbox and ledger event_id sets must match").isZero();
+            assertThat(jdbc.queryForList("select event_id from order_confirmed_outbox order by event_id", String.class))
+                .isEqualTo(jdbc.queryForList("select event_id from processed_order_confirmation order by event_id", String.class));
+            // 복구된 3건이 누락도 중복도 없이 정확히 1행씩이다.
+            for (long orderId : fault.faultTargets().keySet()) {
+                assertThat(count("select count(*) from product_purchase_activity where order_id = " + orderId)).isEqualTo(1);
+                assertThat(count("select count(*) from processed_order_confirmation where order_id = " + orderId)).isEqualTo(1);
+            }
+
+            // 4) 중복 발행·중복 소비에도 업무 활동 수는 늘지 않는다.
+            List<Map<String, Object>> activitiesBefore = jdbc.queryForList(
+                "select * from product_purchase_activity order by order_id");
+            for (long orderId : fault.faultTargets().keySet()) {
+                String payload = jdbc.queryForObject(
+                    "select payload from order_confirmed_outbox where order_id = ?", String.class, orderId);
+                assertThat(outboxSender.send(String.valueOf(orderId), payload).isPublished()).isTrue();
+            }
+            // 재발행된 record 가 실제로 소비돼 offset 이 커밋될 때까지 기다린 뒤에 불변을 본다.
+            // 기다리지 않으면 "아직 소비 전이라 수가 같다"를 "중복에도 수가 같다"로 착각할 수 있다.
+            long expectedOffset = 20 + fault.faultTargets().size();
+            await().atMost(Duration.ofSeconds(60)).pollInterval(Duration.ofMillis(200)).untilAsserted(() ->
+                assertThat(committedOffset()).as("consumer group committed offset").isEqualTo(expectedOffset));
+            data.put("committedOffsetAfterRepublish", committedOffset());
+            assertThat(count("select count(*) from product_purchase_activity")).isEqualTo(20);
+            assertThat(count("select count(*) from processed_order_confirmation")).isEqualTo(20);
+            assertThat(jdbc.queryForList("select * from product_purchase_activity order by order_id"))
+                .as("republished events must converge to the same business facts").isEqualTo(activitiesBefore);
+            data.put("republishedEvents", fault.faultTargets().size());
+
+            // 5) 최초 확정 시각 보존
+            Map<Long, String> confirmedAt = confirmedAtByOrder();
+            data.put("confirmedAt", confirmedAt);
+            assertThat(confirmedAt).hasSize(20).containsAllEntriesOf(r1.confirmedAtBeforeRecovery());
+
+            // 6) r2 freeze·계산·공개
+            int revision = nextRevision(r1.periodStart());
+            String snapshotId = snapshotId(r1.periodStart(), revision);
+            assertThat(revision).isGreaterThan(r1.revision());
+            data.put("r2SnapshotId", snapshotId);
+            JobExecution execution = jobLauncher.run(weeklyRankingJob, params(r1.periodStart(), snapshotId));
+            data.put("jobStatus", execution.getStatus().toString());
+            data.put("jobExitDescription", execution.getExitStatus().getExitDescription());
+            assertThat(execution.getStatus()).isEqualTo(BatchStatus.COMPLETED);
+            assertThat(count("select count(*) from weekly_ranking_inputs where snapshot_id = '" + snapshotId + "'")).isEqualTo(20);
+            assertThat(jdbc.queryForObject(
+                "select status from weekly_ranking_revisions where snapshot_id = ?", String.class, snapshotId))
+                .isEqualTo("COMPLETED");
+
+            // 7) 공개 포인터가 r2 로 이동
+            Map<String, Object> publication = jdbc.queryForMap(
+                "select snapshot_id, revision from weekly_ranking_publications where period_start = ?", r1.periodStart());
+            data.put("publication", publication);
+            assertThat(publication.get("snapshot_id")).isEqualTo(snapshotId);
+            assertThat(((Number) publication.get("revision")).intValue()).isEqualTo(revision);
+
+            // 8) 실제 랭킹 API score 20, rank 1
+            JsonNode ranking = getApi("/api/v1/rankings/weekly?periodStart=" + r1.periodStart());
+            data.put("rankingResponse", mapper.convertValue(ranking, Map.class));
+            assertThat(ranking.path("status").asText()).isEqualTo("PUBLISHED");
+            assertThat(ranking.path("snapshotId").asText()).isEqualTo(snapshotId);
+            JsonNode item = ranking.path("items").get(0);
+            assertThat(item.path("productId").asLong()).isEqualTo(productId);
+            assertThat(item.path("score").asLong()).isEqualTo(20);
+            assertThat(item.path("rank").asInt()).isEqualTo(1);
+
+            // 9) r1 의 frozen input 과 점수 행 전체 불변
+            List<Map<String, Object>> r1Scores = jdbc.queryForList(
+                "select product_id, score, ranking from weekly_ranking_scores where snapshot_id = ? order by product_id",
+                r1.snapshotId());
+            data.put("r1ScoresAfter", r1Scores);
+            List<Map<String, Object>> r1Inputs = frozenInputs(r1.snapshotId());
+            data.put("r1InputsAfter", r1Inputs);
+            assertThat(r1Inputs).hasSize(17).isEqualTo(r1.inputsBeforeRecovery());
+            assertThat(r1Scores).isEqualTo(r1.scoresBeforeRecovery());
+            assertThat(((Number) r1Scores.get(0).get("score")).longValue()).isEqualTo(r1.score());
+
+            // 10) 결제·PG·재고는 그대로
+            Snapshot snapshot = snapshot(productId);
+            data.put("snapshot", snapshot);
+            assertThat(snapshot.createCount()).isEqualTo(20);
+            assertThat(snapshot.transactions()).hasSize(20);
+            assertThat(snapshot.stock()).isEqualTo(10);
+            assertThat(snapshot.orders().stream().filter(row -> "SUCCESS".equals(row.get("attempt_status"))).count()).isEqualTo(20);
+            assertThat(snapshot.orders().stream().filter(row -> "UNKNOWN".equals(row.get("attempt_status"))).count()).isZero();
+
+            // 11) fault 원문과 체크섬 불변
+            boolean faultUnchanged = java.util.Arrays.equals(originalFault, Files.readAllBytes(faultFile))
+                && java.util.Arrays.equals(originalChecksum, Files.readAllBytes(checksumFile));
+            data.put("faultEvidenceUnchanged", faultUnchanged);
+            assertThat(faultUnchanged).isTrue();
+            data.put("result", "PASSED");
+        } catch (Throwable e) {
+            failure = e;
+            data.put("result", e instanceof AssertionError ? "FAILED" : "ERROR");
+            data.put("failureType", e.getClass().getName());
+            throw e;
+        } finally {
+            stages.put("downstream", data.get("result"));
+            data.put("endedAt", Instant.now().toString());
+            try {
+                evidence.write(mapper, "downstream.json", data);
+            } catch (IOException writeFailure) {
+                if (failure == null) {
+                    throw writeFailure;
+                }
+                failure.addSuppressed(writeFailure);
+            }
+        }
+    }
+
+    /** 한 snapshot 의 frozen input 전체 행. 공개 뒤에는 바뀌지 않아야 한다. */
+    private List<Map<String, Object>> frozenInputs(String snapshotId) {
+        return jdbc.queryForList(
+            "select order_id, product_id, quantity, confirmed_at from weekly_ranking_inputs where snapshot_id = ?"
+                + " order by order_id, product_id", snapshotId);
+    }
+
+    /** 소비자 그룹이 커밋한 offset. 재발행 record 가 실제로 소비됐는지 보는 기준이다. */
+    private long committedOffset() {
+        try (AdminClient admin = AdminClient.create(
+            Map.of(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, KafkaTestContainersConfig.bootstrapServers()))) {
+            OffsetAndMetadata committed = admin.listConsumerGroupOffsets(GROUP)
+                .partitionsToOffsetAndMetadata().get(10, TimeUnit.SECONDS).get(PARTITION);
+            return committed == null ? -1 : committed.offset();
+        } catch (Exception e) {
+            throw new IllegalStateException("committed offset 조회 실패", e);
+        }
+    }
+
+    /** 주문별 최초 확정 시각. 복구가 기존 값을 덮어쓰지 않았는지 보는 기준이다. */
+    private Map<Long, String> confirmedAtByOrder() {
+        Map<Long, String> confirmedAt = new LinkedHashMap<>();
+        for (var row : jdbc.queryForList("select id, confirmed_at from orders where confirmed_at is not null order by id")) {
+            confirmedAt.put(((Number) row.get("id")).longValue(), String.valueOf(row.get("confirmed_at")));
+        }
+        return confirmedAt;
+    }
+
     /** 포인트·쿠폰은 PG 복구로 바뀌지 않아야 한다. */
     private Map<String, List<Map<String, Object>>> sideState() {
         return Map.of(
@@ -766,7 +1006,11 @@ class CheckoutIncidentE2ETest {
             new HttpEntity<>(body, headers), String.class).getStatusCode().value();
     }
 
-    private record Ranking(LocalDate periodStart, int revision, String snapshotId, long score) {}
+    private record Ranking(
+        LocalDate periodStart, int revision, String snapshotId, long score,
+        Map<Long, String> confirmedAtBeforeRecovery, List<Map<String, Object>> scoresBeforeRecovery,
+        List<Map<String, Object>> inputsBeforeRecovery
+    ) {}
 
     private Map<String, List<Map<String, Object>>> diagnosisDbState() {
         return Map.of(
