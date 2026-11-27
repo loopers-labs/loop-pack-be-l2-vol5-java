@@ -1,0 +1,89 @@
+# 결제 미확인·에러 알람. 임계치는 실험용 예시이며 운영 근거로 정한 값이 아니다.
+# 탐지 지연 = gauge 갱신 주기(10s) + scrape 주기(5s) + 평가 주기(30s) + for.
+apiVersion: 1
+groups:
+  - orgId: 1
+    name: commerce-payment
+    folder: commerce
+    interval: 30s
+    rules:
+      - uid: payment-unknown-surge
+        title: 미확인 결제 급증
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              expr: max(commerce_payment_unresolved{status="UNKNOWN"})
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [ 5 ] }
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: warning }
+        annotations:
+          summary: 결제 결과 미확인(UNKNOWN) 시도가 5건을 넘었다
+          runbook: docs/runbook/week10.md
+
+      - uid: payment-unknown-oldest-age
+        title: 결제 미확인 고객 장기 대기
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              expr: max(commerce_payment_unresolved_oldest_age_seconds{status="UNKNOWN"})
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [ 600 ] }
+        for: 1m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: warning }
+        annotations:
+          summary: 가장 오래된 결제 미확인 시도가 10분 넘게 종결되지 않았다
+          runbook: docs/runbook/week10.md
+
+      - uid: app-error-logs
+        title: 애플리케이션 에러 로그 발생
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              expr: sum by (application) (rate(logback_events_total{level="error"}[1m]))
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [ 0 ] }
+        for: 1m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: warning }
+        annotations:
+          summary: '{{ $labels.application }} 에서 ERROR 로그가 발생했다. 해당 시각 로그를 jq 로 확인한다'
+          runbook: docs/runbook/week10.md

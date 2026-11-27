@@ -9,6 +9,7 @@ import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.spi.LoggingEventBuilder;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
@@ -17,7 +18,9 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
+import java.net.SocketTimeoutException;
 import java.net.http.HttpClient;
+import java.net.http.HttpTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
@@ -38,6 +41,10 @@ public class PgHttpClient {
 
     private static final String PAYMENTS_PATH = "/api/v1/payments";
     private static final int MAX_BODY_BYTES = 64 * 1024;
+    private static final String CREATE_RESULT_EVENT = "payment.create.result";
+    private static final String CAUSE_IO = "IO";
+    private static final String CAUSE_TIMEOUT = "TIMEOUT";
+    private static final String CAUSE_BAD_RESPONSE = "BAD_RESPONSE";
 
     private final PaymentPgProperties properties;
     private final ObjectMapper objectMapper;
@@ -46,7 +53,8 @@ public class PgHttpClient {
     private final RestClient createClient;
     private final RestClient lookupClient;
 
-    public PgHttpClient(PaymentPgProperties properties, ObjectMapper objectMapper) {
+    // 자동 설정된 builder 를 받아야 observation 이 붙어 PG 요청에 traceparent 가 실린다.
+    public PgHttpClient(PaymentPgProperties properties, ObjectMapper objectMapper, RestClient.Builder restClientBuilder) {
         this.properties = properties;
         this.objectMapper = objectMapper;
         this.parser = new PgResponseParser(objectMapper);
@@ -54,14 +62,14 @@ public class PgHttpClient {
                 .version(HttpClient.Version.HTTP_1_1)
                 .connectTimeout(properties.connectTimeout())
                 .build();
-        this.createClient = restClient(properties.createReadTimeout());
-        this.lookupClient = restClient(properties.lookupReadTimeout());
+        this.createClient = restClient(restClientBuilder, properties.createReadTimeout());
+        this.lookupClient = restClient(restClientBuilder, properties.lookupReadTimeout());
     }
 
-    private RestClient restClient(Duration readTimeout) {
+    private RestClient restClient(RestClient.Builder builder, Duration readTimeout) {
         JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
         requestFactory.setReadTimeout(readTimeout);
-        return RestClient.builder()
+        return builder.clone()
                 .baseUrl(properties.baseUrl())
                 .requestFactory(requestFactory)
                 .defaultHeader("X-USER-ID", properties.userId())
@@ -85,19 +93,24 @@ public class PgHttpClient {
                     .accept(MediaType.APPLICATION_JSON)
                     .body(createPayload(request)));
         } catch (RestClientException e) {
-            return unknown("요청 중 I/O 오류: " + e.getClass().getSimpleName());
+            return unknown(request, causeOf(e), "요청 중 I/O 오류: " + e.getClass().getSimpleName());
         }
 
         // 202 + 요청과 맞는 PENDING 거래면 수락, 4조건을 모두 만족한 422 면 확정 거절이다. 나머지는 거래 생성 여부를 알 수 없다.
         if (response.is(HttpStatus.ACCEPTED)) {
-            return parser.acceptedTransaction(response.body(), request)
-                    .map(PgPaymentRequestResult::accepted)
-                    .orElseGet(() -> unknown("202 응답 본문이 요청과 맞지 않음"));
+            Optional<PgTransactionInfo> accepted = parser.acceptedTransaction(response.body(), request);
+            if (accepted.isEmpty()) {
+                return unknown(request, CAUSE_BAD_RESPONSE, "202 응답 본문이 요청과 맞지 않음");
+            }
+            createResult(request, "ACCEPTED").addKeyValue("transactionKey", accepted.get().transactionKey())
+                    .log("PG 결제 요청 수락");
+            return PgPaymentRequestResult.accepted(accepted.get());
         }
         if (response.is(HttpStatus.UNPROCESSABLE_ENTITY) && parser.isConfirmedRejection(response.body(), request)) {
+            createResult(request, "REJECTED").log("PG 결제 요청 확정 거절");
             return PgPaymentRequestResult.rejectedWithoutTransaction();
         }
-        return unknown("생성 응답 상태 " + response.status().value());
+        return unknown(request, CAUSE_BAD_RESPONSE, "생성 응답 상태 " + response.status().value());
     }
 
     /**
@@ -142,10 +155,31 @@ public class PgHttpClient {
         }
     }
 
-    // 거래가 생겼는지 모르는 결과. 사유는 결과 타입에 담지 않고 로그로만 남긴다.
-    private PgPaymentRequestResult unknown(String reason) {
-        log.warn("PG 결제 요청 결과 미확인: {}", reason);
+    // 거래가 생겼는지 모르는 결과. 사유는 결과 타입에 담지 않고 로그로만 남긴다. 원인 분류는 응답 유실 진단의 근거다.
+    private PgPaymentRequestResult unknown(PgPaymentRequestCommand request, String cause, String reason) {
+        log.atWarn()
+                .addKeyValue("event", CREATE_RESULT_EVENT)
+                .addKeyValue("providerOrderId", request.providerOrderId())
+                .addKeyValue("result", "UNKNOWN")
+                .addKeyValue("cause", cause)
+                .log("PG 결제 요청 결과 미확인: cause={}, {}", cause, reason);
         return PgPaymentRequestResult.unknown();
+    }
+
+    private static LoggingEventBuilder createResult(PgPaymentRequestCommand request, String result) {
+        return log.atInfo()
+                .addKeyValue("event", CREATE_RESULT_EVENT)
+                .addKeyValue("providerOrderId", request.providerOrderId())
+                .addKeyValue("result", result);
+    }
+
+    private static String causeOf(Throwable error) {
+        for (Throwable cause = error; cause != null; cause = cause.getCause()) {
+            if (cause instanceof HttpTimeoutException || cause instanceof SocketTimeoutException) {
+                return CAUSE_TIMEOUT;
+            }
+        }
+        return CAUSE_IO;
     }
 
     private RawResponse exchangeForLookup(RestClient.RequestHeadersSpec<?> request) {

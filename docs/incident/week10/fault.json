@@ -1,0 +1,150 @@
+{
+  "phase" : "FAULT",
+  "observedAt" : "2026-11-27T08:34:34.275868Z",
+  "orders" : [ {
+    "order_id" : 11,
+    "order_status" : "CONFIRMED",
+    "confirmed_at" : "2026-11-25T03:00:00",
+    "attempt_key" : "incident-11",
+    "provider_order_id" : "LP-ORD-0000000011",
+    "transaction_key" : "TEST-TX-0011",
+    "attempt_status" : "SUCCEEDED",
+    "pgTransactions" : [ {
+      "key" : "TEST-TX-0011",
+      "status" : "SUCCESS",
+      "amount" : 1000
+    } ]
+  }, {
+    "order_id" : 12,
+    "order_status" : "PAYMENT_PENDING",
+    "confirmed_at" : null,
+    "attempt_key" : "incident-12",
+    "provider_order_id" : "LP-ORD-0000000012",
+    "transaction_key" : null,
+    "attempt_status" : "UNKNOWN",
+    "pgTransactions" : [ {
+      "key" : "TEST-TX-0012",
+      "status" : "SUCCESS",
+      "amount" : 1000
+    } ]
+  }, {
+    "order_id" : 13,
+    "order_status" : "CONFIRMED",
+    "confirmed_at" : "2026-11-25T03:00:00",
+    "attempt_key" : "incident-13",
+    "provider_order_id" : "LP-ORD-0000000013",
+    "transaction_key" : "TEST-TX-0013",
+    "attempt_status" : "SUCCEEDED",
+    "pgTransactions" : [ {
+      "key" : "TEST-TX-0013",
+      "status" : "SUCCESS",
+      "amount" : 1000
+    } ]
+  }, {
+    "order_id" : 14,
+    "order_status" : "CONFIRMED",
+    "confirmed_at" : "2026-11-25T03:00:00",
+    "attempt_key" : "incident-14",
+    "provider_order_id" : "LP-ORD-0000000014",
+    "transaction_key" : "TEST-TX-0014",
+    "attempt_status" : "SUCCEEDED",
+    "pgTransactions" : [ {
+      "key" : "TEST-TX-0014",
+      "status" : "SUCCESS",
+      "amount" : 1000
+    } ]
+  }, {
+    "order_id" : 15,
+    "order_status" : "PAYMENT_PENDING",
+    "confirmed_at" : null,
+    "attempt_key" : "incident-15",
+    "provider_order_id" : "LP-ORD-0000000015",
+    "transaction_key" : null,
+    "attempt_status" : "UNKNOWN",
+    "pgTransactions" : [ {
+      "key" : "TEST-TX-0015",
+      "status" : "SUCCESS",
+      "amount" : 1000
+    } ]
+  }, {
+    "order_id" : 16,
+    "order_status" : "CONFIRMED",
+    "confirmed_at" : "2026-11-25T03:00:00",
+    "attempt_key" : "incident-16",
+    "provider_order_id" : "LP-ORD-0000000016",
+    "transaction_key" : "TEST-TX-0016",
+    "attempt_status" : "SUCCEEDED",
+    "pgTransactions" : [ {
+      "key" : "TEST-TX-0016",
+      "status" : "SUCCESS",
+      "amount" : 1000
+    } ]
+  }, {
+    "order_id" : 17,
+    "order_status" : "CONFIRMED",
+    "confirmed_at" : "2026-11-25T03:00:00",
+    "attempt_key" : "incident-17",
+    "provider_order_id" : "LP-ORD-0000000017",
+    "transaction_key" : "TEST-TX-0017",
+    "attempt_status" : "SUCCEEDED",
+    "pgTransactions" : [ {
+      "key" : "TEST-TX-0017",
+      "status" : "SUCCESS",
+      "amount" : 1000
+    } ]
+  }, {
+    "order_id" : 18,
+    "order_status" : "CONFIRMED",
+    "confirmed_at" : "2026-11-25T03:00:00",
+    "attempt_key" : "incident-18",
+    "provider_order_id" : "LP-ORD-0000000018",
+    "transaction_key" : "TEST-TX-0018",
+    "attempt_status" : "SUCCEEDED",
+    "pgTransactions" : [ {
+      "key" : "TEST-TX-0018",
+      "status" : "SUCCESS",
+      "amount" : 1000
+    } ]
+  }, {
+    "order_id" : 19,
+    "order_status" : "PAYMENT_PENDING",
+    "confirmed_at" : null,
+    "attempt_key" : "incident-19",
+    "provider_order_id" : "LP-ORD-0000000019",
+    "transaction_key" : null,
+    "attempt_status" : "UNKNOWN",
+    "pgTransactions" : [ {
+      "key" : "TEST-TX-0019",
+      "status" : "SUCCESS",
+      "amount" : 1000
+    } ]
+  }, {
+    "order_id" : 20,
+    "order_status" : "CONFIRMED",
+    "confirmed_at" : "2026-11-25T03:00:00",
+    "attempt_key" : "incident-20",
+    "provider_order_id" : "LP-ORD-0000000020",
+    "transaction_key" : "TEST-TX-0020",
+    "attempt_status" : "SUCCEEDED",
+    "pgTransactions" : [ {
+      "key" : "TEST-TX-0020",
+      "status" : "SUCCESS",
+      "amount" : 1000
+    } ]
+  } ],
+  "attemptStatusCounts" : {
+    "SUCCEEDED" : 7,
+    "UNKNOWN" : 3
+  },
+  "pgSuccessTransactions" : 10,
+  "pgTransactionsTotal" : 20,
+  "pgCreateCalls" : 20,
+  "pgDuplicateCreates" : 0,
+  "stock" : 5,
+  "lostOrders" : [ 12, 15, 19 ],
+  "pgStatusesOfLost" : {
+    "LP-ORD-0000000012" : "SUCCESS",
+    "LP-ORD-0000000015" : "SUCCESS",
+    "LP-ORD-0000000019" : "SUCCESS"
+  }
+}

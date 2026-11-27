@@ -27,6 +27,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.web.client.RestClient;
 
 import java.util.List;
 
@@ -535,7 +536,7 @@ class PaymentIntegrationTest extends PaymentFlowTestSupport {
     class Restart {
         // 서비스·client 를 새로 만든다. DB 와 PG 의 거래 상태는 그대로다.
         private PaymentGateway restartedGateway() {
-            return new PaymentGatewayImpl(new PgHttpClient(pgProperties, new ObjectMapper()));
+            return new PaymentGatewayImpl(new PgHttpClient(pgProperties, new ObjectMapper(), RestClient.builder()));
         }
 
         private PaymentResultLookupFacade restartedFacade() {

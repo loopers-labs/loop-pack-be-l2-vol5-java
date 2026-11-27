@@ -1,6 +1,7 @@
 package com.loopers.application.order.event;
 
 import com.loopers.application.order.dto.OrderConfirmedInfo;
+import com.loopers.application.outbox.TraceParentProvider;
 import com.loopers.contract.order.OrderConfirmed;
 import com.loopers.contract.order.OrderConfirmedItem;
 import com.loopers.domain.order.Order;
@@ -23,6 +24,7 @@ public class OrderConfirmedOutboxRecorder {
     private static final String SCHEMA_VERSION = "v1";
 
     private final OutboxService outboxService;
+    private final TraceParentProvider traceParentProvider;
 
     public void record(Order order, ZonedDateTime recordedAt) {
         OrderConfirmedInfo confirmed = OrderConfirmedInfo.from(order);
@@ -33,7 +35,8 @@ public class OrderConfirmedOutboxRecorder {
             SCHEMA_VERSION,
             String.valueOf(confirmed.orderId()),
             toAvroBytes(confirmed),
-            recordedAt
+            recordedAt,
+            traceParentProvider.current().orElse(null)
         ));
     }
 

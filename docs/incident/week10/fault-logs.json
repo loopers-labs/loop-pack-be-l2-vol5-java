@@ -1,0 +1,1346 @@
+[ {
+  "level" : "INFO",
+  "message" : "PG 결제 요청 수락",
+  "keyValues" : {
+    "result" : "ACCEPTED",
+    "providerOrderId" : "LP-ORD-0000000001",
+    "transactionKey" : "TEST-TX-0001",
+    "event" : "payment.create.result"
+  },
+  "mdc" : {
+    "traceId" : "460f1fdec2891c665f3850784f12a9a9",
+    "orderId" : "1",
+    "spanId" : "8f6f2dd34440f8bd"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "결제 결과 반영: REQUESTED -> PENDING, order=PAYMENT_PENDING",
+  "keyValues" : {
+    "providerOrderId" : "LP-ORD-0000000001",
+    "orderStatus" : "PAYMENT_PENDING",
+    "from" : "REQUESTED",
+    "to" : "PENDING",
+    "event" : "payment.apply.committed"
+  },
+  "mdc" : {
+    "traceId" : "460f1fdec2891c665f3850784f12a9a9",
+    "orderId" : "1",
+    "spanId" : "8f6f2dd34440f8bd"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "PG 결제 상태 조회: outcome=ANSWERED, count=1",
+  "keyValues" : {
+    "pgStatus" : "SUCCESS",
+    "providerOrderId" : "LP-ORD-0000000001",
+    "count" : "1",
+    "transactionKey" : "TEST-TX-0001",
+    "event" : "payment.lookup.result",
+    "outcome" : "ANSWERED"
+  },
+  "mdc" : {
+    "traceId" : "81d1d34b02e1406bb66c5b1418990e40",
+    "orderId" : "1",
+    "spanId" : "7f48957e839bd0d8"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "결제 결과 반영: PENDING -> SUCCEEDED, order=CONFIRMED",
+  "keyValues" : {
+    "providerOrderId" : "LP-ORD-0000000001",
+    "orderStatus" : "CONFIRMED",
+    "from" : "PENDING",
+    "to" : "SUCCEEDED",
+    "event" : "payment.apply.committed"
+  },
+  "mdc" : {
+    "traceId" : "81d1d34b02e1406bb66c5b1418990e40",
+    "orderId" : "1",
+    "spanId" : "7f48957e839bd0d8"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "PG 결제 요청 수락",
+  "keyValues" : {
+    "result" : "ACCEPTED",
+    "providerOrderId" : "LP-ORD-0000000002",
+    "transactionKey" : "TEST-TX-0002",
+    "event" : "payment.create.result"
+  },
+  "mdc" : {
+    "traceId" : "46cf148d72f25234d336bb40ec0d0fdf",
+    "orderId" : "2",
+    "spanId" : "8973f16123e1032e"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "결제 결과 반영: REQUESTED -> PENDING, order=PAYMENT_PENDING",
+  "keyValues" : {
+    "providerOrderId" : "LP-ORD-0000000002",
+    "orderStatus" : "PAYMENT_PENDING",
+    "from" : "REQUESTED",
+    "to" : "PENDING",
+    "event" : "payment.apply.committed"
+  },
+  "mdc" : {
+    "traceId" : "46cf148d72f25234d336bb40ec0d0fdf",
+    "orderId" : "2",
+    "spanId" : "8973f16123e1032e"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "PG 결제 상태 조회: outcome=ANSWERED, count=1",
+  "keyValues" : {
+    "pgStatus" : "SUCCESS",
+    "providerOrderId" : "LP-ORD-0000000002",
+    "count" : "1",
+    "transactionKey" : "TEST-TX-0002",
+    "event" : "payment.lookup.result",
+    "outcome" : "ANSWERED"
+  },
+  "mdc" : {
+    "traceId" : "3493e6b42e09d39158a7c67d6bf214c4",
+    "orderId" : "2",
+    "spanId" : "869c823259596ad3"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "결제 결과 반영: PENDING -> SUCCEEDED, order=CONFIRMED",
+  "keyValues" : {
+    "providerOrderId" : "LP-ORD-0000000002",
+    "orderStatus" : "CONFIRMED",
+    "from" : "PENDING",
+    "to" : "SUCCEEDED",
+    "event" : "payment.apply.committed"
+  },
+  "mdc" : {
+    "traceId" : "3493e6b42e09d39158a7c67d6bf214c4",
+    "orderId" : "2",
+    "spanId" : "869c823259596ad3"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "PG 결제 요청 수락",
+  "keyValues" : {
+    "result" : "ACCEPTED",
+    "providerOrderId" : "LP-ORD-0000000003",
+    "transactionKey" : "TEST-TX-0003",
+    "event" : "payment.create.result"
+  },
+  "mdc" : {
+    "traceId" : "f09e55fb3e1c15a31182cfe3e5d859a6",
+    "orderId" : "3",
+    "spanId" : "0465fb9f1def08d2"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "결제 결과 반영: REQUESTED -> PENDING, order=PAYMENT_PENDING",
+  "keyValues" : {
+    "providerOrderId" : "LP-ORD-0000000003",
+    "orderStatus" : "PAYMENT_PENDING",
+    "from" : "REQUESTED",
+    "to" : "PENDING",
+    "event" : "payment.apply.committed"
+  },
+  "mdc" : {
+    "traceId" : "f09e55fb3e1c15a31182cfe3e5d859a6",
+    "orderId" : "3",
+    "spanId" : "0465fb9f1def08d2"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "PG 결제 상태 조회: outcome=ANSWERED, count=1",
+  "keyValues" : {
+    "pgStatus" : "SUCCESS",
+    "providerOrderId" : "LP-ORD-0000000003",
+    "count" : "1",
+    "transactionKey" : "TEST-TX-0003",
+    "event" : "payment.lookup.result",
+    "outcome" : "ANSWERED"
+  },
+  "mdc" : {
+    "traceId" : "b90f92151e5697d99bb39dcaa25dc2d8",
+    "orderId" : "3",
+    "spanId" : "505eb5b374b437ff"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "결제 결과 반영: PENDING -> SUCCEEDED, order=CONFIRMED",
+  "keyValues" : {
+    "providerOrderId" : "LP-ORD-0000000003",
+    "orderStatus" : "CONFIRMED",
+    "from" : "PENDING",
+    "to" : "SUCCEEDED",
+    "event" : "payment.apply.committed"
+  },
+  "mdc" : {
+    "traceId" : "b90f92151e5697d99bb39dcaa25dc2d8",
+    "orderId" : "3",
+    "spanId" : "505eb5b374b437ff"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "PG 결제 요청 수락",
+  "keyValues" : {
+    "result" : "ACCEPTED",
+    "providerOrderId" : "LP-ORD-0000000004",
+    "transactionKey" : "TEST-TX-0004",
+    "event" : "payment.create.result"
+  },
+  "mdc" : {
+    "traceId" : "8e20aa57e8752d8319b83f6375b6fc5f",
+    "orderId" : "4",
+    "spanId" : "e3abf05b4848e074"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "결제 결과 반영: REQUESTED -> PENDING, order=PAYMENT_PENDING",
+  "keyValues" : {
+    "providerOrderId" : "LP-ORD-0000000004",
+    "orderStatus" : "PAYMENT_PENDING",
+    "from" : "REQUESTED",
+    "to" : "PENDING",
+    "event" : "payment.apply.committed"
+  },
+  "mdc" : {
+    "traceId" : "8e20aa57e8752d8319b83f6375b6fc5f",
+    "orderId" : "4",
+    "spanId" : "e3abf05b4848e074"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "PG 결제 상태 조회: outcome=ANSWERED, count=1",
+  "keyValues" : {
+    "pgStatus" : "SUCCESS",
+    "providerOrderId" : "LP-ORD-0000000004",
+    "count" : "1",
+    "transactionKey" : "TEST-TX-0004",
+    "event" : "payment.lookup.result",
+    "outcome" : "ANSWERED"
+  },
+  "mdc" : {
+    "traceId" : "d00d84f35ea893814db18a68ac2101f1",
+    "orderId" : "4",
+    "spanId" : "ebd090c2257b43a2"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "결제 결과 반영: PENDING -> SUCCEEDED, order=CONFIRMED",
+  "keyValues" : {
+    "providerOrderId" : "LP-ORD-0000000004",
+    "orderStatus" : "CONFIRMED",
+    "from" : "PENDING",
+    "to" : "SUCCEEDED",
+    "event" : "payment.apply.committed"
+  },
+  "mdc" : {
+    "traceId" : "d00d84f35ea893814db18a68ac2101f1",
+    "orderId" : "4",
+    "spanId" : "ebd090c2257b43a2"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "PG 결제 요청 수락",
+  "keyValues" : {
+    "result" : "ACCEPTED",
+    "providerOrderId" : "LP-ORD-0000000005",
+    "transactionKey" : "TEST-TX-0005",
+    "event" : "payment.create.result"
+  },
+  "mdc" : {
+    "traceId" : "b31f3371722e21d0a75f41c01c39a0a6",
+    "orderId" : "5",
+    "spanId" : "bb0b7e721a608c2b"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "결제 결과 반영: REQUESTED -> PENDING, order=PAYMENT_PENDING",
+  "keyValues" : {
+    "providerOrderId" : "LP-ORD-0000000005",
+    "orderStatus" : "PAYMENT_PENDING",
+    "from" : "REQUESTED",
+    "to" : "PENDING",
+    "event" : "payment.apply.committed"
+  },
+  "mdc" : {
+    "traceId" : "b31f3371722e21d0a75f41c01c39a0a6",
+    "orderId" : "5",
+    "spanId" : "bb0b7e721a608c2b"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "PG 결제 상태 조회: outcome=ANSWERED, count=1",
+  "keyValues" : {
+    "pgStatus" : "SUCCESS",
+    "providerOrderId" : "LP-ORD-0000000005",
+    "count" : "1",
+    "transactionKey" : "TEST-TX-0005",
+    "event" : "payment.lookup.result",
+    "outcome" : "ANSWERED"
+  },
+  "mdc" : {
+    "traceId" : "b4b30f732907eccf84da5dc903dfc25b",
+    "orderId" : "5",
+    "spanId" : "0e0cc8a7d9683e1b"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "결제 결과 반영: PENDING -> SUCCEEDED, order=CONFIRMED",
+  "keyValues" : {
+    "providerOrderId" : "LP-ORD-0000000005",
+    "orderStatus" : "CONFIRMED",
+    "from" : "PENDING",
+    "to" : "SUCCEEDED",
+    "event" : "payment.apply.committed"
+  },
+  "mdc" : {
+    "traceId" : "b4b30f732907eccf84da5dc903dfc25b",
+    "orderId" : "5",
+    "spanId" : "0e0cc8a7d9683e1b"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "PG 결제 요청 수락",
+  "keyValues" : {
+    "result" : "ACCEPTED",
+    "providerOrderId" : "LP-ORD-0000000006",
+    "transactionKey" : "TEST-TX-0006",
+    "event" : "payment.create.result"
+  },
+  "mdc" : {
+    "traceId" : "185f7980feeea1e409050c6c490654fa",
+    "orderId" : "6",
+    "spanId" : "d2325df49304d926"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "결제 결과 반영: REQUESTED -> PENDING, order=PAYMENT_PENDING",
+  "keyValues" : {
+    "providerOrderId" : "LP-ORD-0000000006",
+    "orderStatus" : "PAYMENT_PENDING",
+    "from" : "REQUESTED",
+    "to" : "PENDING",
+    "event" : "payment.apply.committed"
+  },
+  "mdc" : {
+    "traceId" : "185f7980feeea1e409050c6c490654fa",
+    "orderId" : "6",
+    "spanId" : "d2325df49304d926"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "PG 결제 상태 조회: outcome=ANSWERED, count=1",
+  "keyValues" : {
+    "pgStatus" : "SUCCESS",
+    "providerOrderId" : "LP-ORD-0000000006",
+    "count" : "1",
+    "transactionKey" : "TEST-TX-0006",
+    "event" : "payment.lookup.result",
+    "outcome" : "ANSWERED"
+  },
+  "mdc" : {
+    "traceId" : "9e6ece141ddc5dccea4880767eae6a95",
+    "orderId" : "6",
+    "spanId" : "c1354b4a8127f4a3"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "결제 결과 반영: PENDING -> SUCCEEDED, order=CONFIRMED",
+  "keyValues" : {
+    "providerOrderId" : "LP-ORD-0000000006",
+    "orderStatus" : "CONFIRMED",
+    "from" : "PENDING",
+    "to" : "SUCCEEDED",
+    "event" : "payment.apply.committed"
+  },
+  "mdc" : {
+    "traceId" : "9e6ece141ddc5dccea4880767eae6a95",
+    "orderId" : "6",
+    "spanId" : "c1354b4a8127f4a3"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "PG 결제 요청 수락",
+  "keyValues" : {
+    "result" : "ACCEPTED",
+    "providerOrderId" : "LP-ORD-0000000007",
+    "transactionKey" : "TEST-TX-0007",
+    "event" : "payment.create.result"
+  },
+  "mdc" : {
+    "traceId" : "6a0400998fa51275546eb820b900bbad",
+    "orderId" : "7",
+    "spanId" : "a64cc109fdc84e91"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "결제 결과 반영: REQUESTED -> PENDING, order=PAYMENT_PENDING",
+  "keyValues" : {
+    "providerOrderId" : "LP-ORD-0000000007",
+    "orderStatus" : "PAYMENT_PENDING",
+    "from" : "REQUESTED",
+    "to" : "PENDING",
+    "event" : "payment.apply.committed"
+  },
+  "mdc" : {
+    "traceId" : "6a0400998fa51275546eb820b900bbad",
+    "orderId" : "7",
+    "spanId" : "a64cc109fdc84e91"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "PG 결제 상태 조회: outcome=ANSWERED, count=1",
+  "keyValues" : {
+    "pgStatus" : "SUCCESS",
+    "providerOrderId" : "LP-ORD-0000000007",
+    "count" : "1",
+    "transactionKey" : "TEST-TX-0007",
+    "event" : "payment.lookup.result",
+    "outcome" : "ANSWERED"
+  },
+  "mdc" : {
+    "traceId" : "6ce7a0950e474b11b21158c22c50c4d3",
+    "orderId" : "7",
+    "spanId" : "6227ad3e124cb0ed"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "결제 결과 반영: PENDING -> SUCCEEDED, order=CONFIRMED",
+  "keyValues" : {
+    "providerOrderId" : "LP-ORD-0000000007",
+    "orderStatus" : "CONFIRMED",
+    "from" : "PENDING",
+    "to" : "SUCCEEDED",
+    "event" : "payment.apply.committed"
+  },
+  "mdc" : {
+    "traceId" : "6ce7a0950e474b11b21158c22c50c4d3",
+    "orderId" : "7",
+    "spanId" : "6227ad3e124cb0ed"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "PG 결제 요청 수락",
+  "keyValues" : {
+    "result" : "ACCEPTED",
+    "providerOrderId" : "LP-ORD-0000000008",
+    "transactionKey" : "TEST-TX-0008",
+    "event" : "payment.create.result"
+  },
+  "mdc" : {
+    "traceId" : "f7633c3a903a3e7e9f7bbe5b4aa3edcc",
+    "orderId" : "8",
+    "spanId" : "9b488a36d3823932"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "결제 결과 반영: REQUESTED -> PENDING, order=PAYMENT_PENDING",
+  "keyValues" : {
+    "providerOrderId" : "LP-ORD-0000000008",
+    "orderStatus" : "PAYMENT_PENDING",
+    "from" : "REQUESTED",
+    "to" : "PENDING",
+    "event" : "payment.apply.committed"
+  },
+  "mdc" : {
+    "traceId" : "f7633c3a903a3e7e9f7bbe5b4aa3edcc",
+    "orderId" : "8",
+    "spanId" : "9b488a36d3823932"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "PG 결제 상태 조회: outcome=ANSWERED, count=1",
+  "keyValues" : {
+    "pgStatus" : "SUCCESS",
+    "providerOrderId" : "LP-ORD-0000000008",
+    "count" : "1",
+    "transactionKey" : "TEST-TX-0008",
+    "event" : "payment.lookup.result",
+    "outcome" : "ANSWERED"
+  },
+  "mdc" : {
+    "traceId" : "a3008ea1636728ecede7780b312e8131",
+    "orderId" : "8",
+    "spanId" : "a6991ab8d0ff1090"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "결제 결과 반영: PENDING -> SUCCEEDED, order=CONFIRMED",
+  "keyValues" : {
+    "providerOrderId" : "LP-ORD-0000000008",
+    "orderStatus" : "CONFIRMED",
+    "from" : "PENDING",
+    "to" : "SUCCEEDED",
+    "event" : "payment.apply.committed"
+  },
+  "mdc" : {
+    "traceId" : "a3008ea1636728ecede7780b312e8131",
+    "orderId" : "8",
+    "spanId" : "a6991ab8d0ff1090"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "PG 결제 요청 수락",
+  "keyValues" : {
+    "result" : "ACCEPTED",
+    "providerOrderId" : "LP-ORD-0000000009",
+    "transactionKey" : "TEST-TX-0009",
+    "event" : "payment.create.result"
+  },
+  "mdc" : {
+    "traceId" : "a542b113bf964f73830fb17da9e897d6",
+    "orderId" : "9",
+    "spanId" : "1b0649cc46dae149"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "결제 결과 반영: REQUESTED -> PENDING, order=PAYMENT_PENDING",
+  "keyValues" : {
+    "providerOrderId" : "LP-ORD-0000000009",
+    "orderStatus" : "PAYMENT_PENDING",
+    "from" : "REQUESTED",
+    "to" : "PENDING",
+    "event" : "payment.apply.committed"
+  },
+  "mdc" : {
+    "traceId" : "a542b113bf964f73830fb17da9e897d6",
+    "orderId" : "9",
+    "spanId" : "1b0649cc46dae149"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "PG 결제 상태 조회: outcome=ANSWERED, count=1",
+  "keyValues" : {
+    "pgStatus" : "SUCCESS",
+    "providerOrderId" : "LP-ORD-0000000009",
+    "count" : "1",
+    "transactionKey" : "TEST-TX-0009",
+    "event" : "payment.lookup.result",
+    "outcome" : "ANSWERED"
+  },
+  "mdc" : {
+    "traceId" : "c07cf0d6c4bc88bdaddd7f240e43a693",
+    "orderId" : "9",
+    "spanId" : "e6dfd7d50d8d078e"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "결제 결과 반영: PENDING -> SUCCEEDED, order=CONFIRMED",
+  "keyValues" : {
+    "providerOrderId" : "LP-ORD-0000000009",
+    "orderStatus" : "CONFIRMED",
+    "from" : "PENDING",
+    "to" : "SUCCEEDED",
+    "event" : "payment.apply.committed"
+  },
+  "mdc" : {
+    "traceId" : "c07cf0d6c4bc88bdaddd7f240e43a693",
+    "orderId" : "9",
+    "spanId" : "e6dfd7d50d8d078e"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "PG 결제 요청 수락",
+  "keyValues" : {
+    "result" : "ACCEPTED",
+    "providerOrderId" : "LP-ORD-0000000010",
+    "transactionKey" : "TEST-TX-0010",
+    "event" : "payment.create.result"
+  },
+  "mdc" : {
+    "traceId" : "0b28512d3fdca5e5bc79690147fb2194",
+    "orderId" : "10",
+    "spanId" : "13186b44fa90d76c"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "결제 결과 반영: REQUESTED -> PENDING, order=PAYMENT_PENDING",
+  "keyValues" : {
+    "providerOrderId" : "LP-ORD-0000000010",
+    "orderStatus" : "PAYMENT_PENDING",
+    "from" : "REQUESTED",
+    "to" : "PENDING",
+    "event" : "payment.apply.committed"
+  },
+  "mdc" : {
+    "traceId" : "0b28512d3fdca5e5bc79690147fb2194",
+    "orderId" : "10",
+    "spanId" : "13186b44fa90d76c"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "PG 결제 상태 조회: outcome=ANSWERED, count=1",
+  "keyValues" : {
+    "pgStatus" : "SUCCESS",
+    "providerOrderId" : "LP-ORD-0000000010",
+    "count" : "1",
+    "transactionKey" : "TEST-TX-0010",
+    "event" : "payment.lookup.result",
+    "outcome" : "ANSWERED"
+  },
+  "mdc" : {
+    "traceId" : "91d6b3bb0792db4353bbeb729c830a49",
+    "orderId" : "10",
+    "spanId" : "c87727157599afd9"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "결제 결과 반영: PENDING -> SUCCEEDED, order=CONFIRMED",
+  "keyValues" : {
+    "providerOrderId" : "LP-ORD-0000000010",
+    "orderStatus" : "CONFIRMED",
+    "from" : "PENDING",
+    "to" : "SUCCEEDED",
+    "event" : "payment.apply.committed"
+  },
+  "mdc" : {
+    "traceId" : "91d6b3bb0792db4353bbeb729c830a49",
+    "orderId" : "10",
+    "spanId" : "c87727157599afd9"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "Outbox 전송 성공. eventId=order-confirmed:v1:1, orderId=1, topic=incident-e2e-f0b0b4d3-2987-4eb1-8bdd-e33691dffbb5, partition=0, offset=0",
+  "keyValues" : {
+    "eventId" : "order-confirmed:v1:1",
+    "partition" : "0",
+    "offset" : "0",
+    "orderId" : "1",
+    "event" : "outbox.published"
+  },
+  "mdc" : {
+    "spanId" : "755e611152314875",
+    "traceId" : "692a23c0d656f2987479f855d6cb6ecd"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "Outbox 전송 성공. eventId=order-confirmed:v1:2, orderId=2, topic=incident-e2e-f0b0b4d3-2987-4eb1-8bdd-e33691dffbb5, partition=0, offset=1",
+  "keyValues" : {
+    "eventId" : "order-confirmed:v1:2",
+    "partition" : "0",
+    "offset" : "1",
+    "orderId" : "2",
+    "event" : "outbox.published"
+  },
+  "mdc" : {
+    "spanId" : "755e611152314875",
+    "traceId" : "692a23c0d656f2987479f855d6cb6ecd"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "PG 결제 요청 수락",
+  "keyValues" : {
+    "result" : "ACCEPTED",
+    "providerOrderId" : "LP-ORD-0000000011",
+    "transactionKey" : "TEST-TX-0011",
+    "event" : "payment.create.result"
+  },
+  "mdc" : {
+    "traceId" : "97801d8ad78142ebc7b27d627e1b4fe5",
+    "orderId" : "11",
+    "spanId" : "6126899d9fe304ea"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "결제 결과 반영: REQUESTED -> PENDING, order=PAYMENT_PENDING",
+  "keyValues" : {
+    "providerOrderId" : "LP-ORD-0000000011",
+    "orderStatus" : "PAYMENT_PENDING",
+    "from" : "REQUESTED",
+    "to" : "PENDING",
+    "event" : "payment.apply.committed"
+  },
+  "mdc" : {
+    "traceId" : "97801d8ad78142ebc7b27d627e1b4fe5",
+    "orderId" : "11",
+    "spanId" : "6126899d9fe304ea"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "PG 결제 상태 조회: outcome=ANSWERED, count=1",
+  "keyValues" : {
+    "pgStatus" : "SUCCESS",
+    "providerOrderId" : "LP-ORD-0000000011",
+    "count" : "1",
+    "transactionKey" : "TEST-TX-0011",
+    "event" : "payment.lookup.result",
+    "outcome" : "ANSWERED"
+  },
+  "mdc" : {
+    "traceId" : "acf101f9747219e051f3f11931eb0f3f",
+    "orderId" : "11",
+    "spanId" : "2e4facf4f4f5dc2a"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "결제 결과 반영: PENDING -> SUCCEEDED, order=CONFIRMED",
+  "keyValues" : {
+    "providerOrderId" : "LP-ORD-0000000011",
+    "orderStatus" : "CONFIRMED",
+    "from" : "PENDING",
+    "to" : "SUCCEEDED",
+    "event" : "payment.apply.committed"
+  },
+  "mdc" : {
+    "traceId" : "acf101f9747219e051f3f11931eb0f3f",
+    "orderId" : "11",
+    "spanId" : "2e4facf4f4f5dc2a"
+  }
+}, {
+  "level" : "WARN",
+  "message" : "PG 결제 요청 결과 미확인: cause=IO, 요청 중 I/O 오류: ResourceAccessException",
+  "keyValues" : {
+    "result" : "UNKNOWN",
+    "providerOrderId" : "LP-ORD-0000000012",
+    "cause" : "IO",
+    "event" : "payment.create.result"
+  },
+  "mdc" : {
+    "traceId" : "470f8d2123ed4b4f914373ad2fd28ee3",
+    "orderId" : "12",
+    "spanId" : "a6dea6ee451a537b"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "결제 결과 반영: REQUESTED -> UNKNOWN, order=PAYMENT_PENDING",
+  "keyValues" : {
+    "providerOrderId" : "LP-ORD-0000000012",
+    "orderStatus" : "PAYMENT_PENDING",
+    "from" : "REQUESTED",
+    "to" : "UNKNOWN",
+    "event" : "payment.apply.committed"
+  },
+  "mdc" : {
+    "traceId" : "470f8d2123ed4b4f914373ad2fd28ee3",
+    "orderId" : "12",
+    "spanId" : "a6dea6ee451a537b"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "PG 결제 요청 수락",
+  "keyValues" : {
+    "result" : "ACCEPTED",
+    "providerOrderId" : "LP-ORD-0000000013",
+    "transactionKey" : "TEST-TX-0013",
+    "event" : "payment.create.result"
+  },
+  "mdc" : {
+    "traceId" : "7f52f5c8e7bb9ab5f06509d86a79c6ce",
+    "orderId" : "13",
+    "spanId" : "bd3e0bf137975ee3"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "결제 결과 반영: REQUESTED -> PENDING, order=PAYMENT_PENDING",
+  "keyValues" : {
+    "providerOrderId" : "LP-ORD-0000000013",
+    "orderStatus" : "PAYMENT_PENDING",
+    "from" : "REQUESTED",
+    "to" : "PENDING",
+    "event" : "payment.apply.committed"
+  },
+  "mdc" : {
+    "traceId" : "7f52f5c8e7bb9ab5f06509d86a79c6ce",
+    "orderId" : "13",
+    "spanId" : "bd3e0bf137975ee3"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "PG 결제 상태 조회: outcome=ANSWERED, count=1",
+  "keyValues" : {
+    "pgStatus" : "SUCCESS",
+    "providerOrderId" : "LP-ORD-0000000013",
+    "count" : "1",
+    "transactionKey" : "TEST-TX-0013",
+    "event" : "payment.lookup.result",
+    "outcome" : "ANSWERED"
+  },
+  "mdc" : {
+    "traceId" : "d0649614664381bb907cc2e62e436588",
+    "orderId" : "13",
+    "spanId" : "86707d338a0b1ad1"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "결제 결과 반영: PENDING -> SUCCEEDED, order=CONFIRMED",
+  "keyValues" : {
+    "providerOrderId" : "LP-ORD-0000000013",
+    "orderStatus" : "CONFIRMED",
+    "from" : "PENDING",
+    "to" : "SUCCEEDED",
+    "event" : "payment.apply.committed"
+  },
+  "mdc" : {
+    "traceId" : "d0649614664381bb907cc2e62e436588",
+    "orderId" : "13",
+    "spanId" : "86707d338a0b1ad1"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "Outbox 전송 성공. eventId=order-confirmed:v1:3, orderId=3, topic=incident-e2e-f0b0b4d3-2987-4eb1-8bdd-e33691dffbb5, partition=0, offset=2",
+  "keyValues" : {
+    "eventId" : "order-confirmed:v1:3",
+    "partition" : "0",
+    "offset" : "2",
+    "orderId" : "3",
+    "event" : "outbox.published"
+  },
+  "mdc" : {
+    "spanId" : "7d4aff7d09a1c611",
+    "traceId" : "3e9a4e3c296c8ddc6e6e8e9e4565be68"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "Outbox 전송 성공. eventId=order-confirmed:v1:4, orderId=4, topic=incident-e2e-f0b0b4d3-2987-4eb1-8bdd-e33691dffbb5, partition=0, offset=3",
+  "keyValues" : {
+    "eventId" : "order-confirmed:v1:4",
+    "partition" : "0",
+    "offset" : "3",
+    "orderId" : "4",
+    "event" : "outbox.published"
+  },
+  "mdc" : {
+    "spanId" : "7d4aff7d09a1c611",
+    "traceId" : "3e9a4e3c296c8ddc6e6e8e9e4565be68"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "PG 결제 요청 수락",
+  "keyValues" : {
+    "result" : "ACCEPTED",
+    "providerOrderId" : "LP-ORD-0000000014",
+    "transactionKey" : "TEST-TX-0014",
+    "event" : "payment.create.result"
+  },
+  "mdc" : {
+    "traceId" : "b582d4c6917dac26d681ee0d4bd6add3",
+    "orderId" : "14",
+    "spanId" : "c6752a9271f0e316"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "Outbox 전송 성공. eventId=order-confirmed:v1:5, orderId=5, topic=incident-e2e-f0b0b4d3-2987-4eb1-8bdd-e33691dffbb5, partition=0, offset=4",
+  "keyValues" : {
+    "eventId" : "order-confirmed:v1:5",
+    "partition" : "0",
+    "offset" : "4",
+    "orderId" : "5",
+    "event" : "outbox.published"
+  },
+  "mdc" : {
+    "spanId" : "7d4aff7d09a1c611",
+    "traceId" : "3e9a4e3c296c8ddc6e6e8e9e4565be68"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "결제 결과 반영: REQUESTED -> PENDING, order=PAYMENT_PENDING",
+  "keyValues" : {
+    "providerOrderId" : "LP-ORD-0000000014",
+    "orderStatus" : "PAYMENT_PENDING",
+    "from" : "REQUESTED",
+    "to" : "PENDING",
+    "event" : "payment.apply.committed"
+  },
+  "mdc" : {
+    "traceId" : "b582d4c6917dac26d681ee0d4bd6add3",
+    "orderId" : "14",
+    "spanId" : "c6752a9271f0e316"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "Outbox 전송 성공. eventId=order-confirmed:v1:6, orderId=6, topic=incident-e2e-f0b0b4d3-2987-4eb1-8bdd-e33691dffbb5, partition=0, offset=5",
+  "keyValues" : {
+    "eventId" : "order-confirmed:v1:6",
+    "partition" : "0",
+    "offset" : "5",
+    "orderId" : "6",
+    "event" : "outbox.published"
+  },
+  "mdc" : {
+    "spanId" : "7d4aff7d09a1c611",
+    "traceId" : "3e9a4e3c296c8ddc6e6e8e9e4565be68"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "PG 결제 상태 조회: outcome=ANSWERED, count=1",
+  "keyValues" : {
+    "pgStatus" : "SUCCESS",
+    "providerOrderId" : "LP-ORD-0000000014",
+    "count" : "1",
+    "transactionKey" : "TEST-TX-0014",
+    "event" : "payment.lookup.result",
+    "outcome" : "ANSWERED"
+  },
+  "mdc" : {
+    "traceId" : "7b6e1f20aaf7428f9895f96a27c7a414",
+    "orderId" : "14",
+    "spanId" : "adc2dc2989241f65"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "Outbox 전송 성공. eventId=order-confirmed:v1:7, orderId=7, topic=incident-e2e-f0b0b4d3-2987-4eb1-8bdd-e33691dffbb5, partition=0, offset=6",
+  "keyValues" : {
+    "eventId" : "order-confirmed:v1:7",
+    "partition" : "0",
+    "offset" : "6",
+    "orderId" : "7",
+    "event" : "outbox.published"
+  },
+  "mdc" : {
+    "spanId" : "7d4aff7d09a1c611",
+    "traceId" : "3e9a4e3c296c8ddc6e6e8e9e4565be68"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "Outbox 전송 성공. eventId=order-confirmed:v1:8, orderId=8, topic=incident-e2e-f0b0b4d3-2987-4eb1-8bdd-e33691dffbb5, partition=0, offset=7",
+  "keyValues" : {
+    "eventId" : "order-confirmed:v1:8",
+    "partition" : "0",
+    "offset" : "7",
+    "orderId" : "8",
+    "event" : "outbox.published"
+  },
+  "mdc" : {
+    "spanId" : "7d4aff7d09a1c611",
+    "traceId" : "3e9a4e3c296c8ddc6e6e8e9e4565be68"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "결제 결과 반영: PENDING -> SUCCEEDED, order=CONFIRMED",
+  "keyValues" : {
+    "providerOrderId" : "LP-ORD-0000000014",
+    "orderStatus" : "CONFIRMED",
+    "from" : "PENDING",
+    "to" : "SUCCEEDED",
+    "event" : "payment.apply.committed"
+  },
+  "mdc" : {
+    "traceId" : "7b6e1f20aaf7428f9895f96a27c7a414",
+    "orderId" : "14",
+    "spanId" : "adc2dc2989241f65"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "Outbox 전송 성공. eventId=order-confirmed:v1:9, orderId=9, topic=incident-e2e-f0b0b4d3-2987-4eb1-8bdd-e33691dffbb5, partition=0, offset=8",
+  "keyValues" : {
+    "eventId" : "order-confirmed:v1:9",
+    "partition" : "0",
+    "offset" : "8",
+    "orderId" : "9",
+    "event" : "outbox.published"
+  },
+  "mdc" : {
+    "spanId" : "7d4aff7d09a1c611",
+    "traceId" : "3e9a4e3c296c8ddc6e6e8e9e4565be68"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "Outbox 전송 성공. eventId=order-confirmed:v1:10, orderId=10, topic=incident-e2e-f0b0b4d3-2987-4eb1-8bdd-e33691dffbb5, partition=0, offset=9",
+  "keyValues" : {
+    "eventId" : "order-confirmed:v1:10",
+    "partition" : "0",
+    "offset" : "9",
+    "orderId" : "10",
+    "event" : "outbox.published"
+  },
+  "mdc" : {
+    "spanId" : "7d4aff7d09a1c611",
+    "traceId" : "3e9a4e3c296c8ddc6e6e8e9e4565be68"
+  }
+}, {
+  "level" : "WARN",
+  "message" : "PG 결제 요청 결과 미확인: cause=IO, 요청 중 I/O 오류: ResourceAccessException",
+  "keyValues" : {
+    "result" : "UNKNOWN",
+    "providerOrderId" : "LP-ORD-0000000015",
+    "cause" : "IO",
+    "event" : "payment.create.result"
+  },
+  "mdc" : {
+    "traceId" : "5a4f371f0528290aa443f1a62cef08af",
+    "orderId" : "15",
+    "spanId" : "afa11020c9dbdf84"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "Outbox 전송 성공. eventId=order-confirmed:v1:11, orderId=11, topic=incident-e2e-f0b0b4d3-2987-4eb1-8bdd-e33691dffbb5, partition=0, offset=10",
+  "keyValues" : {
+    "eventId" : "order-confirmed:v1:11",
+    "partition" : "0",
+    "offset" : "10",
+    "orderId" : "11",
+    "event" : "outbox.published"
+  },
+  "mdc" : {
+    "spanId" : "7d4aff7d09a1c611",
+    "traceId" : "3e9a4e3c296c8ddc6e6e8e9e4565be68"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "결제 결과 반영: REQUESTED -> UNKNOWN, order=PAYMENT_PENDING",
+  "keyValues" : {
+    "providerOrderId" : "LP-ORD-0000000015",
+    "orderStatus" : "PAYMENT_PENDING",
+    "from" : "REQUESTED",
+    "to" : "UNKNOWN",
+    "event" : "payment.apply.committed"
+  },
+  "mdc" : {
+    "traceId" : "5a4f371f0528290aa443f1a62cef08af",
+    "orderId" : "15",
+    "spanId" : "afa11020c9dbdf84"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "Outbox 전송 성공. eventId=order-confirmed:v1:13, orderId=13, topic=incident-e2e-f0b0b4d3-2987-4eb1-8bdd-e33691dffbb5, partition=0, offset=11",
+  "keyValues" : {
+    "eventId" : "order-confirmed:v1:13",
+    "partition" : "0",
+    "offset" : "11",
+    "orderId" : "13",
+    "event" : "outbox.published"
+  },
+  "mdc" : {
+    "spanId" : "7d4aff7d09a1c611",
+    "traceId" : "3e9a4e3c296c8ddc6e6e8e9e4565be68"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "PG 결제 요청 수락",
+  "keyValues" : {
+    "result" : "ACCEPTED",
+    "providerOrderId" : "LP-ORD-0000000016",
+    "transactionKey" : "TEST-TX-0016",
+    "event" : "payment.create.result"
+  },
+  "mdc" : {
+    "traceId" : "055fd5a32c6185b91fa88255091697a6",
+    "orderId" : "16",
+    "spanId" : "1213c43b74067b7d"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "결제 결과 반영: REQUESTED -> PENDING, order=PAYMENT_PENDING",
+  "keyValues" : {
+    "providerOrderId" : "LP-ORD-0000000016",
+    "orderStatus" : "PAYMENT_PENDING",
+    "from" : "REQUESTED",
+    "to" : "PENDING",
+    "event" : "payment.apply.committed"
+  },
+  "mdc" : {
+    "traceId" : "055fd5a32c6185b91fa88255091697a6",
+    "orderId" : "16",
+    "spanId" : "1213c43b74067b7d"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "PG 결제 상태 조회: outcome=ANSWERED, count=1",
+  "keyValues" : {
+    "pgStatus" : "SUCCESS",
+    "providerOrderId" : "LP-ORD-0000000016",
+    "count" : "1",
+    "transactionKey" : "TEST-TX-0016",
+    "event" : "payment.lookup.result",
+    "outcome" : "ANSWERED"
+  },
+  "mdc" : {
+    "traceId" : "0d684c83f4179d477c34804bb77494b0",
+    "orderId" : "16",
+    "spanId" : "441042af7cb4ad2c"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "결제 결과 반영: PENDING -> SUCCEEDED, order=CONFIRMED",
+  "keyValues" : {
+    "providerOrderId" : "LP-ORD-0000000016",
+    "orderStatus" : "CONFIRMED",
+    "from" : "PENDING",
+    "to" : "SUCCEEDED",
+    "event" : "payment.apply.committed"
+  },
+  "mdc" : {
+    "traceId" : "0d684c83f4179d477c34804bb77494b0",
+    "orderId" : "16",
+    "spanId" : "441042af7cb4ad2c"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "PG 결제 요청 수락",
+  "keyValues" : {
+    "result" : "ACCEPTED",
+    "providerOrderId" : "LP-ORD-0000000017",
+    "transactionKey" : "TEST-TX-0017",
+    "event" : "payment.create.result"
+  },
+  "mdc" : {
+    "traceId" : "e78f97cc1cdd714b1e091af49002185a",
+    "orderId" : "17",
+    "spanId" : "d1d2c94092b13ec9"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "결제 결과 반영: REQUESTED -> PENDING, order=PAYMENT_PENDING",
+  "keyValues" : {
+    "providerOrderId" : "LP-ORD-0000000017",
+    "orderStatus" : "PAYMENT_PENDING",
+    "from" : "REQUESTED",
+    "to" : "PENDING",
+    "event" : "payment.apply.committed"
+  },
+  "mdc" : {
+    "traceId" : "e78f97cc1cdd714b1e091af49002185a",
+    "orderId" : "17",
+    "spanId" : "d1d2c94092b13ec9"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "PG 결제 상태 조회: outcome=ANSWERED, count=1",
+  "keyValues" : {
+    "pgStatus" : "SUCCESS",
+    "providerOrderId" : "LP-ORD-0000000017",
+    "count" : "1",
+    "transactionKey" : "TEST-TX-0017",
+    "event" : "payment.lookup.result",
+    "outcome" : "ANSWERED"
+  },
+  "mdc" : {
+    "traceId" : "4037b4c49eb3534173a53b6121711e9b",
+    "orderId" : "17",
+    "spanId" : "810878e427a8df44"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "결제 결과 반영: PENDING -> SUCCEEDED, order=CONFIRMED",
+  "keyValues" : {
+    "providerOrderId" : "LP-ORD-0000000017",
+    "orderStatus" : "CONFIRMED",
+    "from" : "PENDING",
+    "to" : "SUCCEEDED",
+    "event" : "payment.apply.committed"
+  },
+  "mdc" : {
+    "traceId" : "4037b4c49eb3534173a53b6121711e9b",
+    "orderId" : "17",
+    "spanId" : "810878e427a8df44"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "PG 결제 요청 수락",
+  "keyValues" : {
+    "result" : "ACCEPTED",
+    "providerOrderId" : "LP-ORD-0000000018",
+    "transactionKey" : "TEST-TX-0018",
+    "event" : "payment.create.result"
+  },
+  "mdc" : {
+    "traceId" : "516cdb51ccbdf82dcd5e972d2395fe9b",
+    "orderId" : "18",
+    "spanId" : "6e88f58f8c49c2d4"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "결제 결과 반영: REQUESTED -> PENDING, order=PAYMENT_PENDING",
+  "keyValues" : {
+    "providerOrderId" : "LP-ORD-0000000018",
+    "orderStatus" : "PAYMENT_PENDING",
+    "from" : "REQUESTED",
+    "to" : "PENDING",
+    "event" : "payment.apply.committed"
+  },
+  "mdc" : {
+    "traceId" : "516cdb51ccbdf82dcd5e972d2395fe9b",
+    "orderId" : "18",
+    "spanId" : "6e88f58f8c49c2d4"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "PG 결제 상태 조회: outcome=ANSWERED, count=1",
+  "keyValues" : {
+    "pgStatus" : "SUCCESS",
+    "providerOrderId" : "LP-ORD-0000000018",
+    "count" : "1",
+    "transactionKey" : "TEST-TX-0018",
+    "event" : "payment.lookup.result",
+    "outcome" : "ANSWERED"
+  },
+  "mdc" : {
+    "traceId" : "ebf01723e70c28ca33732ec07c6cf26e",
+    "orderId" : "18",
+    "spanId" : "3c7cf169929e5bc6"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "결제 결과 반영: PENDING -> SUCCEEDED, order=CONFIRMED",
+  "keyValues" : {
+    "providerOrderId" : "LP-ORD-0000000018",
+    "orderStatus" : "CONFIRMED",
+    "from" : "PENDING",
+    "to" : "SUCCEEDED",
+    "event" : "payment.apply.committed"
+  },
+  "mdc" : {
+    "traceId" : "ebf01723e70c28ca33732ec07c6cf26e",
+    "orderId" : "18",
+    "spanId" : "3c7cf169929e5bc6"
+  }
+}, {
+  "level" : "WARN",
+  "message" : "PG 결제 요청 결과 미확인: cause=IO, 요청 중 I/O 오류: ResourceAccessException",
+  "keyValues" : {
+    "result" : "UNKNOWN",
+    "providerOrderId" : "LP-ORD-0000000019",
+    "cause" : "IO",
+    "event" : "payment.create.result"
+  },
+  "mdc" : {
+    "traceId" : "1c5235f652b892e7bbb023791764d8f4",
+    "orderId" : "19",
+    "spanId" : "6d5f8b0efa9a4223"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "결제 결과 반영: REQUESTED -> UNKNOWN, order=PAYMENT_PENDING",
+  "keyValues" : {
+    "providerOrderId" : "LP-ORD-0000000019",
+    "orderStatus" : "PAYMENT_PENDING",
+    "from" : "REQUESTED",
+    "to" : "UNKNOWN",
+    "event" : "payment.apply.committed"
+  },
+  "mdc" : {
+    "traceId" : "1c5235f652b892e7bbb023791764d8f4",
+    "orderId" : "19",
+    "spanId" : "6d5f8b0efa9a4223"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "PG 결제 요청 수락",
+  "keyValues" : {
+    "result" : "ACCEPTED",
+    "providerOrderId" : "LP-ORD-0000000020",
+    "transactionKey" : "TEST-TX-0020",
+    "event" : "payment.create.result"
+  },
+  "mdc" : {
+    "traceId" : "d75c1e33df4bdb453d37062cee350dfd",
+    "orderId" : "20",
+    "spanId" : "bc81c0a1fea1c067"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "결제 결과 반영: REQUESTED -> PENDING, order=PAYMENT_PENDING",
+  "keyValues" : {
+    "providerOrderId" : "LP-ORD-0000000020",
+    "orderStatus" : "PAYMENT_PENDING",
+    "from" : "REQUESTED",
+    "to" : "PENDING",
+    "event" : "payment.apply.committed"
+  },
+  "mdc" : {
+    "traceId" : "d75c1e33df4bdb453d37062cee350dfd",
+    "orderId" : "20",
+    "spanId" : "bc81c0a1fea1c067"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "PG 결제 상태 조회: outcome=ANSWERED, count=1",
+  "keyValues" : {
+    "pgStatus" : "SUCCESS",
+    "providerOrderId" : "LP-ORD-0000000020",
+    "count" : "1",
+    "transactionKey" : "TEST-TX-0020",
+    "event" : "payment.lookup.result",
+    "outcome" : "ANSWERED"
+  },
+  "mdc" : {
+    "traceId" : "6e369096a24c218845394bd9cde25e43",
+    "orderId" : "20",
+    "spanId" : "d75376b5deac2e7d"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "결제 결과 반영: PENDING -> SUCCEEDED, order=CONFIRMED",
+  "keyValues" : {
+    "providerOrderId" : "LP-ORD-0000000020",
+    "orderStatus" : "CONFIRMED",
+    "from" : "PENDING",
+    "to" : "SUCCEEDED",
+    "event" : "payment.apply.committed"
+  },
+  "mdc" : {
+    "traceId" : "6e369096a24c218845394bd9cde25e43",
+    "orderId" : "20",
+    "spanId" : "d75376b5deac2e7d"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "Outbox 전송 성공. eventId=order-confirmed:v1:14, orderId=14, topic=incident-e2e-f0b0b4d3-2987-4eb1-8bdd-e33691dffbb5, partition=0, offset=12",
+  "keyValues" : {
+    "eventId" : "order-confirmed:v1:14",
+    "partition" : "0",
+    "offset" : "12",
+    "orderId" : "14",
+    "event" : "outbox.published"
+  },
+  "mdc" : {
+    "spanId" : "8b219f8267155d9d",
+    "traceId" : "81c7b253db1d872fda8557dd2f62baf3"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "Outbox 전송 성공. eventId=order-confirmed:v1:16, orderId=16, topic=incident-e2e-f0b0b4d3-2987-4eb1-8bdd-e33691dffbb5, partition=0, offset=13",
+  "keyValues" : {
+    "eventId" : "order-confirmed:v1:16",
+    "partition" : "0",
+    "offset" : "13",
+    "orderId" : "16",
+    "event" : "outbox.published"
+  },
+  "mdc" : {
+    "spanId" : "8b219f8267155d9d",
+    "traceId" : "81c7b253db1d872fda8557dd2f62baf3"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "Outbox 전송 성공. eventId=order-confirmed:v1:17, orderId=17, topic=incident-e2e-f0b0b4d3-2987-4eb1-8bdd-e33691dffbb5, partition=0, offset=14",
+  "keyValues" : {
+    "eventId" : "order-confirmed:v1:17",
+    "partition" : "0",
+    "offset" : "14",
+    "orderId" : "17",
+    "event" : "outbox.published"
+  },
+  "mdc" : {
+    "spanId" : "8b219f8267155d9d",
+    "traceId" : "81c7b253db1d872fda8557dd2f62baf3"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "Outbox 전송 성공. eventId=order-confirmed:v1:18, orderId=18, topic=incident-e2e-f0b0b4d3-2987-4eb1-8bdd-e33691dffbb5, partition=0, offset=15",
+  "keyValues" : {
+    "eventId" : "order-confirmed:v1:18",
+    "partition" : "0",
+    "offset" : "15",
+    "orderId" : "18",
+    "event" : "outbox.published"
+  },
+  "mdc" : {
+    "spanId" : "8b219f8267155d9d",
+    "traceId" : "81c7b253db1d872fda8557dd2f62baf3"
+  }
+}, {
+  "level" : "INFO",
+  "message" : "Outbox 전송 성공. eventId=order-confirmed:v1:20, orderId=20, topic=incident-e2e-f0b0b4d3-2987-4eb1-8bdd-e33691dffbb5, partition=0, offset=16",
+  "keyValues" : {
+    "eventId" : "order-confirmed:v1:20",
+    "partition" : "0",
+    "offset" : "16",
+    "orderId" : "20",
+    "event" : "outbox.published"
+  },
+  "mdc" : {
+    "spanId" : "8b219f8267155d9d",
+    "traceId" : "81c7b253db1d872fda8557dd2f62baf3"
+  }
+} ]

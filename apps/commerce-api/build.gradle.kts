@@ -29,7 +29,7 @@ tasks.test {
     }
 }
 
-// E2E 테스트는 streamer 를 별도 프로세스로 띄우므로 실행 jar 를 먼저 만든다. 제품 runtime 의존은 만들지 않는다.
+// E2E 테스트는 streamer·batch 를 별도 프로세스로 띄우므로 실행 jar 를 먼저 만든다. 제품 runtime 의존은 만들지 않는다.
 tasks.register<Test>("e2eTest") {
     description = "@Tag(\"e2e\") E2E 테스트만 실행한다."
     group = "verification"
@@ -42,10 +42,12 @@ tasks.register<Test>("e2eTest") {
     systemProperty("user.timezone", "Asia/Seoul")
     systemProperty("spring.profiles.active", "test")
     jvmArgs("-Xshare:off")
-    dependsOn(":apps:commerce-streamer:bootJar")
+    dependsOn(":apps:commerce-streamer:bootJar", ":apps:commerce-batch:bootJar")
     doFirst {
         val streamerJar = project(":apps:commerce-streamer").tasks.getByName("bootJar").outputs.files.singleFile
         systemProperty("streamer.jar", streamerJar.absolutePath)
+        val batchJar = project(":apps:commerce-batch").tasks.getByName("bootJar").outputs.files.singleFile
+        systemProperty("batch.jar", batchJar.absolutePath)
     }
 }
 
@@ -80,6 +82,8 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-actuator")
     implementation("org.springframework.boot:spring-boot-starter-security")
     implementation("org.springframework.boot:spring-boot-starter-validation")
+    // Outbox 의 trace 문맥 저장·복원. 구현체(OTel bridge)는 supports:monitoring 이 런타임에 둔다.
+    implementation("io.micrometer:micrometer-tracing")
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:${project.properties["springDocOpenApiVersion"]}")
 
     // PG 조회의 재시도·회로 차단. annotation 은 AOP 프록시로 동작하므로 aop 스타터가 필요하다. 스타터가 이미 있다고 가정하지 않고 버전을 명시한다.

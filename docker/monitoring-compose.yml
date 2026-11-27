@@ -1,14 +1,25 @@
 version: '3'
 services:
   prometheus:
-    image: prom/prometheus
+    image: prom/prometheus:v2.55.1
     ports:
       - "9090:9090"
     volumes:
       - ./grafana/prometheus.yml:/etc/prometheus/prometheus.yml
 
+  # OTLP(HTTP 4318) 로 trace 를 받는다. 로컬 확인용이라 컨테이너 안 파일에만 저장한다.
+  tempo:
+    image: grafana/tempo:2.6.1
+    user: "0" # 이미지 기본 사용자는 /var/tempo 에 쓸 권한이 없다
+    command: ["-config.file=/etc/tempo.yml"]
+    ports:
+      - "3200:3200"
+      - "4318:4318"
+    volumes:
+      - ./tempo/tempo.yml:/etc/tempo.yml
+
   grafana:
-    image: grafana/grafana
+    image: grafana/grafana:11.3.0
     ports:
       - "3000:3000"
     volumes:
@@ -16,6 +27,8 @@ services:
     environment:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin
+      # Slack webhook 은 저장소에 두지 않고 실행할 때 환경변수로 준다. 없으면 발송만 실패하는 주소를 쓴다.
+      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL:-http://127.0.0.1:9/slack-webhook-not-set}
 
 networks:
   default:

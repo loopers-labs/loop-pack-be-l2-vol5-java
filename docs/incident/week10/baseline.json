@@ -1,0 +1,143 @@
+{
+  "phase" : "BASELINE",
+  "observedAt" : "2026-11-27T08:34:33.576900Z",
+  "orders" : [ {
+    "order_id" : 1,
+    "order_status" : "CONFIRMED",
+    "confirmed_at" : "2026-11-25T03:00:00",
+    "attempt_key" : "incident-1",
+    "provider_order_id" : "LP-ORD-0000000001",
+    "transaction_key" : "TEST-TX-0001",
+    "attempt_status" : "SUCCEEDED",
+    "pgTransactions" : [ {
+      "key" : "TEST-TX-0001",
+      "status" : "SUCCESS",
+      "amount" : 1000
+    } ]
+  }, {
+    "order_id" : 2,
+    "order_status" : "CONFIRMED",
+    "confirmed_at" : "2026-11-25T03:00:00",
+    "attempt_key" : "incident-2",
+    "provider_order_id" : "LP-ORD-0000000002",
+    "transaction_key" : "TEST-TX-0002",
+    "attempt_status" : "SUCCEEDED",
+    "pgTransactions" : [ {
+      "key" : "TEST-TX-0002",
+      "status" : "SUCCESS",
+      "amount" : 1000
+    } ]
+  }, {
+    "order_id" : 3,
+    "order_status" : "CONFIRMED",
+    "confirmed_at" : "2026-11-25T03:00:00",
+    "attempt_key" : "incident-3",
+    "provider_order_id" : "LP-ORD-0000000003",
+    "transaction_key" : "TEST-TX-0003",
+    "attempt_status" : "SUCCEEDED",
+    "pgTransactions" : [ {
+      "key" : "TEST-TX-0003",
+      "status" : "SUCCESS",
+      "amount" : 1000
+    } ]
+  }, {
+    "order_id" : 4,
+    "order_status" : "CONFIRMED",
+    "confirmed_at" : "2026-11-25T03:00:00",
+    "attempt_key" : "incident-4",
+    "provider_order_id" : "LP-ORD-0000000004",
+    "transaction_key" : "TEST-TX-0004",
+    "attempt_status" : "SUCCEEDED",
+    "pgTransactions" : [ {
+      "key" : "TEST-TX-0004",
+      "status" : "SUCCESS",
+      "amount" : 1000
+    } ]
+  }, {
+    "order_id" : 5,
+    "order_status" : "CONFIRMED",
+    "confirmed_at" : "2026-11-25T03:00:00",
+    "attempt_key" : "incident-5",
+    "provider_order_id" : "LP-ORD-0000000005",
+    "transaction_key" : "TEST-TX-0005",
+    "attempt_status" : "SUCCEEDED",
+    "pgTransactions" : [ {
+      "key" : "TEST-TX-0005",
+      "status" : "SUCCESS",
+      "amount" : 1000
+    } ]
+  }, {
+    "order_id" : 6,
+    "order_status" : "CONFIRMED",
+    "confirmed_at" : "2026-11-25T03:00:00",
+    "attempt_key" : "incident-6",
+    "provider_order_id" : "LP-ORD-0000000006",
+    "transaction_key" : "TEST-TX-0006",
+    "attempt_status" : "SUCCEEDED",
+    "pgTransactions" : [ {
+      "key" : "TEST-TX-0006",
+      "status" : "SUCCESS",
+      "amount" : 1000
+    } ]
+  }, {
+    "order_id" : 7,
+    "order_status" : "CONFIRMED",
+    "confirmed_at" : "2026-11-25T03:00:00",
+    "attempt_key" : "incident-7",
+    "provider_order_id" : "LP-ORD-0000000007",
+    "transaction_key" : "TEST-TX-0007",
+    "attempt_status" : "SUCCEEDED",
+    "pgTransactions" : [ {
+      "key" : "TEST-TX-0007",
+      "status" : "SUCCESS",
+      "amount" : 1000
+    } ]
+  }, {
+    "order_id" : 8,
+    "order_status" : "CONFIRMED",
+    "confirmed_at" : "2026-11-25T03:00:00",
+    "attempt_key" : "incident-8",
+    "provider_order_id" : "LP-ORD-0000000008",
+    "transaction_key" : "TEST-TX-0008",
+    "attempt_status" : "SUCCEEDED",
+    "pgTransactions" : [ {
+      "key" : "TEST-TX-0008",
+      "status" : "SUCCESS",
+      "amount" : 1000
+    } ]
+  }, {
+    "order_id" : 9,
+    "order_status" : "CONFIRMED",
+    "confirmed_at" : "2026-11-25T03:00:00",
+    "attempt_key" : "incident-9",
+    "provider_order_id" : "LP-ORD-0000000009",
+    "transaction_key" : "TEST-TX-0009",
+    "attempt_status" : "SUCCEEDED",
+    "pgTransactions" : [ {
+      "key" : "TEST-TX-0009",
+      "status" : "SUCCESS",
+      "amount" : 1000
+    } ]
+  }, {
+    "order_id" : 10,
+    "order_status" : "CONFIRMED",
+    "confirmed_at" : "2026-11-25T03:00:00",
+    "attempt_key" : "incident-10",
+    "provider_order_id" : "LP-ORD-0000000010",
+    "transaction_key" : "TEST-TX-0010",
+    "attempt_status" : "SUCCEEDED",
+    "pgTransactions" : [ {
+      "key" : "TEST-TX-0010",
+      "status" : "SUCCESS",
+      "amount" : 1000
+    } ]
+  } ],
+  "attemptStatusCounts" : {
+    "SUCCEEDED" : 10
+  },
+  "pgSuccessTransactions" : 10,
+  "pgTransactionsTotal" : 10,
+  "pgCreateCalls" : 10,
+  "pgDuplicateCreates" : 0,
+  "stock" : 15
+}

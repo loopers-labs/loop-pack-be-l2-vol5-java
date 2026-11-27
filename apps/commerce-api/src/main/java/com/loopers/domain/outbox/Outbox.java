@@ -62,6 +62,10 @@ public class Outbox extends BaseEntity {
     @Column(name = "published_at")
     private ZonedDateTime publishedAt;
 
+    // 기록한 요청의 W3C trace 문맥. relay 가 다른 스레드에서 발행할 때 같은 trace 를 잇는 데 쓴다. 없으면 새 trace 로 발행한다.
+    @Column(name = "trace_parent", updatable = false, length = 55)
+    private String traceParent;
+
     // JPA 가 사용하는 기본 생성자. 새 Outbox 는 record() 로 만든다.
     protected Outbox() {}
 
@@ -69,6 +73,14 @@ public class Outbox extends BaseEntity {
     public static Outbox record(
         String eventId, Long orderId, String eventType, String schemaVersion,
         String messageKey, byte[] payload, ZonedDateTime recordedAt
+    ) {
+        return record(eventId, orderId, eventType, schemaVersion, messageKey, payload, recordedAt, null);
+    }
+
+    /** 기록한 요청의 trace 문맥을 함께 남긴다. traceParent 는 없을 수 있다. */
+    public static Outbox record(
+        String eventId, Long orderId, String eventType, String schemaVersion,
+        String messageKey, byte[] payload, ZonedDateTime recordedAt, String traceParent
     ) {
         requireText(eventId, "eventId");
         requireText(eventType, "eventType");
@@ -92,6 +104,7 @@ public class Outbox extends BaseEntity {
         outbox.payload = payload.clone();
         outbox.status = OutboxStatus.PENDING;
         outbox.nextAttemptAt = recordedAt;
+        outbox.traceParent = traceParent;
         return outbox;
     }
 
