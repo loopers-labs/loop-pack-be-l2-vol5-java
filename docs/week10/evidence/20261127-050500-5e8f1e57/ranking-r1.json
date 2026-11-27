@@ -1,0 +1,28 @@
+{
+  "runId" : "20261127-050500-5e8f1e57",
+  "phase" : "ranking-r1",
+  "startedAt" : "2026-11-27T05:05:24.456889Z",
+  "outboxPublished" : 17,
+  "activitiesBeforeRecovery" : 17,
+  "ledgerBeforeRecovery" : 17,
+  "periodStart" : "2026-11-23",
+  "snapshotId" : "weekly-20261123-r1",
+  "jobStatus" : "COMPLETED",
+  "jobExitDescription" : "",
+  "rankingResponse" : {
+    "status" : "PUBLISHED",
+    "periodStart" : "2026-11-23",
+    "periodEnd" : "2026-11-30",
+    "snapshotId" : "weekly-20261123-r1",
+    "frozenAt" : "2026-11-27T05:05:25Z",
+    "items" : [ {
+      "productId" : 1,
+      "productName" : "S5 synthetic product",
+      "score" : 17,
+      "rank" : 1,
+      "calcRank" : 1
+    } ]
+  },
+  "result" : "PASSED",
+  "endedAt" : "2026-11-27T05:05:25.757546Z"
+}
