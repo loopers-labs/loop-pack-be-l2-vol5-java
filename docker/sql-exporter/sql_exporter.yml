@@ -1,0 +1,13 @@
+global:
+  scrape_timeout: 5s
+  scrape_timeout_offset: 500ms
+  min_interval: 0s
+  max_connections: 2
+  max_idle_connections: 1
+
+target:
+  data_source_name: 'mysql://exporter:exporter@host.docker.internal:3306/loopers'
+  collectors: [payment]
+
+collector_files:
+  - "*.collector.yml"

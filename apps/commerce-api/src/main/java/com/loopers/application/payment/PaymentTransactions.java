@@ -99,7 +99,6 @@ public class PaymentTransactions {
             .forEach(item -> stockDeduction.deductStock(item.productId(), item.quantity().toQuantity()));
         Payment payment = paymentService.save(
             Payment.request(order.getId(), attemptKey, order.getTotalAmount(), cardType, now));
-        events.publishEvent(new PaymentStarted(payment.getId()));
         orderService.save(order);
         return new Begin.Granted(payment);
     }

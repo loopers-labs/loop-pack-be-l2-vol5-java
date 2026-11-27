@@ -43,6 +43,7 @@ import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Predicate;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -125,6 +126,8 @@ class CheckoutIncidentTest {
 
     private void runIncident(CapturedOutput output, IncidentEvidence evidence, String[] phase) {
         assertThat(PG.willDropNextCreateResponse()).isFalse();
+        int enteredBefore = unknownEntered();
+        int leftBefore = unknownLeft();
         List<Long> baseline = placeOrders(10);
         baseline.forEach(this::confirm);
         succeedAtPg(baseline);
@@ -138,7 +141,9 @@ class CheckoutIncidentTest {
         assertThat(PG.createCount()).isEqualTo(10);
         assertThat(productService.getStock(coat)).isEqualTo(Quantity.of(STOCK - 10));
         assertThat(health()).isEqualTo("UP");
-        assertThat(unresolvedUnknownSettlesAt(0)).isEqualTo(0);
+        assertThat(unknownEntered() - enteredBefore).isZero();
+        assertThat(unknownLeft() - leftBefore).isZero();
+        assertThat(scrape()).doesNotContain("payment_unresolved");
         evidence.record("baseline", facts(baseline, List.of(), output.getOut()));
         evidence.recordRaw("baseline-prometheus.txt", scrape());
 
@@ -177,7 +182,8 @@ class CheckoutIncidentTest {
         assertThat(productService.getStock(coat)).isEqualTo(Quantity.of(STOCK - 20));
 
         assertThat(health()).isEqualTo("UP");
-        assertThat(unresolvedUnknownSettlesAt(3)).isEqualTo(3);
+        assertThat(unknownEntered() - enteredBefore).isEqualTo(3);
+        assertThat(unknownLeft() - leftBefore).isZero();
         String faultLog = output.getOut().substring(faultStart);
         assertThat(timedOut).allSatisfy(orderId -> assertThat(linesWith(faultLog, providerOrderIdOf(orderId)))
             .singleElement().asString().contains("cause=timeout"));
@@ -209,9 +215,13 @@ class CheckoutIncidentTest {
         assertThat(productService.getStock(coat)).isEqualTo(Quantity.of(STOCK - 20));
 
         assertThat(health()).isEqualTo("UP");
-        assertThat(unresolvedUnknownSettlesAt(0)).isEqualTo(0);
+        assertThat(unknownEntered() - enteredBefore).isEqualTo(3);
+        assertThat(unknownLeft() - leftBefore).isEqualTo(3);
 
         fault.forEach(this::reconcile);
+
+        assertThat(unknownEntered() - enteredBefore).isEqualTo(3);
+        assertThat(unknownLeft() - leftBefore).isEqualTo(3);
 
         assertThat(confirmedOrders(fault)).containsExactlyElementsOf(fault);
         assertThat(fault).allSatisfy(orderId -> assertThat(outboxRows(orderId)).isEqualTo(1));
@@ -240,7 +250,9 @@ class CheckoutIncidentTest {
         assertThat(recordedWithStatus(recoveryRecord, "SUCCESS")).hasSize(20);
         assertThat(recoveryRecord.get("pgCreateCount").asInt()).isEqualTo(faultRecord.get("pgCreateCount").asInt())
             .isEqualTo(20);
-        assertThat(faultRecord.get("unresolvedMetricLines").toString()).contains("status=\\\"unknown\\\"} 3.0");
+        assertThat(faultRecord.get("unknownEntered").asInt() - faultRecord.get("unknownLeft").asInt()).isEqualTo(3);
+        assertThat(recoveryRecord.get("unknownEntered").asInt() - recoveryRecord.get("unknownLeft").asInt()).isZero();
+        assertThat(faultRecord.get("observeMetricLines").toString()).contains("to=\\\"unknown\\\"");
         assertThat(recoveryRecord.get("boundaryLogLines")).hasSize(3);
 
         phase[0] = "follow-up";
@@ -343,8 +355,10 @@ class CheckoutIncidentTest {
         facts.put("pgTransactionCount", PG.transactionCount());
         facts.put("stock", productService.getStock(coat).value());
         facts.put("health", healthBody());
-        facts.put("unresolvedMetricLines", scrape().lines()
-            .filter(line -> line.startsWith("payment_unresolved{")).toList());
+        facts.put("unknownEntered", unknownEntered());
+        facts.put("unknownLeft", unknownLeft());
+        facts.put("observeMetricLines", scrape().lines()
+            .filter(line -> line.startsWith("payment_observe_total{")).toList());
         facts.put("boundaryLogLines", log.lines()
             .filter(line -> Stream.of("cause=", "result=", "from=", "error=").anyMatch(line::contains)).toList());
         return facts;
@@ -408,27 +422,22 @@ class CheckoutIncidentTest {
             .getBody().data().status();
     }
 
-    private int unresolvedUnknownSettlesAt(int expected) {
-        long deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
-        int observed = unresolvedUnknown();
-        while (observed != expected && System.nanoTime() < deadline) {
-            pause(Duration.ofMillis(100));
-            observed = unresolvedUnknown();
-        }
-        return observed;
+    private int unknownEntered() {
+        return observed(line -> line.contains("to=\"unknown\"") && !line.contains("from=\"unknown\""));
     }
 
-    private int unresolvedUnknown() {
-        String scrape = scrape();
-        return scrape.lines()
-            .filter(line -> line.startsWith("payment_unresolved{"))
-            .filter(line -> line.contains("status=\"unknown\""))
+    private int unknownLeft() {
+        return observed(line -> line.contains("from=\"unknown\"")
+            && !line.contains("to=\"unknown\"") && !line.contains("to=\"noop\""));
+    }
+
+    private int observed(Predicate<String> transition) {
+        return scrape().lines()
+            .filter(line -> line.startsWith("payment_observe_total{"))
+            .filter(transition)
             .map(line -> line.substring(line.lastIndexOf(' ') + 1))
-            .map(Double::parseDouble)
-            .map(Double::intValue)
-            .findFirst()
-            .orElseThrow(() -> new AssertionError("Prometheus 응답에 payment_unresolved{status=\"unknown\"} 이 없다: "
-                + scrape.substring(0, Math.min(scrape.length(), 300))));
+            .mapToInt(value -> (int) Double.parseDouble(value))
+            .sum();
     }
 
     private String management(String path) {

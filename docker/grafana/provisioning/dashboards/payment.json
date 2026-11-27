@@ -71,7 +71,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(payment_unresolved{application=\"commerce-api\",status=\"unknown\"})",
+          "expr": "sum(payment_unresolved{job=\"payment-db\",status=\"unknown\"})",
           "legendFormat": ""
         }
       ]
@@ -113,7 +113,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(payment_unresolved{application=\"commerce-api\",status=\"pending\"})",
+          "expr": "sum(payment_unresolved{job=\"payment-db\",status=\"pending\"})",
           "legendFormat": ""
         }
       ]
@@ -159,7 +159,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(payment_unresolved{application=\"commerce-api\",status=\"conflict\"})",
+          "expr": "sum(payment_unresolved{job=\"payment-db\",status=\"conflict\"})",
           "legendFormat": ""
         }
       ]
@@ -249,7 +249,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (status) (payment_unresolved{application=\"commerce-api\"})",
+          "expr": "sum by (status) (payment_unresolved{job=\"payment-db\"})",
           "legendFormat": "{{status}}"
         }
       ]

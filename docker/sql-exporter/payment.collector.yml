@@ -1,0 +1,18 @@
+collector_name: payment
+
+metrics:
+  - metric_name: payment_unresolved
+    type: gauge
+    help: '아직 끝나지 않은 결제 수. DB 의 payment 테이블을 상태별로 센 값이라 수집 주기만큼 늦다.'
+    key_labels: [status]
+    values: [payments]
+    query: |
+      SELECT LOWER(s.status) AS status, COUNT(p.id) AS payments
+      FROM (
+        SELECT 'REQUESTED' AS status
+        UNION ALL SELECT 'PENDING'
+        UNION ALL SELECT 'UNKNOWN'
+        UNION ALL SELECT 'CONFLICT'
+      ) s
+      LEFT JOIN payment p ON p.status = s.status
+      GROUP BY s.status

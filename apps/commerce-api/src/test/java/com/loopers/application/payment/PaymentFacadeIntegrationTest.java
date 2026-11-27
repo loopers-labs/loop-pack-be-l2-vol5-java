@@ -683,35 +683,15 @@ class PaymentFacadeIntegrationTest {
             return meterRegistry.find(name).tags(tags).counters().stream().mapToDouble(Counter::count).sum();
         }
 
-        private double gauge(String name, String status) {
-            return meterRegistry.get(name).tag("status", status).gauge().value();
-        }
-
-        @DisplayName("남은 미완료 결제 수는 DB 를 세지 않고, 상태가 바뀌는 순간 그 상태의 수를 올리고 내려서 낸다")
+        @DisplayName("남은 미완료 결제 수는 앱이 내지 않는다. 앱은 상태가 바뀐 횟수만 세고, 건수는 DB 를 읽는 수집기가 낸다")
         @Test
-        void unresolvedGaugeFollowsTransitions() {
-            productFacade.adjustStock(coat, Quantity.of(100));
-            double requested = gauge("payment.unresolved", "requested");
-            double pending = gauge("payment.unresolved", "pending");
-            double unknown = gauge("payment.unresolved", "unknown");
-
-            confirm(place(1).getId(), "attempt-pending");
-            Order lost = place(1);
+        void doesNotGaugeUnresolved() {
+            Order order = place(2);
             PG.dropNextCreateResponse();
-            Payment payment = confirm(lost.getId(), "attempt-unknown");
-            PG.rejectNextCreate();
-            confirm(place(1).getId(), "attempt-failed");
 
-            assertThat(gauge("payment.unresolved", "requested") - requested).isZero();
-            assertThat(gauge("payment.unresolved", "pending") - pending).isEqualTo(1);
-            assertThat(gauge("payment.unresolved", "unknown") - unknown).isEqualTo(1);
+            confirm(order.getId(), "attempt-1");
 
-            PG.changeStatus(
-                PG.transactionsOf(payment.getProviderOrderId().value()).get(0).transactionKey(), PgFixture.Status.SUCCESS);
-            paymentFacade.reconcile(USER, lost.getId(), NOW.plusSeconds(10));
-
-            assertThat(gauge("payment.unresolved", "pending") - pending).isEqualTo(1);
-            assertThat(gauge("payment.unresolved", "unknown") - unknown).isZero();
+            assertThat(meterRegistry.find("payment.unresolved").gauges()).isEmpty();
         }
 
         @DisplayName("접수는 payment.create{result=accepted} 와 payment.observe{to=pending} 를 하나씩 센다")
@@ -751,7 +731,7 @@ class PaymentFacadeIntegrationTest {
             assertThat(count("payment.lookup", "source", "sweeper", "result", "found") - looked).isEqualTo(1);
         }
 
-        @DisplayName("남은 미확인 결제 수는 DB 를 세지 않고, unknown 으로 들어간 전이에서 unknown 에서 나온 전이를 빼서 얻는다")
+        @DisplayName("unknown 으로 들어간 전이와 unknown 에서 나온 전이를 따로 센다. 둘의 차가 그 사이에 늘어난 미확인 결제 수다")
         @Test
         void unresolvedIsEnteredMinusLeft() {
             double unknownBefore = unknownNow();

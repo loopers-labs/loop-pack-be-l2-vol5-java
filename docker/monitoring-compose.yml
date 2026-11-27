@@ -7,6 +7,14 @@ services:
     volumes:
       - ./grafana/prometheus.yml:/etc/prometheus/prometheus.yml
 
+  sql-exporter:
+    image: burningalchemist/sql_exporter:0.17
+    command: ["--config.file=/etc/sql-exporter/sql_exporter.yml"]
+    ports:
+      - "9399:9399"
+    volumes:
+      - ./sql-exporter:/etc/sql-exporter
+
   grafana:
     image: grafana/grafana
     ports:

@@ -1,4 +1,4 @@
-# 사고 실험 증거: 실행 `20261126-220720-066860a7`
+# 사고 실험 증거: 실행 `20261127-084512-86ff29c0`
 
 `CheckoutIncidentTest` 를 한 번 실행해 남긴 기록이다. 테스트가 쓴 파일을 고치지 않고 그대로 옮겼다.
 
@@ -12,7 +12,7 @@
 ## 읽는 법
 
 - `orders[].set` 이 `baseline` 인지 `fault` 인지로 두 집합을 가른다. 복구 전후의 `fault` 집합은 같은 주문 id 와 같은 거래 키다.
-- `health` 는 `/actuator/health` 응답 원문이고, `unresolvedMetricLines` 는 `/actuator/prometheus` 응답에서 그대로 옮긴 줄이다.
+- `health` 는 `/actuator/health` 응답 원문이고, `observeMetricLines` 는 `/actuator/prometheus` 응답에서 그대로 옮긴 상태 전이 counter 줄이다. `unknownEntered` 와 `unknownLeft` 는 그 줄에서 `UNKNOWN` 으로 들어온 수와 나간 수를 더한 값이다. 남은 건수 자체는 앱이 내지 않고 sql exporter 가 낸다.
 - `boundaryLogLines` 는 그 단계 동안 콘솔에 남은 결제 로그 원문이다. fault 단계의 `cause=timeout` 2 줄과 `cause=connection_lost` 1 줄이 응답을 잃은 3 건이다.
 
 ## 확인
@@ -25,7 +25,7 @@ shasum -a 256 fault.json
 
 ## 옮기지 않은 것
 
-단계별 Prometheus 응답 전체(`*-prometheus.txt`)는 옮기지 않았다. 디스크 지표의 label 에 실행한 기기의 경로가 들어 있다. 업무 지표 줄은 위의 `unresolvedMetricLines` 에 원문 그대로 있다.
+단계별 Prometheus 응답 전체(`*-prometheus.txt`)는 옮기지 않았다. 디스크 지표의 label 에 실행한 기기의 경로가 들어 있다. 업무 지표 줄은 위의 `observeMetricLines` 에 원문 그대로 있다.
 
 ## 다시 만들기
 

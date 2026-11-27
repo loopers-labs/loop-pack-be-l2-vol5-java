@@ -6,3 +6,8 @@ scrape_configs:
     metrics_path: '/actuator/prometheus'
     static_configs:
       - targets: ['host.docker.internal:8081']
+
+  - job_name: 'payment-db'
+    scrape_interval: 5s
+    static_configs:
+      - targets: ['sql-exporter:9399']

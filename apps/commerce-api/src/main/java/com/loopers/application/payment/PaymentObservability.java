@@ -13,11 +13,6 @@ class PaymentObservability {
     private final PaymentLog paymentLog;
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
-    public void on(PaymentStarted started) {
-        paymentMetrics.started();
-    }
-
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void on(PaymentTransitioned transition) {
         paymentMetrics.observed(transition.from(), transition.to());
         if (!transition.changed()) {
