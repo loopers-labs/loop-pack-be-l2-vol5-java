@@ -1,0 +1,58 @@
+{
+  "observedAt" : "2026-08-19T12:05:00Z",
+  "targetOrderIds" : [ 11, 12, 13 ],
+  "lookups" : {
+    "11" : [ {
+      "providerOrderId" : "LP-ORD-0000000011",
+      "transactionKey" : "TEST-TX-0011",
+      "amount" : 1000,
+      "status" : "SUCCESS"
+    } ],
+    "12" : [ {
+      "providerOrderId" : "LP-ORD-0000000012",
+      "transactionKey" : "TEST-TX-0012",
+      "amount" : 1000,
+      "status" : "SUCCESS"
+    } ],
+    "13" : [ {
+      "providerOrderId" : "LP-ORD-0000000013",
+      "transactionKey" : "TEST-TX-0013",
+      "amount" : 1000,
+      "status" : "SUCCESS"
+    } ]
+  },
+  "hypotheses" : [ {
+    "id" : "H1",
+    "name" : "PG 처리 자체가 지연",
+    "expected" : "진단 조회의 거래 상태가 PENDING",
+    "actual" : {
+      "lookupStatuses" : [ "SUCCESS", "SUCCESS", "SUCCESS" ]
+    },
+    "verdict" : "REFUTED"
+  }, {
+    "id" : "H2",
+    "name" : "PG 성공 응답 유실",
+    "expected" : "거래 1건 SUCCESS, 내부 UNKNOWN, PG 생성 결과 result=UNKNOWN 로그",
+    "actual" : {
+      "internalUnknown" : true,
+      "unknownCreateLogged" : true,
+      "allSingleSuccess" : true
+    },
+    "verdict" : "SUPPORTED"
+  }, {
+    "id" : "H3",
+    "name" : "성공 결과의 내부 반영 실패",
+    "expected" : "조회는 있었고 결제 결과 적용 실패 로그(TX rollback)가 남음",
+    "actual" : {
+      "lookupApplyLogs" : [ ],
+      "applyFailureLogs" : [ ],
+      "lookupsDuringFault" : {
+        "LP-ORD-0000000011" : 0,
+        "LP-ORD-0000000012" : 0,
+        "LP-ORD-0000000013" : 0
+      }
+    },
+    "verdict" : "REFUTED"
+  } ],
+  "commerceUnchangedByLookup" : true
+}
