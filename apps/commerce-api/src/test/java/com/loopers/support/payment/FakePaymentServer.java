@@ -12,9 +12,11 @@ import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Queue;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
@@ -39,6 +41,7 @@ public class FakePaymentServer implements AutoCloseable {
     private final AtomicBoolean dropNextCreateResponse = new AtomicBoolean();
     private final AtomicBoolean holdNextCreateResponse = new AtomicBoolean();
     private final CountDownLatch responseRelease = new CountDownLatch(1);
+    private final Map<String, CountDownLatch> orderResponseHolds = new ConcurrentHashMap<>();
     private final Queue<Reply> nextReplies = new ConcurrentLinkedQueue<>();
     private final Queue<Duration> nextDelays = new ConcurrentLinkedQueue<>();
     private final AtomicReference<Duration> delayEveryResponse = new AtomicReference<>();
@@ -124,6 +127,29 @@ public class FakePaymentServer implements AutoCloseable {
 
     public void dropNextCreateResponse() { dropNextCreateResponse.set(true); }
     public void holdNextCreateResponse() { holdNextCreateResponse.set(true); }
+
+    /** 지정 주문은 거래 저장 후 생성 응답만 기다린다. release 전까지 다른 주문은 그대로 처리한다. */
+    public synchronized void holdCreateResponseFor(String providerOrderId) {
+        orderResponseHolds.computeIfAbsent(providerOrderId, ignored -> new CountDownLatch(1));
+    }
+
+    public synchronized void releaseCreateResponseFor(String providerOrderId) {
+        CountDownLatch hold = orderResponseHolds.remove(providerOrderId);
+        if (hold != null) {
+            hold.countDown();
+        }
+    }
+
+    /** 지금 생성 응답을 보류하도록 지정된 주문 번호. 실험 단계마다 보류가 남아 있지 않은지 확인한다. */
+    public synchronized Set<String> heldCreateOrders() {
+        return Set.copyOf(orderResponseHolds.keySet());
+    }
+
+    private synchronized void releaseOrderResponseHolds() {
+        orderResponseHolds.values().forEach(CountDownLatch::countDown);
+        orderResponseHolds.clear();
+    }
+
     /** 다음 요청 하나에 줄 응답을 대기열에 넣는다. 여러 번 부르면 요청 순서대로 하나씩 쓴다. */
     public void replyNext(int status, String body) { nextReplies.add(new Reply(status, body)); }
     /** 다음 요청 하나의 응답을 지정한 시간만큼 늦춘다. 여러 번 부르면 요청 순서대로 하나씩 쓴다. */
@@ -138,10 +164,23 @@ public class FakePaymentServer implements AutoCloseable {
 
     public synchronized List<Request> requests() { return List.copyOf(requests); }
 
+    /** 접수한 POST를 세므로, 거래를 저장하기 전에 거절한 요청도 포함한다. */
+    public Map<String, Integer> createCallsByOrder() throws IOException {
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        for (Request request : requests()) {
+            if ("POST".equals(request.method())) {
+                String orderId = mapper.readTree(request.body()).path("orderId").asText();
+                counts.merge(orderId, 1, Integer::sum);
+            }
+        }
+        return counts;
+    }
+
     public List<Handled> handled() { return List.copyOf(handled); }
 
-    /** 같은 서버를 여러 테스트가 쓸 때 거래·호출 수·다음 응답 설정을 비운다. 응답 보류(latch)는 되돌리지 않는다. */
+    /** 테스트 사이에 거래·호출 수·주문별 보류를 정리한다. 기존 단건 보류용 latch는 close에서 해제한다. */
     public synchronized void reset() {
+        releaseOrderResponseHolds();
         transactions.clear();
         requests.clear();
         createCalls.set(0);
@@ -158,6 +197,16 @@ public class FakePaymentServer implements AutoCloseable {
         patternLookupCalls = 0;
         delayedLookupCalls = 0;
         handled.clear();
+    }
+
+    /** 이미 저장된 거래의 금액만 바꾼다. 주문 번호는 맞고 금액이 다른 PG 응답을 재현할 때 쓴다. */
+    public void changeAmount(String transactionKey, long amount) {
+        transactions.compute(transactionKey, (key, transaction) -> {
+            if (transaction == null) {
+                throw new IllegalArgumentException("거래를 찾을 수 없습니다.");
+            }
+            return ((ObjectNode) transaction.deepCopy()).put("amount", amount);
+        });
     }
 
     public void changeStatus(String transactionKey, String status) {
@@ -242,15 +291,12 @@ public class FakePaymentServer implements AutoCloseable {
                 if (dropNextCreateResponse.getAndSet(false)) {
                     return;
                 }
-                if (holdNextCreateResponse.getAndSet(false)) {
-                    try {
-                        if (!responseRelease.await(Duration.ofSeconds(5).toMillis(), TimeUnit.MILLISECONDS)) {
-                            return;
-                        }
-                    } catch (InterruptedException exception) {
-                        Thread.currentThread().interrupt();
-                        return;
-                    }
+                CountDownLatch hold = orderResponseHolds.get(request.path("orderId").asText());
+                if (holdNextCreateResponse.getAndSet(false) && !awaitRelease(responseRelease)) {
+                    return;
+                }
+                if (hold != null && !awaitRelease(hold)) {
+                    return;
                 }
                 reply(exchange, 202, mapper.writeValueAsString(transaction));
             } else if (exchange.getRequestURI().getRawQuery() != null) {
@@ -268,6 +314,15 @@ public class FakePaymentServer implements AutoCloseable {
         }
     }
 
+    private boolean awaitRelease(CountDownLatch hold) {
+        try {
+            return hold.await(5, TimeUnit.SECONDS);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
+    }
+
     private void reply(HttpExchange exchange, int status, String body) throws IOException {
         byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set("Content-Type", "application/json");
@@ -279,6 +334,7 @@ public class FakePaymentServer implements AutoCloseable {
 
     @Override
     public void close() throws InterruptedException {
+        releaseOrderResponseHolds();
         responseRelease.countDown();
         if (running) {
             server.stop(0);

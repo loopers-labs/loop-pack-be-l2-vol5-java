@@ -7,12 +7,65 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 
 class FakePaymentServerTest {
+
+    @Test
+    void rejectedSecondCreateCountsEvenWhenTheTotalMatchesTwoOrders() throws Exception {
+        try (var pg = new FakePaymentServer(); var client = HttpClient.newHttpClient()) {
+            var request = createPayment(pg, "LP-ORD-A");
+            var first = client.send(request, HttpResponse.BodyHandlers.ofString());
+            pg.replyNext(422, "");
+            var second = client.send(request, HttpResponse.BodyHandlers.ofString());
+            var lookup = HttpRequest.newBuilder(URI.create(pg.baseUrl() + "/api/v1/payments?orderId=LP-ORD-A")).GET().build();
+            assertThat(client.send(lookup, HttpResponse.BodyHandlers.ofString()).statusCode()).isEqualTo(200);
+
+            var counts = pg.createCallsByOrder();
+            System.out.printf("[duplicate-create] first=%d second=%d pgCreates=%d pgLookups=%d transactions=%d byOrder=%s%n",
+                first.statusCode(), second.statusCode(), pg.createCalls(), pg.lookupCalls(), pg.transactionCount(), counts);
+            assertThat(first.statusCode()).isEqualTo(202);
+            assertThat(second.statusCode()).isEqualTo(422);
+            assertThat(pg.createCalls()).isEqualTo(2);
+            assertThat(pg.transactionCount()).isOne();
+            assertThat(counts).containsExactlyInAnyOrderEntriesOf(Map.of("LP-ORD-A", 2));
+        }
+    }
+
+    @Test
+    void anotherOrderGetsAcceptedWhileSelectedResponseWaitsForRelease() throws Exception {
+        try (var pg = new FakePaymentServer(); var client = HttpClient.newHttpClient()) {
+            pg.holdCreateResponseFor("LP-ORD-A");
+            assertThat(pg.heldCreateOrders()).containsExactly("LP-ORD-A");
+            var selected = client.sendAsync(createPayment(pg, "LP-ORD-A"), HttpResponse.BodyHandlers.ofString());
+            try {
+                assertTimeoutPreemptively(Duration.ofSeconds(3), () -> {
+                    while (pg.transactionCount() == 0) {
+                        Thread.sleep(5);
+                    }
+                });
+                var normal = client.send(createPayment(pg, "LP-ORD-B"), HttpResponse.BodyHandlers.ofString());
+                assertThat(normal.statusCode()).isEqualTo(202);
+                assertThat(selected).isNotDone();
+            } finally {
+                pg.releaseCreateResponseFor("LP-ORD-A");
+            }
+            assertThat(selected.get(2, TimeUnit.SECONDS).statusCode()).isEqualTo(202);
+            assertThat(pg.heldCreateOrders()).isEmpty();
+            assertThat(pg.transactionCount()).isEqualTo(2);
+            assertThat(pg.createCalls()).isEqualTo(2);
+        }
+    }
+
+    private HttpRequest createPayment(FakePaymentServer pg, String orderId) {
+        return HttpRequest.newBuilder(URI.create(pg.baseUrl() + "/api/v1/payments"))
+            .header("Content-Type", "application/json").timeout(Duration.ofSeconds(7))
+            .POST(HttpRequest.BodyPublishers.ofString("{\"orderId\":\"" + orderId + "\",\"amount\":1000}")).build();
+    }
 
     @Test
     void periodicLookupDelayLeavesCreatesAndOtherLookupsFastAndCanBeClearedWithoutReset() throws Exception {
