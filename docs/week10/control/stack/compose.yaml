@@ -1,0 +1,108 @@
+name: week10-control-stack
+services:
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: week10-local
+      MYSQL_ROOT_HOST: localhost
+      TZ: UTC
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_general_ci", "--default-time-zone=+00:00"]
+    ports:
+      - "127.0.0.1:${W10_DB_PORT:-13316}:3306"
+    volumes:
+      - commerce-data:/var/lib/mysql
+      - ../../../../docker/payment-lab:/week10-ddl:ro
+      - ./schema.sql:/docker-entrypoint-initdb.d/000-schema.sql:ro
+      - ./seed.sql:/docker-entrypoint-initdb.d/020-seed.sql:ro
+      - ../monitor/schema.sql:/docker-entrypoint-initdb.d/030-observation.sql:ro
+    healthcheck:
+      test: ["CMD", "mysql", "--protocol=TCP", "-h127.0.0.1", "-uapplication", "-papplication", "-e", "SELECT id FROM loopers.products WHERE id=3"]
+      interval: 3s
+      timeout: 3s
+      retries: 80
+
+  redis-master:
+    image: redis:7.0
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 2s
+      retries: 20
+  redis-replica:
+    image: redis:7.0
+    command: ["redis-server", "--replicaof", "redis-master", "6379"]
+
+  kafka:
+    image: apache/kafka:3.8.0
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_NUM_PARTITIONS: 2
+      KAFKA_HEAP_OPTS: -Xms128m -Xmx384m
+    volumes:
+      - kafka-data:/tmp/kraft-combined-logs
+    healthcheck:
+      test: ["CMD", "/opt/kafka/bin/kafka-topics.sh", "--bootstrap-server", "localhost:9092", "--list"]
+      interval: 15s
+      timeout: 10s
+      retries: 15
+
+  commerce:
+    # Kafka's locally cached distribution includes Temurin 21. Both apps invoke only java.
+    image: ${W10_JAVA_IMAGE:-apache/kafka:3.8.0}
+    entrypoint: ["java", "-XX:ActiveProcessorCount=4", "-Xms256m", "-Xmx768m", "-Duser.timezone=UTC", "-jar", "/srv/commerce.jar"]
+    command:
+      - --spring.profiles.active=payment-lab
+      - --server.port=18180
+      - --management.server.port=18182
+      - --datasource.redis.master.host=redis-master
+      - --datasource.redis.master.port=6379
+      - --datasource.redis.replicas[0].host=redis-replica
+      - --datasource.redis.replicas[0].port=6379
+      - --pg.client.base-url=http://127.0.0.1:18181
+      - --pg.client.callback-url=http://127.0.0.1:18180/api/v1/payments/callback
+      - --payment.lab.run-id=${W10_RUN_LABEL:-week10-control}
+      - --payment.recovery.auto-start-enabled=false
+      - --payment.metrics.refresh-enabled=true
+    environment:
+      COMMERCE_MYSQL_HOST: mysql
+      BOOTSTRAP_SERVERS: kafka:9092
+    volumes:
+      - ../../../../apps/commerce-api/build/libs/commerce-api-${W10_JAR_VERSION:?Set W10_JAR_VERSION to the bootJar version}.jar:/srv/commerce.jar:ro
+    ports:
+      - "127.0.0.1:${W10_API_PORT:-18180}:18180"
+      - "127.0.0.1:${W10_MANAGEMENT_PORT:-18182}:18182"
+    depends_on:
+      mysql: { condition: service_healthy }
+      redis-master: { condition: service_healthy }
+      redis-replica: { condition: service_started }
+      kafka: { condition: service_healthy }
+
+  pg:
+    image: ${W10_JAVA_IMAGE:-apache/kafka:3.8.0}
+    # Both application validators require a numeric loopback callback and PG address.
+    network_mode: service:commerce
+    entrypoint: ["java", "-XX:ActiveProcessorCount=2", "-Xms128m", "-Xmx256m", "-Duser.timezone=UTC", "-jar", "/srv/pg.jar"]
+    command:
+      - --spring.profiles.active=payment-lab
+      - --server.port=18181
+      - --pg.callback-url=http://127.0.0.1:18180/api/v1/payments/callback
+    environment:
+      PG_MYSQL_HOST: mysql
+    volumes:
+      - ../../../../apps/test-pg/build/libs/test-pg-${W10_JAR_VERSION}.jar:/srv/pg.jar:ro
+    depends_on:
+      commerce: { condition: service_started }
+
+volumes:
+  commerce-data:
+  kafka-data:

@@ -2,9 +2,12 @@ package com.loopers.application.pay.gateway;
 
 import com.loopers.domain.pay.model.PaymentObservation;
 import com.loopers.domain.pay.model.PaymentScenario;
+import java.time.Duration;
 
 /** create는 저장된 발송 권한을 얻은 호출자만 한 번 호출한다. 이 adapter는 발송 권한을 관리하지 않는다. */
 public interface PaymentProviderGateway {
+    Duration RESPONSE_TIMEOUT = Duration.ofSeconds(2);
+
     PaymentObservation create(ExpectedPayment expected, CardInput card, PaymentScenario scenario);
     PaymentObservation lookup(ExpectedPayment expected);
 

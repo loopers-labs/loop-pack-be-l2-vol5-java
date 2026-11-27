@@ -1,0 +1,37 @@
+name: week10-catalog-monitor
+services:
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    ports:
+      - "127.0.0.1:${CATALOG_PROM_PORT:-39091}:9090"
+    volumes:
+      - ../prometheus.yaml:/etc/prometheus/prometheus.yml:ro
+      - prom-history:/prometheus
+    networks: [default, commerce]
+  grafana:
+    image: grafana/grafana:11.2.0
+    ports:
+      - "127.0.0.1:${CATALOG_GRAFANA_PORT:-33311}:3000"
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - 'export GF_SECURITY_ADMIN_PASSWORD="$$(cat /proc/sys/kernel/random/uuid)"; exec /run.sh'
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/catalog.json
+    volumes:
+      - ../datasources.yaml:/etc/grafana/provisioning/datasources/week10.yaml:ro
+      - ../provider.yaml:/etc/grafana/provisioning/dashboards/week10.yaml:ro
+      - ${CATALOG_BOARD:-./dashboard.json}:/var/lib/grafana/dashboards/catalog.json:ro
+    networks: [default, commerce]
+networks:
+  commerce:
+    external: true
+    name: ${CATALOG_NETWORK:-week10-catalog-stack_default}
+volumes:
+  prom-history:

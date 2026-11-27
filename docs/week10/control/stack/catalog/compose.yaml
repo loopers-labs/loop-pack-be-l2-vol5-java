@@ -1,0 +1,5 @@
+services:
+  mysql:
+    volumes:
+      - ./catalog/seed.sql:/docker-entrypoint-initdb.d/025-catalog.sql:ro
+      - ../monitor/catalog/schema.sql:/docker-entrypoint-initdb.d/035-catalog-observation.sql:ro

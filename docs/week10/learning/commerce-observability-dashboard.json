@@ -1,0 +1,143 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Prometheus",
+      "description": "commerce-api를 수집하는 로컬 Prometheus를 선택하세요.",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus"
+    }
+  ],
+  "id": null,
+  "uid": "week10-commerce-observability",
+  "title": "Week 10 · 결제 미확인과 상품 조회",
+  "description": "로컬 commerce-api의 수집 상태, DB 기반 미확인 건수, 상품 목록 GET의 서버 측 부하를 읽습니다. HTTP 요청률과 지연 패널의 관찰 구간은 1분입니다.",
+  "tags": ["week10", "commerce-api"],
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "timezone": "browser",
+  "time": { "from": "now-15m", "to": "now" },
+  "refresh": "5s",
+  "templating": { "list": [] },
+  "panels": [
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "미확인 주문 · 최근 집계",
+      "description": "앱이 15초마다 응답 기한을 넘긴 UNKNOWN 주문을 집계합니다. 0은 DB 조회에 성공하고 대상이 없었다는 뜻입니다. 첫 조회 전, DB 조회 실패 또는 Prometheus 수집 누락 시 ‘확인 불가’로 표시합니다. 같은 DB를 조회하는 각 인스턴스의 값을 따로 표시합니다.",
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [
+        { "refId": "A", "expr": "((commerce_payment_unknown{job=\"spring-boot-app\"} and on(job, instance) (up{job=\"spring-boot-app\"} == 1)) or on(job, instance) (up{job=\"spring-boot-app\"} * NaN)) or on() vector(NaN)", "legendFormat": "{{instance}}", "range": false, "instant": true }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "noValue": "확인 불가",
+          "mappings": [
+            { "type": "special", "options": { "match": "nan", "result": { "text": "확인 불가" } } },
+            { "type": "special", "options": { "match": "null", "result": { "text": "확인 불가" } } }
+          ]
+        },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "values": false, "calcs": ["last"], "fields": "" }, "graphMode": "none", "colorMode": "none", "textMode": "auto" }
+    },
+    {
+      "id": 7,
+      "type": "stat",
+      "title": "DB 집계 · 마지막 성공 시각",
+      "description": "앱이 DB 집계에 마지막으로 성공한 시각을 브라우저의 현지 시각으로 표시합니다. DB 조회에 실패하면 직전 성공 시각이 남습니다. 첫 성공 전이거나 수집 대상에서 값을 읽을 수 없으면 ‘확인 불가’입니다.",
+      "gridPos": { "x": 6, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [
+        { "refId": "A", "expr": "(((commerce_payment_unknown_last_success_timestamp_seconds{job=\"spring-boot-app\"} * 1000) and on(job, instance) (up{job=\"spring-boot-app\"} == 1)) or on(job, instance) (up{job=\"spring-boot-app\"} * NaN)) or on() vector(NaN)", "legendFormat": "{{instance}}", "range": false, "instant": true }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "dateTimeAsLocal",
+          "noValue": "확인 불가",
+          "mappings": [
+            { "type": "special", "options": { "match": "nan", "result": { "text": "확인 불가" } } },
+            { "type": "special", "options": { "match": "null", "result": { "text": "확인 불가" } } }
+          ]
+        },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "values": false, "calcs": ["last"], "fields": "" }, "graphMode": "none", "colorMode": "none", "textMode": "auto" }
+    },
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Prometheus 수집 상태",
+      "description": "각 대상에서 최근 수집에 성공하면 1, 실패하면 0입니다. 대상 자체가 없으면 선이 없습니다. 업무 성공 여부는 오른쪽 결제 패널과 단계별 주문 기록을 함께 보세요.",
+      "gridPos": { "x": 0, "y": 4, "w": 12, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [
+        { "refId": "A", "expr": "up{job=\"spring-boot-app\"}", "legendFormat": "{{instance}}", "range": true }
+      ],
+      "fieldConfig": {
+        "defaults": { "min": 0, "max": 1, "decimals": 0, "custom": { "lineInterpolation": "stepAfter" } },
+        "overrides": []
+      },
+      "options": { "legend": { "showLegend": true, "placement": "bottom", "displayMode": "list" } }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "미확인 주문 · 집계 이력",
+      "description": "각 선은 인스턴스 한 대의 미확인 주문 건수입니다. 빈 구간은 값을 확인할 수 없었던 시간입니다. 같은 건수가 여러 번 수집될 수 있으므로 DB를 언제 읽었는지는 마지막 성공 시각에서 확인하세요.",
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [
+        { "refId": "A", "expr": "commerce_payment_unknown{job=\"spring-boot-app\"}", "legendFormat": "미확인 · {{instance}}", "range": true }
+      ],
+      "fieldConfig": {
+        "defaults": { "min": 0, "decimals": 0, "unit": "short", "custom": { "axisLabel": "건", "lineInterpolation": "stepAfter", "spanNulls": false } },
+        "overrides": []
+      },
+      "options": { "legend": { "showLegend": true, "placement": "bottom", "displayMode": "list" } }
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "상품 목록 GET · 초당 요청 수",
+      "description": "최근 1분간 서버에서 완료한 상품 목록 GET의 초당 평균입니다. 성공·실패 상태를 모두 포함합니다. 요청이 아직 한 번도 기록되지 않았거나 표본이 부족하면 값이 없습니다.",
+      "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [
+        { "refId": "A", "expr": "sum(rate(http_server_requests_seconds_count{job=\"spring-boot-app\",method=\"GET\",uri=\"/api/v1/products\"}[1m]))", "legendFormat": "상품 목록", "range": true }
+      ],
+      "fieldConfig": { "defaults": { "min": 0, "unit": "reqps" }, "overrides": [] },
+      "options": { "legend": { "showLegend": true, "placement": "bottom", "displayMode": "list" } }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "상품 목록 GET · 서버 응답 시간 p95",
+      "description": "최근 1분간 완료한 요청 중 약 95%가 이 시간 안에 끝났습니다. HTTP 히스토그램 버킷으로 계산한 추정치이며, 표본이 적으면 변동이 큽니다. JMeter가 본 클라이언트 경과 시간과 측정 경계가 다릅니다.",
+      "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [
+        { "refId": "A", "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_requests_seconds_bucket{job=\"spring-boot-app\",method=\"GET\",uri=\"/api/v1/products\"}[1m])))", "legendFormat": "p95", "range": true }
+      ],
+      "fieldConfig": { "defaults": { "min": 0, "unit": "s" }, "overrides": [] },
+      "options": { "legend": { "showLegend": true, "placement": "bottom", "displayMode": "list" } }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "상품 목록 GET · 5xx 비율",
+      "description": "최근 1분간 상품 목록 GET 중 서버가 5xx로 완료한 비율입니다. 요청이 있고 5xx가 없으면 0%입니다. 분모가 0이거나 표본이 부족하면 선을 그리지 않습니다. 클라이언트 연결 실패와 JMeter assertion 실패는 별도로 확인하세요.",
+      "gridPos": { "x": 0, "y": 16, "w": 24, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [
+        { "refId": "A", "expr": "(sum(rate(http_server_requests_seconds_count{job=\"spring-boot-app\",method=\"GET\",uri=\"/api/v1/products\",status=~\"5[0-9][0-9]\"}[1m])) or vector(0)) / (sum(rate(http_server_requests_seconds_count{job=\"spring-boot-app\",method=\"GET\",uri=\"/api/v1/products\"}[1m])) > 0)", "legendFormat": "전체 요청 중 5xx", "range": true }
+      ],
+      "fieldConfig": { "defaults": { "min": 0, "max": 1, "unit": "percentunit" }, "overrides": [] },
+      "options": { "legend": { "showLegend": true, "placement": "bottom", "displayMode": "list" } }
+    }
+  ]
+}

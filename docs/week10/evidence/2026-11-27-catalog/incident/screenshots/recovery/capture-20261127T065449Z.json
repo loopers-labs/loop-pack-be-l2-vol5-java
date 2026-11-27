@@ -1,0 +1,39 @@
+{
+  "dashboard": "상품 탐색과 구매 · 차 주문 3건 결제 장애",
+  "uid": "w10-catalog-incident",
+  "revision": 1,
+  "timezone": "Asia/Seoul",
+  "from": "2026-11-27T06:49:10.934Z",
+  "to": "2026-11-27T06:54:49.000Z",
+  "fromKst": "2026-11-27 15:49:10",
+  "toKst": "2026-11-27 15:54:49",
+  "captures": [
+    {
+      "file": "overview-20261127T065449Z.png",
+      "focus": "현재 미확인 주문",
+      "capturedAt": "2026-11-27T06:55:04.159Z",
+      "url": "http://127.0.0.1:33312/d/w10-catalog-incident/8d448b14-04b1-574f-84e0-bfa51dd7c14d?from=1795762150934&to=1795762489000&timezone=Asia%2FSeoul&theme=dark&orgId=1",
+      "toolbarRange": "2026-11-27 15:49:10 to 2026-11-27 15:54:49",
+      "successfulQueries": 11,
+      "bytes": 174614
+    },
+    {
+      "file": "traffic-20261127T065449Z.png",
+      "focus": "서버 응답 시간 · p95",
+      "capturedAt": "2026-11-27T06:55:05.716Z",
+      "url": "http://127.0.0.1:33312/d/w10-catalog-incident/8d448b14-04b1-574f-84e0-bfa51dd7c14d?from=1795762150934&to=1795762489000&timezone=Asia%2FSeoul&theme=dark&orgId=1",
+      "toolbarRange": "2026-11-27 15:49:10 to 2026-11-27 15:54:49",
+      "successfulQueries": 22,
+      "bytes": 187366
+    },
+    {
+      "file": "payment-health-20261127T065449Z.png",
+      "focus": "Prometheus 수집 상태",
+      "capturedAt": "2026-11-27T06:55:06.988Z",
+      "url": "http://127.0.0.1:33312/d/w10-catalog-incident/8d448b14-04b1-574f-84e0-bfa51dd7c14d?from=1795762150934&to=1795762489000&timezone=Asia%2FSeoul&theme=dark&orgId=1",
+      "toolbarRange": "2026-11-27 15:49:10 to 2026-11-27 15:54:49",
+      "successfulQueries": 24,
+      "bytes": 199652
+    }
+  ]
+}

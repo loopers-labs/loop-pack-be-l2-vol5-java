@@ -1,0 +1,78 @@
+{
+  "jmeter": {
+    "samples": 60,
+    "http200": 60,
+    "assertionsPassed": 60,
+    "minMs": 12,
+    "meanMs": 18.466666666666665,
+    "p95NearestRankMs": 28,
+    "maxMs": 58,
+    "earliestRequestEpochMs": 1795658562218,
+    "lastCompletionEpochMs": 1795658593911
+  },
+  "app": {
+    "before": 2,
+    "after": 62,
+    "delta": 60
+  },
+  "jar": "commerce-api-f8ffcee.jar",
+  "jarSha256": "D7D6C2CFF9679DC680382C84DBAB4E7145A6E32622441D4B34BB3839E46C0F50",
+  "grafanaNearLoadEnd": [
+    {
+      "panel": 1,
+      "rangeValue": [
+        [
+          1795658595,
+          "1"
+        ],
+        [
+          1795658600,
+          "1"
+        ]
+      ]
+    },
+    {
+      "panel": 2,
+      "rangeValue": []
+    },
+    {
+      "panel": 3,
+      "rangeValue": [
+        [
+          1795658595,
+          "1.0465509612820327"
+        ],
+        [
+          1795658600,
+          "1.0465507209484155"
+        ]
+      ]
+    },
+    {
+      "panel": 4,
+      "rangeValue": [
+        [
+          1795658595,
+          "0.030444515870611276"
+        ],
+        [
+          1795658600,
+          "0.03044451648255089"
+        ]
+      ]
+    },
+    {
+      "panel": 5,
+      "rangeValue": [
+        [
+          1795658595,
+          "0"
+        ],
+        [
+          1795658600,
+          "0"
+        ]
+      ]
+    }
+  ]
+}

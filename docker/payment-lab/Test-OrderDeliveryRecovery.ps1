@@ -92,6 +92,7 @@ function StartApi([string]$name, [string]$jar, [int]$debugPort = 0) {
         $debug = @("-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=127.0.0.1:$debugPort")
     }
     $process = Launch $name ($debug + @('-jar', $jar, '--spring.profiles.active=payment-lab',
+        "--payment.lab.run-id=$id",
         '--server.port=0', '--management.server.port=-1',
         "--datasource.mysql-jpa.main.jdbc-url=jdbc:mysql://127.0.0.1:$dbPort/loopers",
         '--datasource.mysql-jpa.main.minimum-idle=2',
@@ -273,6 +274,7 @@ VALUES (7, 0, 20, 1, UTC_TIMESTAMP(6), UTC_TIMESTAMP(6), 1000, 'R03 Product 7'),
     Write-Host "W6_READY A=$a/$eventA B=$b/$eventB"
 
     ApplySql (Get-Item -LiteralPath "$PSScriptRoot/011-order-event-outbox.sql")
+    ApplySql (Get-Item -LiteralPath "$PSScriptRoot/019-payment-response-deadline.sql")
     Recover 'recover-create' $a $eventA 'CREATED'
     AssertEqual (Sql "SELECT CONCAT(status,':',attempts) FROM loopers.order_event_outbox WHERE order_id=$a") 'PENDING:0' 'A staged'
     $api = StartApi 'w7-first' $CommerceJar $debugC

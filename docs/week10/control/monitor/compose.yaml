@@ -1,0 +1,37 @@
+name: week10-control-monitor
+services:
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    ports:
+      - "127.0.0.1:39090:9090"
+    volumes:
+      - ./prometheus.yaml:/etc/prometheus/prometheus.yml:ro
+      - prom-history:/prometheus
+    networks: [default, commerce]
+  grafana:
+    image: grafana/grafana:11.2.0
+    ports:
+      - "127.0.0.1:33310:3000"
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - 'export GF_SECURITY_ADMIN_PASSWORD="$$(cat /proc/sys/kernel/random/uuid)"; exec /run.sh'
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/control.json
+    volumes:
+      - ./datasources.yaml:/etc/grafana/provisioning/datasources/week10.yaml:ro
+      - ./provider.yaml:/etc/grafana/provisioning/dashboards/week10.yaml:ro
+      - ./dashboard.json:/var/lib/grafana/dashboards/control.json:ro
+    networks: [default, commerce]
+networks:
+  commerce:
+    external: true
+    name: week10-control-stack_default
+volumes:
+  prom-history:

@@ -4,13 +4,15 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Embedded;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import jakarta.persistence.Version;
 import java.time.Instant;
 
 @Entity
-@Table(name = "payment_attempts", uniqueConstraints = {
+@Table(name = "payment_attempts", indexes = @Index(name = "ix_payment_attempt_unknown_deadline",
+        columnList = "dispatch_state, outcome, response_deadline"), uniqueConstraints = {
         @UniqueConstraint(name = "uk_payment_attempt_order", columnNames = "order_id"),
         @UniqueConstraint(name = "uk_payment_attempt_transaction", columnNames = "transaction_key")
 })
@@ -36,6 +38,8 @@ public class PaymentAttemptJpaEntity {
     String conflict;
     @Column(name = "created_at", nullable = false)
     Instant createdAt;
+    @Column(name = "response_deadline")
+    Instant responseDeadline;
     @Embedded
     PaymentScenarioFields scenario;
     @Version
