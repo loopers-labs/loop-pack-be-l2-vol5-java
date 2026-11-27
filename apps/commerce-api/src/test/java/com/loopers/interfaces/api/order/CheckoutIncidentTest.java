@@ -5,6 +5,7 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.loopers.application.order.facade.OrderOutboxRelay;
 import com.loopers.application.order.facade.OrderPaymentFacade;
 import com.loopers.domain.brand.entity.Brand;
 import com.loopers.domain.coupon.entity.Coupon;
@@ -21,6 +22,7 @@ import com.loopers.domain.user.entity.User;
 import com.loopers.infrastructure.payment.client.TestPgPaymentGateway;
 import com.loopers.support.incident.IncidentEvidence;
 import com.loopers.support.pg.TestPgServer;
+import com.loopers.support.process.BootJarProcess;
 import com.loopers.utils.DatabaseCleanUp;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.AfterEach;
@@ -29,6 +31,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.autoconfigure.actuate.observability.AutoConfigureObservability;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -45,23 +48,27 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.file.Path;
 import java.time.Clock;
+import java.time.DayOfWeek;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
+import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Predicate;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -72,10 +79,21 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureObservability(tracing = false)
 @SpringBootTest(
     webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-    properties = {"management.server.port=0", "payment.metrics.unresolved.refresh-ms=200"}
+    properties = {
+        "management.server.port=0",
+        "payment.metrics.unresolved.refresh-ms=200",
+        "order-event.topic=" + CheckoutIncidentTest.TOPIC
+    }
 )
 @AutoConfigureMockMvc
 class CheckoutIncidentTest {
+
+    static final String TOPIC = "order-events-incident";
+    private static final Duration STREAMER_START_TIMEOUT = Duration.ofSeconds(90);
+    private static final Duration CONSUME_TIMEOUT = Duration.ofSeconds(30);
+    private static final Duration BATCH_TIMEOUT = Duration.ofSeconds(120);
+    private static final List<String> STREAMER_TABLES = List.of("processed_order_confirmation", "product_purchase_activity");
+    private static final String PERIOD_START = "2026-08-17";
 
     private static final String USER_ID_HEADER = "X-USER-ID";
     private static final int ORDERS_PER_SET = 10;
@@ -118,8 +136,20 @@ class CheckoutIncidentTest {
     @Autowired
     private DatabaseCleanUp databaseCleanUp;
 
+    @Autowired
+    private OrderOutboxRelay relay;
+
+    @Value("${commerce-streamer.boot-jar}")
+    private String streamerBootJar;
+
+    @Value("${commerce-batch.boot-jar}")
+    private String batchBootJar;
+
     @LocalManagementPort
     private int managementPort;
+
+    private final List<BootJarProcess> processes = new ArrayList<>();
+    private BootJarProcess streamer;
 
     private final TestPgServer pg = TestPgServer.shared();
     private final HttpClient http = HttpClient.newHttpClient();
@@ -164,10 +194,14 @@ class CheckoutIncidentTest {
         pg.stopDroppingResponses();
         gatewayLogger.detachAppender(paymentLogs);
         facadeLogger.detachAppender(paymentLogs);
+        // 이 테스트가 띄운 프로세스만 정리함
+        processes.forEach(BootJarProcess::close);
         databaseCleanUp.truncateAllTables();
+        // streamer 테이블은 이 context 의 엔티티가 아니라 정리 대상에 없음. batch metadata 는 지우지 않음
+        STREAMER_TABLES.forEach(table -> jdbc.getJdbcTemplate().execute("truncate table `" + table + "`"));
     }
 
-    @DisplayName("PG 성공 응답을 잃은 3건만 UNKNOWN 으로 남고, 증거로 응답 유실을 가린 뒤 같은 주문을 create 추가 없이 복구한다.")
+    @DisplayName("PG 성공 응답을 잃은 3건만 UNKNOWN 으로 남고, 증거로 응답 유실을 가린 뒤 같은 주문을 create 추가 없이 복구하며, 복구 주문이 구매 활동 · 주간 랭킹까지 이어진다.")
     @Test
     void diagnosesAndRecoversLostSuccessResponse() throws Exception {
         IncidentEvidence evidence = IncidentEvidence.start(EVIDENCE_ROOT, objectMapper);
@@ -178,6 +212,10 @@ class CheckoutIncidentTest {
         run.put("result", "FAILED");
         String stage = "baseline";
         try {
+            // 실제 streamer 를 같은 MySQL · broker 에 띄움. 구매 활동은 이 프로세스가 저장함
+            streamer = start("commerce-streamer", streamerBootJar, streamerArgs());
+            streamer.awaitLine(line -> line.contains("Started CommerceStreamerApplication"), STREAMER_START_TIMEOUT);
+
             // baseline: 응답 유실 없이 정상 10건
             assertThat(pg.dropTargets()).as("baseline 에서는 응답 유실이 꺼져 있어야 함").isEmpty();
             List<Long> baseline = createOrders();
@@ -197,6 +235,7 @@ class CheckoutIncidentTest {
                 () -> assertThat(healthStatus()).isEqualTo("UP"),
                 () -> assertThat(awaitUnresolved("UNKNOWN", 0)).isZero()
             );
+            deliver(baseline);
             evidence.writeJson("baseline.json", stageRecord("baseline", baseline, Map.of()));
             CLOCK.advance(Duration.ofMinutes(5));
 
@@ -241,6 +280,9 @@ class CheckoutIncidentTest {
                 () -> assertThat(awaitUnresolved("PENDING", 0)).isZero(),
                 () -> assertThat(unknownCreateLogs()).containsExactlyInAnyOrderElementsOf(droppedProviderOrderIds)
             );
+            // 확정된 7건만 Outbox 가 있음. UNKNOWN 3건은 보낼 사실이 없음
+            deliver(normal);
+            assertThat(activityCountByOrder(dropped)).as("미확정 주문의 구매 활동").isEmpty();
 
             // 증거 보존: 복구 API 를 부르기 전에 fault 원문을 남기고 hash 를 잡아 둠
             stage = "preserve";
@@ -322,6 +364,39 @@ class CheckoutIncidentTest {
             recoveryExtra.put("outboxByOrder", outboxCountByOrder(fault));
             recoveryExtra.put("confirmedAt", confirmedAt(dropped).stream().map(LocalDateTime::toString).toList());
             evidence.writeJson("recovery.json", stageRecord("recovery", fault, recoveryExtra));
+
+            // 후속 결과: 복구 주문의 실제 Outbox → Kafka → 구매 활동 → 새 주간 snapshot → 랭킹 API
+            stage = "followup";
+            deliver(dropped);
+            List<Long> all = new ArrayList<>(baseline);
+            all.addAll(fault);
+            Map<Long, Integer> activities = activityCountByOrder(all);
+            assertAll(
+                () -> assertThat(activities).as("주문마다 구매 활동 1행")
+                    .isEqualTo(all.stream().collect(Collectors.toMap(id -> id, id -> 1))),
+                () -> assertThat(activityQuantity(all)).as("수량 1 × 20 주문").isEqualTo(20),
+                () -> assertThat(weekOfConfirmation(all)).as("처리 기록의 확정 시각이 모두 같은 주")
+                    .containsOnly(PERIOD_START)
+            );
+            BootJarProcess batch = start("commerce-batch-run", batchBootJar, batchArgs("run"));
+            assertThat(batch.awaitExit(BATCH_TIMEOUT)).as("batch 종료 코드").isZero();
+            JsonNode ranking = getAs("/api/v1/rankings/weekly?periodStart=" + PERIOD_START);
+            assertAll(
+                () -> assertThat(ranking.at("/data/status").asText()).isEqualTo("PUBLISHED"),
+                () -> assertThat(ranking.at("/data/snapshotId").asText()).isEqualTo("weekly-20260817-r1"),
+                () -> assertThat(ranking.at("/data/items")).hasSize(1),
+                () -> assertThat(ranking.at("/data/items/0/productId").asLong()).isEqualTo(product.getId()),
+                // baseline 10 + 장애 집합 10. 복구 주문을 빼거나 baseline 을 몰래 제외하지 않음
+                () -> assertThat(ranking.at("/data/items/0/score").asLong()).isEqualTo(20L),
+                () -> assertThat(ranking.at("/data/items/0/rank").asInt()).isEqualTo(1)
+            );
+            Map<String, Object> followup = new LinkedHashMap<>();
+            followup.put("outbox", jdbc.queryForList(
+                "select order_id, event_id, status, attempt_count from order_confirmed_outbox where order_id in (:ids) order by order_id",
+                Map.of("ids", all)));
+            followup.put("activityByOrder", activities);
+            followup.put("rankingResponse", ranking.path("data"));
+            evidence.writeJson("followup.json", followup);
 
             stage = "evidence";
             assertThat(evidence.sha256("fault.json")).as("fault 기록을 덮어쓰지 않음").isEqualTo(faultHash);
@@ -483,6 +558,93 @@ class CheckoutIncidentTest {
                 .count());
         }
         return counts;
+    }
+
+    /** relay 한 회차로 보내고 streamer 가 주문마다 처음 소비할 때까지 기다림 */
+    private void deliver(List<Long> orderIds) {
+        assertThat(relay.runOnce()).isTrue();
+        List<String> eventIds = jdbc.queryForList("select event_id from order_confirmed_outbox where order_id in (:ids)",
+            Map.of("ids", orderIds), String.class);
+        assertThat(eventIds).as("주문마다 Outbox 1행").hasSize(orderIds.size());
+        eventIds.forEach(eventId -> streamer.awaitCount(consumed(eventId), 1, CONSUME_TIMEOUT));
+    }
+
+    private Map<Long, Integer> activityCountByOrder(List<Long> orderIds) {
+        Map<Long, Integer> counts = new LinkedHashMap<>();
+        jdbc.query("select order_id, count(*) as cnt from product_purchase_activity where order_id in (:ids) group by order_id",
+            Map.of("ids", orderIds), rs -> {
+                counts.put(rs.getLong("order_id"), rs.getInt("cnt"));
+            });
+        return counts;
+    }
+
+    private long activityQuantity(List<Long> orderIds) {
+        return jdbc.queryForObject("select coalesce(sum(quantity), 0) from product_purchase_activity where order_id in (:ids)",
+            Map.of("ids", orderIds), Long.class);
+    }
+
+    /** streamer 가 저장한 확정 시각(UTC 벽시계 값)이 속한 UTC 월요일 */
+    private Set<String> weekOfConfirmation(List<Long> orderIds) {
+        return jdbc.queryForList("select confirmed_at from processed_order_confirmation where order_id in (:ids)",
+                Map.of("ids", orderIds), LocalDateTime.class).stream()
+            .map(at -> at.toLocalDate().with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)).toString())
+            .collect(Collectors.toSet());
+    }
+
+    private BootJarProcess start(String name, String bootJar, List<String> args) {
+        BootJarProcess process = BootJarProcess.start(name, Path.of(bootJar), args);
+        processes.add(process);
+        return process;
+    }
+
+    private static Predicate<String> consumed(String eventId) {
+        return line -> line.contains("주문 확정 이벤트 소비") && line.contains("eventId=" + eventId + " ");
+    }
+
+    private List<String> batchArgs(String command) {
+        List<String> args = new ArrayList<>(commonArgs());
+        args.addAll(List.of(
+            "--job.name=weeklyRanking",
+            "--spring.batch.job.enabled=false",
+            "--weekly-ranking.command=" + command,
+            "--periodStart=" + PERIOD_START
+        ));
+        return args;
+    }
+
+    private List<String> streamerArgs() {
+        List<String> args = new ArrayList<>(commonArgs());
+        args.addAll(List.of(
+            "--server.port=0",
+            "--spring.kafka.bootstrap-servers=" + System.getProperty("spring.kafka.bootstrap-servers"),
+            "--order-event.topic=" + TOPIC,
+            "--order-event.consumer-group=purchase-activity-incident"
+        ));
+        return args;
+    }
+
+    private List<String> commonArgs() {
+        return List.of(
+            "--spring.profiles.active=test",
+            "--management.server.port=0",
+            // 같은 DB 의 api 테이블을 지우지 않도록 create 대신 update
+            "--spring.jpa.hibernate.ddl-auto=update",
+            "--datasource.mysql-jpa.main.jdbc-url=" + System.getProperty("datasource.mysql-jpa.main.jdbc-url"),
+            "--datasource.mysql-jpa.main.username=" + System.getProperty("datasource.mysql-jpa.main.username"),
+            "--datasource.mysql-jpa.main.password=" + System.getProperty("datasource.mysql-jpa.main.password"),
+            "--datasource.redis.database=0",
+            "--datasource.redis.master.host=" + System.getProperty("datasource.redis.master.host"),
+            "--datasource.redis.master.port=" + System.getProperty("datasource.redis.master.port"),
+            "--datasource.redis.replicas[0].host=" + System.getProperty("datasource.redis.replicas[0].host"),
+            "--datasource.redis.replicas[0].port=" + System.getProperty("datasource.redis.replicas[0].port")
+        );
+    }
+
+    private JsonNode getAs(String path) throws Exception {
+        String response = mvc.perform(get(path).header(USER_ID_HEADER, String.valueOf(user.getId())))
+            .andExpect(status().isOk())
+            .andReturn().getResponse().getContentAsString();
+        return objectMapper.readTree(response);
     }
 
     private List<Long> createOrders() throws Exception {
