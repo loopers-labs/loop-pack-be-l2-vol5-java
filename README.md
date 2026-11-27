@@ -16,6 +16,12 @@ docker-compose -f ./docker/infra-compose.yml up
 docker-compose -f ./docker/monitoring-compose.yml up
 ```
 
+W10의 **미확인 결제 0 → 3 → 0**을 보려면 아래 명령으로 전용 Grafana를 띄우고 [사고 기록 화면](http://127.0.0.1:3300/d/w10-payment-incident/)을 엽니다. 보존된 세 관측값을 사용하므로 애플리케이션이나 사용자 DB를 실행할 필요가 없습니다. [패널 읽는 순서와 증상별 진단](docs/runbook/week10.md#grafana에서-사고-보기)
+
+```sh
+docker compose -p w10-grafana -f docker/grafana-w10-compose.yml up -d
+```
+
 ## About Multi-Module Project
 본 프로젝트는 멀티 모듈 프로젝트로 구성되어 있습니다. 각 모듈의 위계 및 역할을 분명히 하고, 아래와 같은 규칙을 적용합니다.
 
