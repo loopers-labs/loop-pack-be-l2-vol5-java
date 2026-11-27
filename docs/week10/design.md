@@ -148,7 +148,8 @@ select status, count(*) from payment where status in ('REQUESTED', 'UNKNOWN', 'P
 - 지금 main 서버는 `server.address: 127.0.0.1` 이지만 management 서버는 별도 포트라 이 값을 따르지 않고 모든 주소에 열린다. 로컬 실습 범위(W5 8장)와 맞춘다.
 - `env` · `heapdump` 등은 노출 목록에 넣지 않는다. 보안 필터(`/api-admin/**`)는 management 포트에 걸리지 않으므로 주소 제한이 보호 수단이다.
 - 테스트는 `webEnvironment = RANDOM_PORT` 와 `management.server.port=0` 으로 띄우고 `@LocalManagementPort` 로 실제 주입된 포트를 읽는다. 8081 이 비어 있다고 가정하지 않는다. MockMvc 는 management 자식 컨텍스트로 가지 않으므로 actuator 는 실제 HTTP 로 부른다.
-- health 는 `/actuator/health` · `/actuator/health/liveness` · `/actuator/health/readiness` 를 단계마다 기록한다. 이 실험은 DB · Redis · Kafka · PG 를 내리지 않으므로 세 단계 모두 UP 을 기대한다. UP 이 아니면 출력값을 고치지 않고 원인을 확인한다.
+- 사고 실험은 단계마다 `/actuator/health` 응답을 증거에 기록하고 UP 을 assert 한다. readiness 와 노출 범위(`env` · `heapdump` · `beans` 404)는 `ManagementEndpointTest` 가 확인한다. 이 실험은 DB · Redis · Kafka · PG 를 내리지 않으므로 세 단계 모두 UP 을 기대한다. UP 이 아니면 출력값을 고치지 않고 원인을 확인한다.
+- Spring Boot 테스트는 기본으로 지표 export 를 꺼서 `/actuator/prometheus` 가 404 다. prometheus 를 보는 테스트(`ManagementEndpointTest`, `CheckoutIncidentTest`)만 `@AutoConfigureObservability(tracing = false)` 로 켠다. 운영 설정과는 무관하다.
 
 ## 5. 경쟁 가설과 판정
 
@@ -163,6 +164,7 @@ select status, count(*) from payment where status in ('REQUESTED', 'UNKNOWN', 'P
 | H3. 성공 결과의 내부 반영 실패 | 거래 SUCCESS, 내부 UNKNOWN 또는 PENDING, `결제 결과 적용 실패` 로그(TX rollback), 조회는 있었음 | 조회 로그 · 적용 실패 로그 · fault 동안 조회 수 |
 
 - **PG SUCCESS 와 UNKNOWN 만으로는 H2 와 H3 을 가르지 않는다.** H3 도 같은 조합을 만든다. 판정은 "create 결과가 UNKNOWN 이었다"(H2 지지)와 "fault 동안 조회 · 적용 시도가 0건이고 적용 실패 로그가 없다"(H3 반박)를 함께 볼 때만 내린다. 둘 중 하나라도 확인할 수 없으면 "미확정"으로 남긴다.
+- **"fault 동안 조회 수"는 진단 조회 전에 센다.** 진단 조회도 fixture 에 조회로 남는다. 처음 구현은 진단 뒤에 세어 장애 주문마다 1회가 잡혔고, 판정이 H3 를 "미확정"으로 남겼다(증거 `20261127T010545Z-d43e635a`). 판정 규칙은 맞게 동작했고 세는 시점을 고쳤다.
 - **진단 조회는 읽기만 한다.** 테스트는 실제 `PaymentGateway.findByProviderOrderId`(adapter · 같은 계정 헤더)를 직접 불러 거래 목록을 얻고, 조회 전후로 commerce DB(결제 · 주문 · 재고 · Outbox)가 같은지 assert 한다. reconcile 은 결과를 적용하므로 진단에 쓰지 않는다.
 - 판정은 주입 코드의 정답이 아니라 위 관찰로 내린다. AI 에게 원문 기록과 가설을 주고 비교를 맡길 수는 있지만, 상태를 바꾸는 조치는 사람이 범위 · 중단 조건을 확인한 뒤 한다(runbook).
 
@@ -182,7 +184,7 @@ flowchart TD
     A[준비: 사용자 · 상품 재고 30 · 포인트 · 쿠폰 · 고정 시계] --> B
     B["baseline: 정상 10개 confirm → PG 완료 SUCCESS → reconcile<br/>유실 대상 없음 assert · 기록"] --> C
     C["relay → Kafka → streamer 소비 10건"] --> D
-    D["fault: 장애 10개 생성 → 3개 ID 고정 → 유실 대상 지정<br/>10개 confirm → 7개 PG 완료 + reconcile · 3개 PG 완료만"] --> E
+    D["fault: 장애 10개 생성 → 3개 ID 고정 → 유실 대상 지정<br/>10개 confirm → 7개 PG 완료 + reconcile · 3개 PG 완료만<br/>relay: 확정된 7건만 · 장애 3건 구매 활동 0 assert"] --> E
     E["유실 대상 해제 · 새 입력 중단<br/>fault 증거 기록 + hash"] --> F
     F["진단: health · prometheus · 로그 · 진단 조회<br/>commerce 상태 불변 assert · 가설 판정"] --> G
     G["recovery: 장애 3건 진단 조회 검증 → 본인 reconcile<br/>반복 reconcile · callback · 다른 사용자 reconcile"] --> H
@@ -221,6 +223,7 @@ flowchart TD
 **장애 3건마다 진단 조회로 "거래 1건 · SUCCESS · 금액 일치 · providerOrderId 일치"를 확인한 뒤에만 본인 reconcile API 를 실제 controller · adapter · DB 경로로 부른다.** 조건이 하나라도 다르면 reconcile 하지 않고 상태를 그대로 둔 채 테스트를 실패시킨다(runbook 의 중단 조건과 같다).
 
 - reconcile 이 다시 같은 조건을 판정한다(W5 L2). 테스트의 사전 확인은 runbook 절차를 재현하는 것이고, 판정을 대신하지 않는다.
+- 사전 확인은 진단 단계의 조회 결과를 쓴다. 진단과 복구 사이에 새 입력 · 다른 조치가 없어서다. 운영 runbook 은 재진입 때 이전 진단을 재사용하지 않고 다시 조회한다.
 - 0건 · 복수 거래 · 금액 불일치 · 계속 PENDING · 조회 불가 장면은 W5 `PaymentIntegrationTest` 가 이미 확인한다. 이 테스트에 다시 넣지 않는다.
 
 ### 대사 항목 (D-209)
@@ -251,16 +254,18 @@ flowchart TD
 
 | 파일 | 내용 |
 |---|---|
-| `run.json` | runId, 시작 · 끝 시각, 고정 시계 값, 커밋 해시(있으면), 결과(통과 · 실패 단계) |
+| `run.json` | runId, 시작 · 끝 시각, 고정 시계 시작값, 결과(`PASSED` · `FAILED`)와 마지막 단계, `fault.json` 해시 |
 | `baseline.json` · `fault.json` · `recovery.json` | 단계 · 관찰 시각, 대상 주문 ID 목록, 주문마다 attemptKey · providerOrderId · 거래 키 · PG 상태 · 결제 상태 · 예약 · 주문 상태 · create 수, 재고, health 응답, prometheus 의 `commerce_payment_unresolved` 줄 |
 | `diagnosis.json` | 가설 · 예상 · 실제 · 판정, 진단 조회 결과, 조회 전후 상태 동일 여부 |
-| `logs.txt` | 대상 주문의 `providerOrderId` 를 담은 결제 경계 로그 줄만 |
+| `logs.txt` | 이 테스트 동안 남은 결제 경계 로그 전부(PG adapter · 결제 facade). 주문은 `providerOrderId` 로 찾음 |
 | `followup.json` | Outbox · 구매 활동 · snapshot · 랭킹 API 응답 |
 | `SHA256SUMS` | `fault.json` 은 기록 직후, 나머지는 끝에 계산. 끝에서 `fault.json` 해시가 처음과 같은지 assert |
 
 - 테스트 통과의 근거는 파일이 아니라 assertion 이다. 파일은 같은 식별자 · 상태로 사람이 다시 읽기 위한 기록이다. checksum 은 파일이 바뀌지 않았음만 보여 준다.
 - 중간에 실패해도 그때까지 쓴 파일과 `run.json` 의 실패 단계를 남긴다.
-- 로그는 테스트용 logback appender(`ListAppender`)로 api 컨텍스트의 결제 로그를 모은다. 사용자 식별자 · 카드 정보는 애초에 로그에 없다(D-200).
+- 로그는 테스트용 logback appender(`ListAppender`)로 api 컨텍스트의 결제 로그를 모은다. 사용자 식별자 · 카드 정보는 애초에 로그에 없다(D-200). 커밋한 증거에서 카드 번호 · 카드 종류 · 사용자 헤더를 검색해 0건임을 확인했다.
+- 저장소가 `core.autocrlf=true` 라 체크아웃 때 줄 끝이 바뀌면 `SHA256SUMS` 검증이 깨진다. `.gitattributes` 에 `docs/week10/evidence/** -text` 를 두어 바이트 그대로 저장한다.
+- 커밋한 실행은 `docs/week10/evidence/20261127T011458Z-dad81a72/` 다. 그 폴더에서 `sha256sum -c SHA256SUMS` 로 검증할 수 있다.
 
 ### runbook 은 `docs/runbook/week10.md` 에 둔다
 
@@ -286,7 +291,9 @@ flowchart TD
 | 쿠폰 | 총량 · 사용자 중복 · 동시 수용 · 본인 목록 | `CouponIssueFacadeIntegrationTest`, streamer `CouponIssueWorkerIntegrationTest` 등 |
 | 랭킹 | 실제 입력 · 재시작 · revision · 공개 API | `WeeklyRankingRestartTest`, `WeeklyRankingFlowTest` |
 | 이번 사고 | 응답 유실 진단 · 같은 주문 복구 · 후속 결과 | `CheckoutIncidentTest` |
-| 새 관측 | gauge 값 · 태그 · 갱신 실패 시 유지, 로그 필드에 카드 정보 없음 | `UnresolvedPaymentMetricsTest`, `TestPgPaymentGateway` 로그 테스트 |
+| 사고 fixture | 주문별 응답 유실 · 해제 · 중복 create 기록 · reset | `TestPgServerTest` |
+| 새 관측 | gauge 값 · 태그 · 갱신 실패 시 유지, DB count 쿼리, 로그 필드 · 카드 정보 없음, rollback 된 적용은 실패 로그로만 남음 | `UnresolvedPaymentMetricsTest`, `PaymentRepositoryIntegrationTest`, `TestPgPaymentGatewayLogTest`, `OrderConfirmTransactionTest` |
+| 관리 endpoint | 127.0.0.1 바인딩, health · readiness UP, prometheus 업무 지표, 그 밖 endpoint 404 | `ManagementEndpointTest` |
 
 ```
 ./gradlew :apps:commerce-api:test --tests '*CheckoutIncidentTest'
@@ -296,6 +303,17 @@ flowchart TD
 ```
 
 - 테스트 0건 · skip · UP-TO-DATE 는 통과로 보지 않는다. 새 실행 결과만 증거로 쓴다.
+
+**실행 결과 (2026-11-27, 로컬 · JDK 21 · Testcontainers)**: `./gradlew :apps:commerce-api:check :apps:commerce-streamer:check :apps:commerce-batch:check` 22분, BUILD SUCCESSFUL.
+
+| 모듈 | 테스트 | 실패 | skip |
+|---|---|---|---|
+| commerce-api | 755 | 0 | 21 |
+| commerce-streamer | 104 | 0 | 12 |
+| commerce-batch | 24 | 0 | 2 |
+
+- skip 은 모두 `experiment` 패키지의 기존 측정 실험이다. 환경 변수(`RUN_EXPERIMENT` 등)가 있을 때만 돈다. 이번에 추가한 테스트 중 skip 된 것은 없다.
+- checkstyle(api · streamer) · `ArchitectureTest` 가 check 에 포함돼 함께 통과했다. batch 에는 checkstyle · ArchitectureTest 설정이 없다(9주차 남은 한계 그대로).
 - 테스트는 자신이 띄운 streamer · batch 프로세스와 fixture 상태만 정리한다.
 - 확인한 것은 로컬 통제 사고 1종과 관련 회귀다. 운영 배포 · 실계정 · 부하 · 다른 장애(H3 실제 발생, DB 장애, broker 장애)는 확인하지 않았다.
 
@@ -309,6 +327,9 @@ flowchart TD
 | H3 재현 | 이번 실험은 H2 만 주입했다. H3 는 로그로 반박만 했다 | TX B 실패 주입 실험(W5 의 외부 성공 뒤 저장 실패 테스트와 연결) |
 | 분산 추적 | 요청 단위 traceId 만 있다. Kafka · batch 로 문맥이 이어지지 않는다 | context propagation · 수집 backend |
 | 자동 복구 | 수동 reconcile 만 있다 | 미종결 한도 기반 자동 조회(스케줄러), 중단 조건 그대로 |
+| 응답 유실의 모양 | fixture 는 연결을 끊어 `EOFException` 이 난다. 실제 PG 의 응답 timeout(3초)은 `PaymentProviderContractTest` 가 따로 확인하고 사고 실험에는 넣지 않았다 | 운영에서 관찰되는 원인 분포를 보고 필요하면 timeout 장면 추가 |
+| gauge 갱신 | 기본으로 켜져 모든 Spring 테스트 컨텍스트에서도 15초마다 count 를 실행한다 | 테스트 시간에 영향이 보이면 test 프로파일에서 끔 |
+| 실행 환경 | 로컬 Testcontainers 한 대. 실행 중 Docker Desktop 이 내려가 여러 번 다시 돌렸다(결과는 새 실행만 사용) | — |
 
 ## 11. 결정 요약
 
