@@ -1,0 +1,83 @@
+PG 생성 결과. providerOrderId=LP-ORD-0000000001 amount=1000 result=ACCEPTED transactionKey=TEST-TX-0001
+결제 결과 적용. orderId=1 paymentId=1 providerOrderId=LP-ORD-0000000001 source=CREATE before=REQUESTED after=PENDING effect=NONE
+PG 조회 결과. providerOrderId=LP-ORD-0000000001 result=FOUND count=1 transactions=[TEST-TX-0001:SUCCESS:1000]
+결제 결과 적용. orderId=1 paymentId=1 providerOrderId=LP-ORD-0000000001 source=LOOKUP before=PENDING after=SUCCESS effect=CONSUME
+PG 생성 결과. providerOrderId=LP-ORD-0000000002 amount=1000 result=ACCEPTED transactionKey=TEST-TX-0002
+결제 결과 적용. orderId=2 paymentId=2 providerOrderId=LP-ORD-0000000002 source=CREATE before=REQUESTED after=PENDING effect=NONE
+PG 조회 결과. providerOrderId=LP-ORD-0000000002 result=FOUND count=1 transactions=[TEST-TX-0002:SUCCESS:1000]
+결제 결과 적용. orderId=2 paymentId=2 providerOrderId=LP-ORD-0000000002 source=LOOKUP before=PENDING after=SUCCESS effect=CONSUME
+PG 생성 결과. providerOrderId=LP-ORD-0000000003 amount=1000 result=ACCEPTED transactionKey=TEST-TX-0003
+결제 결과 적용. orderId=3 paymentId=3 providerOrderId=LP-ORD-0000000003 source=CREATE before=REQUESTED after=PENDING effect=NONE
+PG 조회 결과. providerOrderId=LP-ORD-0000000003 result=FOUND count=1 transactions=[TEST-TX-0003:SUCCESS:1000]
+결제 결과 적용. orderId=3 paymentId=3 providerOrderId=LP-ORD-0000000003 source=LOOKUP before=PENDING after=SUCCESS effect=CONSUME
+PG 생성 결과. providerOrderId=LP-ORD-0000000004 amount=1000 result=ACCEPTED transactionKey=TEST-TX-0004
+결제 결과 적용. orderId=4 paymentId=4 providerOrderId=LP-ORD-0000000004 source=CREATE before=REQUESTED after=PENDING effect=NONE
+PG 조회 결과. providerOrderId=LP-ORD-0000000004 result=FOUND count=1 transactions=[TEST-TX-0004:SUCCESS:1000]
+결제 결과 적용. orderId=4 paymentId=4 providerOrderId=LP-ORD-0000000004 source=LOOKUP before=PENDING after=SUCCESS effect=CONSUME
+PG 생성 결과. providerOrderId=LP-ORD-0000000005 amount=1000 result=ACCEPTED transactionKey=TEST-TX-0005
+결제 결과 적용. orderId=5 paymentId=5 providerOrderId=LP-ORD-0000000005 source=CREATE before=REQUESTED after=PENDING effect=NONE
+PG 조회 결과. providerOrderId=LP-ORD-0000000005 result=FOUND count=1 transactions=[TEST-TX-0005:SUCCESS:1000]
+결제 결과 적용. orderId=5 paymentId=5 providerOrderId=LP-ORD-0000000005 source=LOOKUP before=PENDING after=SUCCESS effect=CONSUME
+PG 생성 결과. providerOrderId=LP-ORD-0000000006 amount=1000 result=ACCEPTED transactionKey=TEST-TX-0006
+결제 결과 적용. orderId=6 paymentId=6 providerOrderId=LP-ORD-0000000006 source=CREATE before=REQUESTED after=PENDING effect=NONE
+PG 조회 결과. providerOrderId=LP-ORD-0000000006 result=FOUND count=1 transactions=[TEST-TX-0006:SUCCESS:1000]
+결제 결과 적용. orderId=6 paymentId=6 providerOrderId=LP-ORD-0000000006 source=LOOKUP before=PENDING after=SUCCESS effect=CONSUME
+PG 생성 결과. providerOrderId=LP-ORD-0000000007 amount=1000 result=ACCEPTED transactionKey=TEST-TX-0007
+결제 결과 적용. orderId=7 paymentId=7 providerOrderId=LP-ORD-0000000007 source=CREATE before=REQUESTED after=PENDING effect=NONE
+PG 조회 결과. providerOrderId=LP-ORD-0000000007 result=FOUND count=1 transactions=[TEST-TX-0007:SUCCESS:1000]
+결제 결과 적용. orderId=7 paymentId=7 providerOrderId=LP-ORD-0000000007 source=LOOKUP before=PENDING after=SUCCESS effect=CONSUME
+PG 생성 결과. providerOrderId=LP-ORD-0000000008 amount=1000 result=ACCEPTED transactionKey=TEST-TX-0008
+결제 결과 적용. orderId=8 paymentId=8 providerOrderId=LP-ORD-0000000008 source=CREATE before=REQUESTED after=PENDING effect=NONE
+PG 조회 결과. providerOrderId=LP-ORD-0000000008 result=FOUND count=1 transactions=[TEST-TX-0008:SUCCESS:1000]
+결제 결과 적용. orderId=8 paymentId=8 providerOrderId=LP-ORD-0000000008 source=LOOKUP before=PENDING after=SUCCESS effect=CONSUME
+PG 생성 결과. providerOrderId=LP-ORD-0000000009 amount=1000 result=ACCEPTED transactionKey=TEST-TX-0009
+결제 결과 적용. orderId=9 paymentId=9 providerOrderId=LP-ORD-0000000009 source=CREATE before=REQUESTED after=PENDING effect=NONE
+PG 조회 결과. providerOrderId=LP-ORD-0000000009 result=FOUND count=1 transactions=[TEST-TX-0009:SUCCESS:1000]
+결제 결과 적용. orderId=9 paymentId=9 providerOrderId=LP-ORD-0000000009 source=LOOKUP before=PENDING after=SUCCESS effect=CONSUME
+PG 생성 결과. providerOrderId=LP-ORD-0000000010 amount=1000 result=ACCEPTED transactionKey=TEST-TX-0010
+결제 결과 적용. orderId=10 paymentId=10 providerOrderId=LP-ORD-0000000010 source=CREATE before=REQUESTED after=PENDING effect=NONE
+PG 조회 결과. providerOrderId=LP-ORD-0000000010 result=FOUND count=1 transactions=[TEST-TX-0010:SUCCESS:1000]
+결제 결과 적용. orderId=10 paymentId=10 providerOrderId=LP-ORD-0000000010 source=LOOKUP before=PENDING after=SUCCESS effect=CONSUME
+PG 생성 결과. providerOrderId=LP-ORD-0000000011 amount=1000 result=UNKNOWN cause=ResourceAccessException(EOFException)
+결제 결과 적용. orderId=11 paymentId=11 providerOrderId=LP-ORD-0000000011 source=CREATE before=REQUESTED after=UNKNOWN effect=NONE
+PG 생성 결과. providerOrderId=LP-ORD-0000000012 amount=1000 result=UNKNOWN cause=ResourceAccessException(EOFException)
+결제 결과 적용. orderId=12 paymentId=12 providerOrderId=LP-ORD-0000000012 source=CREATE before=REQUESTED after=UNKNOWN effect=NONE
+PG 생성 결과. providerOrderId=LP-ORD-0000000013 amount=1000 result=UNKNOWN cause=ResourceAccessException(EOFException)
+결제 결과 적용. orderId=13 paymentId=13 providerOrderId=LP-ORD-0000000013 source=CREATE before=REQUESTED after=UNKNOWN effect=NONE
+PG 생성 결과. providerOrderId=LP-ORD-0000000014 amount=1000 result=ACCEPTED transactionKey=TEST-TX-0014
+결제 결과 적용. orderId=14 paymentId=14 providerOrderId=LP-ORD-0000000014 source=CREATE before=REQUESTED after=PENDING effect=NONE
+PG 생성 결과. providerOrderId=LP-ORD-0000000015 amount=1000 result=ACCEPTED transactionKey=TEST-TX-0015
+결제 결과 적용. orderId=15 paymentId=15 providerOrderId=LP-ORD-0000000015 source=CREATE before=REQUESTED after=PENDING effect=NONE
+PG 생성 결과. providerOrderId=LP-ORD-0000000016 amount=1000 result=ACCEPTED transactionKey=TEST-TX-0016
+결제 결과 적용. orderId=16 paymentId=16 providerOrderId=LP-ORD-0000000016 source=CREATE before=REQUESTED after=PENDING effect=NONE
+PG 생성 결과. providerOrderId=LP-ORD-0000000017 amount=1000 result=ACCEPTED transactionKey=TEST-TX-0017
+결제 결과 적용. orderId=17 paymentId=17 providerOrderId=LP-ORD-0000000017 source=CREATE before=REQUESTED after=PENDING effect=NONE
+PG 생성 결과. providerOrderId=LP-ORD-0000000018 amount=1000 result=ACCEPTED transactionKey=TEST-TX-0018
+결제 결과 적용. orderId=18 paymentId=18 providerOrderId=LP-ORD-0000000018 source=CREATE before=REQUESTED after=PENDING effect=NONE
+PG 생성 결과. providerOrderId=LP-ORD-0000000019 amount=1000 result=ACCEPTED transactionKey=TEST-TX-0019
+결제 결과 적용. orderId=19 paymentId=19 providerOrderId=LP-ORD-0000000019 source=CREATE before=REQUESTED after=PENDING effect=NONE
+PG 생성 결과. providerOrderId=LP-ORD-0000000020 amount=1000 result=ACCEPTED transactionKey=TEST-TX-0020
+결제 결과 적용. orderId=20 paymentId=20 providerOrderId=LP-ORD-0000000020 source=CREATE before=REQUESTED after=PENDING effect=NONE
+PG 조회 결과. providerOrderId=LP-ORD-0000000014 result=FOUND count=1 transactions=[TEST-TX-0014:SUCCESS:1000]
+결제 결과 적용. orderId=14 paymentId=14 providerOrderId=LP-ORD-0000000014 source=LOOKUP before=PENDING after=SUCCESS effect=CONSUME
+PG 조회 결과. providerOrderId=LP-ORD-0000000015 result=FOUND count=1 transactions=[TEST-TX-0015:SUCCESS:1000]
+결제 결과 적용. orderId=15 paymentId=15 providerOrderId=LP-ORD-0000000015 source=LOOKUP before=PENDING after=SUCCESS effect=CONSUME
+PG 조회 결과. providerOrderId=LP-ORD-0000000016 result=FOUND count=1 transactions=[TEST-TX-0016:SUCCESS:1000]
+결제 결과 적용. orderId=16 paymentId=16 providerOrderId=LP-ORD-0000000016 source=LOOKUP before=PENDING after=SUCCESS effect=CONSUME
+PG 조회 결과. providerOrderId=LP-ORD-0000000017 result=FOUND count=1 transactions=[TEST-TX-0017:SUCCESS:1000]
+결제 결과 적용. orderId=17 paymentId=17 providerOrderId=LP-ORD-0000000017 source=LOOKUP before=PENDING after=SUCCESS effect=CONSUME
+PG 조회 결과. providerOrderId=LP-ORD-0000000018 result=FOUND count=1 transactions=[TEST-TX-0018:SUCCESS:1000]
+결제 결과 적용. orderId=18 paymentId=18 providerOrderId=LP-ORD-0000000018 source=LOOKUP before=PENDING after=SUCCESS effect=CONSUME
+PG 조회 결과. providerOrderId=LP-ORD-0000000019 result=FOUND count=1 transactions=[TEST-TX-0019:SUCCESS:1000]
+결제 결과 적용. orderId=19 paymentId=19 providerOrderId=LP-ORD-0000000019 source=LOOKUP before=PENDING after=SUCCESS effect=CONSUME
+PG 조회 결과. providerOrderId=LP-ORD-0000000020 result=FOUND count=1 transactions=[TEST-TX-0020:SUCCESS:1000]
+결제 결과 적용. orderId=20 paymentId=20 providerOrderId=LP-ORD-0000000020 source=LOOKUP before=PENDING after=SUCCESS effect=CONSUME
+PG 조회 결과. providerOrderId=LP-ORD-0000000011 result=FOUND count=1 transactions=[TEST-TX-0011:SUCCESS:1000]
+PG 조회 결과. providerOrderId=LP-ORD-0000000012 result=FOUND count=1 transactions=[TEST-TX-0012:SUCCESS:1000]
+PG 조회 결과. providerOrderId=LP-ORD-0000000013 result=FOUND count=1 transactions=[TEST-TX-0013:SUCCESS:1000]
+PG 조회 결과. providerOrderId=LP-ORD-0000000011 result=FOUND count=1 transactions=[TEST-TX-0011:SUCCESS:1000]
+결제 결과 적용. orderId=11 paymentId=11 providerOrderId=LP-ORD-0000000011 source=LOOKUP before=UNKNOWN after=SUCCESS effect=CONSUME
+PG 조회 결과. providerOrderId=LP-ORD-0000000012 result=FOUND count=1 transactions=[TEST-TX-0012:SUCCESS:1000]
+결제 결과 적용. orderId=12 paymentId=12 providerOrderId=LP-ORD-0000000012 source=LOOKUP before=UNKNOWN after=SUCCESS effect=CONSUME
+PG 조회 결과. providerOrderId=LP-ORD-0000000013 result=FOUND count=1 transactions=[TEST-TX-0013:SUCCESS:1000]
+결제 결과 적용. orderId=13 paymentId=13 providerOrderId=LP-ORD-0000000013 source=LOOKUP before=UNKNOWN after=SUCCESS effect=CONSUME

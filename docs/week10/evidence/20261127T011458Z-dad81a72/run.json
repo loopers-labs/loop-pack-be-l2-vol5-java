@@ -1,0 +1,9 @@
+{
+  "runId" : "20261127T011458Z-dad81a72",
+  "startedAt" : "2026-11-27T01:14:58.836246800Z",
+  "clockStart" : "2026-08-19T12:00:00Z",
+  "result" : "PASSED",
+  "faultSha256" : "e410df37074f1d35db18d0a9d0a24fd355a432c16448637517c32fe0f5018b5e",
+  "lastStage" : "evidence",
+  "finishedAt" : "2026-11-27T01:15:51.067353100Z"
+}

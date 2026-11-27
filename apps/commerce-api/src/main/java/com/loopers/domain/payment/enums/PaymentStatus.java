@@ -1,5 +1,8 @@
 package com.loopers.domain.payment.enums;
 
+import java.util.Arrays;
+import java.util.List;
+
 /** 외부 결과를 얼마나 아는가. 충돌은 상태가 아니라 기록으로 남김 (D-65) */
 public enum PaymentStatus {
     /** 발송 권한을 기록함. 생성 응답은 아직 반영하지 못함 */
@@ -23,5 +26,9 @@ public enum PaymentStatus {
 
     public boolean isTerminal() {
         return terminal;
+    }
+
+    public static List<PaymentStatus> unresolved() {
+        return Arrays.stream(values()).filter(status -> !status.terminal).toList();
     }
 }

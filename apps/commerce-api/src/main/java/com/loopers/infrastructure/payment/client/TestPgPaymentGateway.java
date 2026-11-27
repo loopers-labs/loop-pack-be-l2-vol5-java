@@ -11,6 +11,7 @@ import com.loopers.domain.payment.vo.ProviderTransaction;
 import com.loopers.domain.payment.enums.ProviderTransactionStatus;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.retry.Retry;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.ClientHttpResponse;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
@@ -24,8 +25,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 
 /** 계약과 정확히 맞지 않는 응답은 효과 0건의 증거로 보지 않고 결과 미확인 · 조회 불가로 돌려줌 (5주차 설계 3.3) */
+@Slf4j
 @Component
 public class TestPgPaymentGateway implements PaymentGateway {
 
@@ -77,16 +80,22 @@ public class TestPgPaymentGateway implements PaymentGateway {
     /** 연결 실패 · timeout · 해석 불가는 모두 결과 미확인 */
     @Override
     public PaymentCreateResult create(PaymentGatewayRequest request) {
+        CreateOutcome outcome;
         try {
-            return createClient.post()
+            outcome = createClient.post()
                 .uri(PAYMENTS_PATH)
                 .contentType(MediaType.APPLICATION_JSON)
                 .accept(MediaType.APPLICATION_JSON)
                 .body(createBody(request))
-                .exchange((httpRequest, response) -> interpretCreate(request, response.getStatusCode().value(), readTree(response)));
+                .exchange((httpRequest, response) -> {
+                    int status = response.getStatusCode().value();
+                    return new CreateOutcome(interpretCreate(request, status, readTree(response)), "status=" + status);
+                });
         } catch (RuntimeException e) {
-            return new PaymentCreateResult.Unknown();
+            outcome = new CreateOutcome(new PaymentCreateResult.Unknown(), causeOf(e));
         }
+        logCreate(request, outcome);
+        return outcome.result();
     }
 
     /** 재조회의 매 시도가 회로 표본 하나임. 재조회를 다 써도 실패하거나 회로가 OPEN 이면 조회 불가 (설계 5장) */
@@ -95,10 +104,54 @@ public class TestPgPaymentGateway implements PaymentGateway {
         Supplier<PaymentLookupResult> lookup = Retry.decorateSupplier(lookupRetry,
             CircuitBreaker.decorateSupplier(lookupCircuitBreaker, () -> lookupOnce(providerOrderId)));
         try {
-            return lookup.get();
+            PaymentLookupResult result = lookup.get();
+            logLookup(providerOrderId, result);
+            return result;
         } catch (RuntimeException e) {
+            log.warn("PG 조회 결과. providerOrderId={} result=UNAVAILABLE cause={}", providerOrderId, causeOf(e));
             return new PaymentLookupResult.Unavailable();
         }
+    }
+
+    /** UNKNOWN 의 원인은 상태 전이에 쓰지 않아 도메인 결과에 싣지 않고 로그에만 남김 (10주차 D-200) */
+    private record CreateOutcome(PaymentCreateResult result, String cause) {}
+
+    /** 카드 정보는 남기지 않음 */
+    private static void logCreate(PaymentGatewayRequest request, CreateOutcome outcome) {
+        switch (outcome.result()) {
+            case PaymentCreateResult.Accepted accepted -> log.info("PG 생성 결과. providerOrderId={} amount={} result=ACCEPTED transactionKey={}",
+                request.providerOrderId(), request.amount(), accepted.transactionKey());
+            case PaymentCreateResult.RejectedWithoutEffect rejected -> log.info("PG 생성 결과. providerOrderId={} amount={} result=REJECTED",
+                request.providerOrderId(), request.amount());
+            case PaymentCreateResult.Unknown unknown -> log.warn("PG 생성 결과. providerOrderId={} amount={} result=UNKNOWN cause={}",
+                request.providerOrderId(), request.amount(), outcome.cause());
+        }
+    }
+
+    private static void logLookup(String providerOrderId, PaymentLookupResult result) {
+        if (result instanceof PaymentLookupResult.Found found) {
+            String transactions = found.transactions().stream()
+                .map(tx -> tx.transactionKey() + ":" + tx.status() + ":" + tx.amount())
+                .collect(Collectors.joining(",", "[", "]"));
+            log.info("PG 조회 결과. providerOrderId={} result=FOUND count={} transactions={}",
+                providerOrderId, found.transactions().size(), transactions);
+        }
+    }
+
+    /** RestClient 가 감싼 예외라 감싸진 원인까지 남김 */
+    private static String causeOf(Throwable e) {
+        Throwable root = e;
+        while (root.getCause() != null && root.getCause() != root) {
+            root = root.getCause();
+        }
+        String cause = e.getClass().getSimpleName();
+        if (root != e) {
+            cause += "(" + root.getClass().getSimpleName() + ")";
+        }
+        if (root.getMessage() != null && root instanceof LookupFailure) {
+            cause += " " + root.getMessage();
+        }
+        return cause;
     }
 
     /** 200 배열이 아니면 실패 */

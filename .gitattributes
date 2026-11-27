@@ -1,3 +1,5 @@
 /gradlew text eol=lf
 *.bat text eol=crlf
 *.jar binary
+# 사고 증거는 SHA256SUMS 로 검증하므로 줄 끝을 바꾸지 않음 (10주차 D-210)
+docs/week10/evidence/** -text

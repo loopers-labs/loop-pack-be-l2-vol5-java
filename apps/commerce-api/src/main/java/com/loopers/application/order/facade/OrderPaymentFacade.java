@@ -10,12 +10,15 @@ import com.loopers.domain.product.cache.ProductDetailCache;
 import com.loopers.domain.product.cache.ProductListCache;
 import com.loopers.support.error.CoreException;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.util.Set;
+import java.util.function.Supplier;
 import com.loopers.application.order.dto.OrderInfo;
 
 /** TX A → TX 밖 PG 호출 → TX B 순서만 정함. PG 호출 중에는 잠금을 쥐지 않고, 생성 요청은 다시 보내지 않음 (D-60) */
+@Slf4j
 @RequiredArgsConstructor
 @Component
 public class OrderPaymentFacade {
@@ -43,7 +46,8 @@ public class OrderPaymentFacade {
         }
         PaymentCreateResult result = paymentGateway.create(
             new PaymentGatewayRequest(started.providerOrderId(), command.cardType(), command.cardNo(), started.amount()));
-        OrderPaymentSteps.Applied applied = steps.applyCreateResult(orderId, result);
+        OrderPaymentSteps.Applied applied = applyLogged(orderId, started.providerOrderId(), Source.CREATE,
+            () -> steps.applyCreateResult(orderId, result));
         invalidate(applied.restockedBrandIds(), applied.restockedProductIds());
         return applied.order();
     }
@@ -69,9 +73,32 @@ public class OrderPaymentFacade {
         if (result instanceof PaymentLookupResult.Unavailable) {
             return snapshot.order().withPaymentUnavailable();
         }
-        OrderPaymentSteps.Applied applied = steps.applyLookupResult(snapshot.order().id(), result);
+        Long orderId = snapshot.order().id();
+        OrderPaymentSteps.Applied applied = applyLogged(orderId, snapshot.providerOrderId(), Source.LOOKUP,
+            () -> steps.applyLookupResult(orderId, result));
         invalidate(applied.restockedBrandIds(), applied.restockedProductIds());
         return applied.order();
+    }
+
+    private enum Source { CREATE, LOOKUP }
+
+    /** TX B 가 끝난 뒤 남겨야 rollback 된 적용을 "적용함"으로 찍지 않음. 응답 유실과 내부 반영 실패를 가르는 근거 (10주차 D-200) */
+    private static OrderPaymentSteps.Applied applyLogged(
+        Long orderId, String providerOrderId, Source source, Supplier<OrderPaymentSteps.Applied> apply
+    ) {
+        OrderPaymentSteps.Applied applied;
+        try {
+            applied = apply.get();
+        } catch (RuntimeException e) {
+            log.warn("결제 결과 적용 실패. orderId={} providerOrderId={} source={} error={}",
+                orderId, providerOrderId, source, e.getClass().getSimpleName());
+            throw e;
+        }
+        OrderPaymentSteps.Transition transition = applied.transition();
+        log.info("결제 결과 적용. orderId={} paymentId={} providerOrderId={} source={} before={} after={} effect={}",
+            orderId, transition.paymentId(), transition.providerOrderId(), source,
+            transition.before(), transition.after(), transition.effect());
+        return applied;
     }
 
     /** 주문을 다루기 전에 거절함 */

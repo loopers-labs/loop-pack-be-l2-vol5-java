@@ -83,6 +83,7 @@ AI와 함께 이 저장소에서 기능을 구현할 때 따르는 규칙입니�
 | `client` | 외부 시스템 adapter와 그 설정 |
 | `cache` | Redis 캐시 구현 |
 | `messaging` | Kafka 등 메시지 발행 · 소비 adapter와 메시지 타입 |
+| `monitoring` | 업무 지표(Micrometer) 등록 · 갱신 |
 
 ### interfaces/api/{기능}/
 
