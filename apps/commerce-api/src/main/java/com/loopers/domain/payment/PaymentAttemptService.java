@@ -40,4 +40,8 @@ public class PaymentAttemptService {
             ErrorType.INTERNAL_ERROR, "결제 시도를 찾을 수 없습니다. (주문 ID: " + orderId + ")"
         ));
     }
+
+    public UnresolvedPayments summarizeUnresolved() {
+        return new UnresolvedPayments(paymentAttemptRepository.summarizeUnresolved());
+    }
 }

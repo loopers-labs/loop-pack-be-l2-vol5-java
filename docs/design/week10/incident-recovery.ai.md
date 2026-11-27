@@ -68,10 +68,11 @@
 | 지표 | 정의 | label |
 |---|---|---|
 | `commerce.payment.unresolved` | 상태별 미종결 시도 수 | `status` ∈ REQUESTED·PENDING·UNKNOWN |
-| `commerce.payment.unresolved.oldest.age.seconds` | now(clock) − 상태별 가장 오래된 미종결 시도 `createdAt`, 없으면 0 | `status` |
+| `commerce.payment.unresolved.oldest.age.seconds` | 시스템 현재 시각 − 상태별 가장 오래된 미종결 시도 `createdAt`, 없으면 0 | `status` |
 - 갱신: 스케줄(기본 10s, 테스트는 짧게)에서 DB `group by status`로 count·min(createdAt) 한 쿼리. 미종결 상태가 0건이면 해당 status는 0으로 갱신(시계열이 사라지지 않게 세 status를 항상 등록).
 - 대기 시작은 createdAt(고객이 결제한 순간). updatedAt은 조회 때마다 바뀔 수 있어 제외.
-- 레이어(안): domain repository에 상태별 요약 조회 → application 조회 Facade(readOnly) → `interfaces.scheduler`의 스케줄러가 호출해 `MeterRegistry` gauge 값(AtomicLong 등)을 갱신. infrastructure → application 의존을 만들지 않는다. 구현 태스크에서 확정.
+- 대기시간은 주입 `Clock`이 아니라 시스템 시각으로 잰다. `createdAt`을 `BaseEntity`가 `ZonedDateTime.now()`로 기록하고, e2e는 `Clock`을 주 중간으로 고정하기 때문이다(같은 시계끼리 빼야 한다).
+- 레이어: `PaymentAttemptRepository.summarizeUnresolved()`(JPQL group by 1회) → `UnresolvedPayments`(없는 상태 0) → `PaymentMonitoringFacade`(readOnly, 미종결 상태 전부 반환) → `interfaces.scheduler.UnresolvedPaymentMetrics`가 생성 시 gauge 6개를 등록하고 `payment.metrics.unresolved-refresh-interval`(기본 10s)마다 AtomicLong 값을 갱신.
 - orderId·userId·traceId를 label로 쓰지 않는다.
 
 ### 1-8. 알람 (Grafana provisioning, Slack contact point)

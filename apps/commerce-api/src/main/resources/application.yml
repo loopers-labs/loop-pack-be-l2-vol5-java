@@ -46,6 +46,8 @@ coupon:
     wait-timeout: 2s # 당첨자가 실행 자리를 기다리는 상한. 측정 전 시작값(설계 문서 참고). 넘으면 당첨 기록 후 202
 
 payment:
+  metrics:
+    unresolved-refresh-interval: 10s # 미종결 결제 gauge 를 DB 에서 다시 읽는 간격. 지표는 최대 이만큼 늦다
   pg: # 로컬 테스트 PG 계약. 실제 PG 가 아니며 127.0.0.1 밖의 주소는 거절한다
     base-url: http://127.0.0.1:8082
     callback-url: http://127.0.0.1:8080/api/v1/payments/callback
