@@ -10,12 +10,11 @@ groups:
           runbook: 'docs/runbook/week10.md'
 
       - alert: PaymentUnknownStuck
-        expr: sum(payment_unresolved{job="payment-db",status="unknown"}) > 0
-        for: 2m
+        expr: max(payment_unresolved_oldest_seconds{job="payment-db",status="unknown"}) > 120
         labels:
           severity: critical
         annotations:
-          summary: '결과를 모르는 결제 {{ $value }} 건이 2 분 넘게 남아 있다'
+          summary: '가장 오래 남은 미확인 결제가 요청된 지 {{ $value }} 초가 지났다. 남은 미확인 결제는 {{ with query "sum(payment_unresolved{job=\"payment-db\",status=\"unknown\"})" }}{{ . | first | value }}{{ end }} 건이다'
           runbook: 'docs/runbook/week10.md'
 
       - alert: PaymentDbExporterDown

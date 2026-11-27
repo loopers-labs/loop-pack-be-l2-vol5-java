@@ -33,6 +33,7 @@ health 가 `UP` 인 것은 이 사고와 모순이 아니다. health 는 프로�
 |---|---|---|---|
 | 지금 늘고 있는가 | `payment_create_total{result="unknown"}`, `payment_observe_total{from,to}` | 앱. 상태 변경이 커밋된 직후 올린다 | 없다 |
 | 지금 몇 건 남았는가 | `payment_unresolved{status}` | sql exporter. `payment` 테이블을 상태별로 센다 | 최대 5 초 (수집 주기). 수집할 때마다 DB 를 한 번 센다 |
+| 가장 오래 남은 결제가 요청된 지 얼마나 지났는가 | `payment_unresolved_oldest_seconds{status}` | sql exporter. 상태별로 가장 이른 `requested_at` 부터 지금까지의 초. 그 상태의 결제가 없으면 0 | 위와 같다 |
 
 앱은 남은 건수를 내지 않는다. 남은 건수는 DB 에 있는 상태라서, 앱이 메모리로 따라가면 재시작할 때와 인스턴스가 여럿일 때 틀린다. 그래서 앱 밖에서 DB 를 센다.
 
@@ -41,7 +42,7 @@ health 가 `UP` 인 것은 이 사고와 모순이 아니다. health 는 프로�
 - **exporter 는 읽기 전용 계정을 쓴다.** `payment` 테이블의 `id`, `status` 두 컬럼만 읽고 연결은 2 개로 묶여 있다. 계정은 `docker/sql-exporter/exporter-user.sql` 을 DB 관리자 계정으로 한 번 실행해 만든다. 저장소에 있는 비밀번호는 로컬용이고, 운영에서는 비밀 저장소에서 받는다.
 - **로컬에는 복제본이 없어 주 DB 를 센다.** 쿼리는 `status` 로 시작하는 인덱스만 읽는다. 복제본이 있으면 exporter 를 복제본에 붙인다.
 
-"얼마나 오래 묶여 있는가"를 알려 주는 지표는 없다. 가장 오래된 결제는 DB 를 봐야 알 수 있다. 2 장의 조회 결과에서 `requested_at` 이 가장 이른 행이 그것이다.
+"얼마나 오래 묶여 있는가"는 `payment_unresolved_oldest_seconds` 가 답한다. 어느 주문인지는 지표에 없다. 2 장의 조회 결과에서 `requested_at` 이 가장 이른 행이 그것이다.
 
 ### 알림
 
@@ -50,24 +51,19 @@ health 가 `UP` 인 것은 이 사고와 모순이 아니다. health 는 프로�
 | 알림 | 조건 | 뜻 | 먼저 할 일 |
 |---|---|---|---|
 | `PaymentResponsesLost` (warning) | 최근 5 분 동안 `UNKNOWN` 으로 들어온 결제가 3 건 이상 | PG 응답을 잃고 있다. 기다리지 않고 바로 울린다 | 이 문서 1 장부터. sweeper 가 닫고 있는지 `payment_unresolved` 를 본다 |
-| `PaymentUnknownStuck` (critical) | `payment_unresolved{status="unknown"}` 이 0 보다 큰 채로 2 분 | sweeper 가 닫지 못하고 있다. 사람이 봐야 한다 | 2 장에서 목록을 고정하고 4 장으로 간다 |
+| `PaymentUnknownStuck` (critical) | 가장 오래 남은 `UNKNOWN` 결제가 요청된 지 120 초를 넘겼다 | sweeper 가 닫지 못한 결제가 있다. 사람이 봐야 한다 | 2 장에서 목록을 고정하고 4 장으로 간다 |
 | `PaymentDbExporterDown` (warning) | `up{job="payment-db"}` 가 0 인 채로 1 분 | 남은 건수를 못 세고 있다. 위 알림이 조용한 것은 이 때문일 수 있다 | exporter 와 DB 연결을 살리고, 그동안 2 장의 조회로 직접 센다 |
 | `PurchaseActivityLagStuck` (warning) | `purchase-activity` 컨슈머의 lag 이 0 보다 큰 채로 2 분 | 확정된 주문이 구매 활동과 랭킹에 반영되지 않고 있다 | streamer 가 살아 있는지 본다. 결제 복구와는 별개다 |
 
 기준값의 출처는 모두 `정함`이다. 요구사항에 없고 운영 데이터도 없이 정했다.
 
 - **근거**: 정상일 때 `UNKNOWN` 은 sweeper 가 20 초 안에 닫고, 컨슈머는 lag 을 10 초 안에 따라잡는다(로컬 측정). 2 분은 그 여섯 배 이상이다. 3 건은 한두 건의 우연한 timeout 에는 울리지 않게 하려는 값이다.
+- **건수가 아니라 지난 시간을 본다.** 응답 유실이 계속 들어와도 sweeper 가 하나씩 닫고 있으면 건수는 0 보다 크지만 묶인 결제는 없다. `PaymentUnknownStuck` 은 그때 울리지 않고, 결제 하나가 120 초를 넘겨 남았을 때만 울린다. 알림 문구에 지난 초와 남은 건수가 들어간다.
 - **뒤집을 조건**: 사고가 아닌데 울리면 올리고, 고객 문의가 알림보다 먼저 오면 내린다.
 - **판정 주기는 15 초다.** 알림은 조건이 채워진 뒤 최대 15 초 늦게 울리고 꺼진다. `PaymentResponsesLost` 는 5 분 창을 보므로 유실이 멈춘 뒤에도 최대 5 분 동안 울린다.
 - **전달은 Grafana 가 맡는다.** 조건은 Prometheus 규칙에만 있고, Grafana 에는 "울리고 있는 Prometheus 알림(`ALERTS{alertstate="firing"}`)을 Slack 으로 보낸다"는 규칙 하나만 있다(`docker/grafana/provisioning/alerting/`). 그래서 조건을 고칠 때는 Prometheus 규칙 파일만 고친다. Slack 메시지에는 알림 이름, 심각도, 이 문서의 링크가 들어가고 건수는 들어가지 않는다. 건수는 Prometheus 의 `/alerts` 나 대시보드에서 본다.
 - **Slack 주소는 저장소에 없다.** `SLACK_WEBHOOK_URL` 환경 변수로 받는다. 변수 없이 띄우면 아무 데도 보내지 않는다.
 - **Grafana 가 죽으면 전달이 멈춘다.** 판정은 Prometheus 에서 계속되므로 `/alerts` 에서는 보인다.
-
-규칙은 `promtool` 로 확인한다.
-
-```bash
-docker run --rm -v "$PWD/docker/grafana/rules:/rules" --entrypoint promtool prom/prometheus test rules /rules/payment.rules.test.yml
-```
 
 ## 2. 영향 범위를 고정한다
 
@@ -235,5 +231,5 @@ lag 이 0 이면 streamer 가 메시지를 읽었다는 뜻이다. 읽은 메시
 | 그동안 health 는 `UP`, `UNKNOWN` 으로 들어온 수는 0 → 3, 나간 수는 0 → 3 | 알림의 기준값이 운영에서 맞는지. 전달은 로컬에서 테스트용 Slack 채널로만 보내 봤다 |
 | 로컬에서 앱을 띄워 같은 사고를 재현하고 Prometheus · Loki · Tempo 에서 지표, 로그, trace 를 본다 | sql exporter 가 내는 값을 자동 테스트로. 로컬에서 초당 30 건 부하를 걸어 DB 를 직접 센 값과 5 초 안에 같아지는 것, 앱을 내려도 값이 그대로 나오는 것을 손으로 봤다 |
 | 가설 2 와 3 을 로그로 가른다 | 가설 3(내부 반영 실패)이 실제로 난 상태에서의 복구 절차 전체 |
-| 알림 넷이 조건대로 울리고 꺼진다(`promtool` 테스트 7 개, 로컬에서 응답 3 건을 잃고 streamer 를 내려 실제로 울리는 것을 봤다) | 실제 Kafka · DB 장애에서 exporter 자신이 어떻게 동작하는지 |
+| 알림 넷이 조건대로 울리고 꺼진다(`promtool` 로 조건을 확인했고, 로컬에서 응답을 잃고 streamer 와 exporter 를 내려 실제로 울리는 것을 봤다. 규칙 테스트 파일은 저장소에 두지 않았다) | 실제 Kafka · DB 장애에서 exporter 자신이 어떻게 동작하는지 |
 | 복구한 주문의 메시지가 실제 Kafka 에 주문당 한 번 나간다 | 그 메시지가 구매 활동과 주간 랭킹까지 이어지는 것을 같은 실행으로 |

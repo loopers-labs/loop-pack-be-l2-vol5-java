@@ -17,6 +17,23 @@ metrics:
       LEFT JOIN payment p ON p.status = s.status
       GROUP BY s.status
 
+  - metric_name: payment_unresolved_oldest_seconds
+    type: gauge
+    help: '아직 끝나지 않은 결제 중 가장 오래 남은 것이 요청된 뒤 지난 초. 그 상태의 결제가 없으면 0 이다.'
+    key_labels: [status]
+    values: [seconds]
+    query: |
+      SELECT LOWER(s.status) AS status,
+             COALESCE(TIMESTAMPDIFF(SECOND, MIN(p.requested_at), UTC_TIMESTAMP(6)), 0) AS seconds
+      FROM (
+        SELECT 'REQUESTED' AS status
+        UNION ALL SELECT 'PENDING'
+        UNION ALL SELECT 'UNKNOWN'
+        UNION ALL SELECT 'CONFLICT'
+      ) s
+      LEFT JOIN payment p ON p.status = s.status
+      GROUP BY s.status
+
   - metric_name: order_outbox_unpublished
     type: gauge
     help: '아직 Kafka 로 나가지 않은 주문 이벤트 수. order_event_outbox 테이블을 상태별로 센 값이라 수집 주기만큼 늦다.'
