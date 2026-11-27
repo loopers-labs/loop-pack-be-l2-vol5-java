@@ -1,5 +1,7 @@
 package com.loopers.infrastructure.payment;
 
+import com.loopers.domain.payment.PaymentStatus;
+
 import jakarta.persistence.LockModeType;
 
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -10,6 +12,8 @@ import org.springframework.data.repository.query.Param;
 import java.util.Optional;
 
 public interface PaymentJpaRepository extends JpaRepository<PaymentJpaEntity, Long> {
+    long countByStatus(PaymentStatus status);
+
     Optional<PaymentJpaEntity> findByOrderId(long orderId);
 
     Optional<PaymentJpaEntity> findByProviderOrderId(String providerOrderId);
