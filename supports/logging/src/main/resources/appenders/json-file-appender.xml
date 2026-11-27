@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!--
+    logs/{앱 이름}.json 에 logstash 형식 JSON 을 쓴다(MDC·key-value 가 필드로 들어간다).
+    요청 스레드가 디스크를 기다리지 않도록 비동기로 쓰고, 큐가 가득 차면 기다리지 않고 버린다.
+    discardingThreshold=0 은 큐가 덜 찼을 때 INFO 이하를 먼저 버리는 기본 동작을 끈다(경계 로그도 증거다).
+-->
+<included>
+    <springProperty name="appName" source="spring.application.name" defaultValue="app"/>
+    <property name="LOG_FILE" value="${LOG_PATH:-logs}/${appName}.json"/>
+    <property name="FILE_LOG_STRUCTURED_FORMAT" value="logstash"/>
+    <include resource="org/springframework/boot/logging/logback/structured-file-appender.xml"/>
+
+    <appender name="ASYNC-FILE" class="ch.qos.logback.classic.AsyncAppender">
+        <appender-ref ref="FILE"/>
+        <queueSize>8192</queueSize>
+        <discardingThreshold>0</discardingThreshold>
+        <neverBlock>true</neverBlock>
+        <maxFlushTime>2000</maxFlushTime>
+    </appender>
+</included>

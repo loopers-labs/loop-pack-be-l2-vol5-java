@@ -47,16 +47,20 @@ public class PaymentResultLookupFacade {
 
     /** 본인 주문의 결제 결과를 PG 에 다시 물어 반영한다(알림이 없거나 응답을 잃었을 때의 기본 복구 경로). create 는 다시 보내지 않는다. */
     public PaymentLookupInfo lookupMyPaymentResult(Long userId, Long orderId) {
-        PaymentAttemptInfo target = readOnlyTransaction.execute(status -> findMine(userId, orderId));
-        return syncWithPg(target, () -> target.transactionKey() != null
-            ? paymentGateway.lookupPaymentStatusByTransactionKey(target.transactionKey())
-            : paymentGateway.lookupPaymentStatusByOrder(target.providerOrderId()));
+        try (var ignored = PaymentBoundaryLog.orderScope(orderId)) {
+            PaymentAttemptInfo target = readOnlyTransaction.execute(status -> findMine(userId, orderId));
+            return syncWithPg(target, () -> target.transactionKey() != null
+                ? paymentGateway.lookupPaymentStatusByTransactionKey(target.transactionKey())
+                : paymentGateway.lookupPaymentStatusByOrder(target.providerOrderId()));
+        }
     }
 
     /** PG 의 결과 알림을 받는다. 알림은 신호일 뿐이라 본문의 상태는 쓰지 않고, 알림의 거래 키로 PG 를 조회해 확인한 사실만 반영한다. */
     public PaymentLookupInfo lookupPaymentResultOnPgCallback(String providerOrderId, String transactionKey) {
         PaymentAttemptInfo target = readOnlyTransaction.execute(status -> findByProviderOrderId(providerOrderId));
-        return syncWithPg(target, () -> paymentGateway.lookupPaymentStatusByTransactionKey(transactionKey));
+        try (var ignored = PaymentBoundaryLog.orderScope(target.orderId())) {
+            return syncWithPg(target, () -> paymentGateway.lookupPaymentStatusByTransactionKey(transactionKey));
+        }
     }
 
     // 종결된 시도는 PG 를 다시 부르지 않는다. 묻지 못하면 저장된 상태를 그대로 돌려주고 아무것도 정하지 않는다.
@@ -65,12 +69,13 @@ public class PaymentResultLookupFacade {
             return new PaymentLookupInfo(target, false);
         }
         PgPaymentStatusLookupResult lookupResult = askPg.get();
+        PaymentBoundaryLog.lookupResult(target.providerOrderId(), lookupResult);
         if (lookupResult.outcome() == PgPaymentStatusLookupResult.Outcome.LOOKUP_UNAVAILABLE) {
             return new PaymentLookupInfo(target, true);
         }
-        PaymentAttemptInfo updated = writeTransaction.execute(
+        PaymentAttemptInfo updated = PaymentBoundaryLog.applyLogged(target, () -> writeTransaction.execute(
             status -> paymentStatusUpdater.updateByStatusLookupResult(target.orderId(), lookupResult)
-        );
+        ));
         return new PaymentLookupInfo(updated, false);
     }
 

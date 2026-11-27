@@ -131,17 +131,17 @@
 
 ## 2. 경계 로그 키 (api·streamer 공통 이름)
 
-| event | 위치 | key-value | MDC |
-|---|---|---|---|
-| `payment.create.result` | PG create 응답 해석 직후(infrastructure) | `providerOrderId`, `result`(ACCEPTED·REJECTED·UNKNOWN), `cause`(IO·TIMEOUT·BAD_RESPONSE, UNKNOWN일 때), `transactionKey`(있으면) | orderId |
-| `payment.attempt.status` | 시도 상태 저장 직후 | `attemptKey`, `from`, `to` | orderId |
-| `payment.lookup.result` | PG 조회 결과 해석 직후 | `providerOrderId`, `transactionKey`, `pgStatus`, `outcome`(SUCCESS·FAILED·PENDING·NOT_FOUND·MULTIPLE·MISMATCH·UNAVAILABLE) | orderId |
-| `payment.apply.committed` | 결과 적용 TX commit 뒤 | `attemptKey`, `to`, `orderStatus` | orderId |
-| `payment.apply.rolled_back` | 결과 적용 TX 예외 시 | `attemptKey`, `exception`(클래스명) | orderId |
-| `outbox.published` | 발행 결과 기록 뒤 | `eventId`, `outcome`(PUBLISHED·RETRY·BLOCKED) | — |
-| `purchase.activity.saved` | streamer 저장 뒤 | `eventId`, `orderId`, `outcome`(SAVED·DUPLICATE) | orderId |
+| event | 위치 | key-value | MDC | 수준 |
+|---|---|---|---|---|
+| `payment.create.result` | `PgHttpClient` create 응답 해석 | `providerOrderId`, `result`(ACCEPTED·REJECTED·UNKNOWN), `cause`(IO·TIMEOUT·BAD_RESPONSE, UNKNOWN일 때), `transactionKey`(ACCEPTED일 때) | orderId | INFO, UNKNOWN은 WARN |
+| `payment.lookup.result` | `PaymentResultLookupFacade.syncWithPg`(PG 조회 직후) | `providerOrderId`, `outcome`(ANSWERED·KEY_NOT_FOUND·LOOKUP_UNAVAILABLE), `count`, `pgStatus`·`transactionKey`(1건일 때) | orderId | INFO, 조회 불가는 WARN |
+| `payment.apply.committed` | 결과 반영 TX 뒤(`OrderFacade.confirm`, `syncWithPg`) — `PaymentBoundaryLog.applyLogged` | `providerOrderId`, `from`, `to`, `orderStatus` | orderId | INFO |
+| `payment.apply.rolled_back` | 같은 곳, TX 예외 시 기록 후 재던짐 | `providerOrderId`, `from`, `exception` | orderId | ERROR |
+| `outbox.published` | `KafkaOutboxPublisher` 발행 성공 | `eventId`, `orderId`, `partition`, `offset` | — | INFO |
+| `purchase.activity.saved` | streamer `PurchaseActivityFacade` | `eventId`, `orderId`, `outcome`(SAVED·DUPLICATE) | orderId | INFO |
+- 시도 식별은 `providerOrderId`(주문과 1:1, `LP-ORD-%010d`)로 한다. attemptKey는 반영 경로의 값 객체에 없어 로그에 넣지 않는다.
+- 메시지에도 핵심 값을 적어 plain 콘솔에서 읽히게 한다. JSON 파일은 key-value·MDC·traceId가 필드로 들어간다(local 실행으로 확인).
 - 카드번호·인증 헤더·사용자 개인정보는 남기지 않는다. 합성 식별자만.
-- 로그 수준: 정상은 INFO, UNKNOWN·조회 불가는 WARN, rollback은 ERROR.
 
 ## 3. 진단 질의 (runbook에 그대로 사용)
 ```bash

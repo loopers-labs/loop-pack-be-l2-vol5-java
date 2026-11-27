@@ -100,8 +100,14 @@ public class KafkaOutboxPublisher implements OutboxPublisher {
         } finally {
             span.end();
         }
-        log.info("Outbox 전송 성공. eventId={}, orderId={}, topic={}, partition={}, offset={}",
-            outbox.getEventId(), outbox.getOrderId(), metadata.topic(), metadata.partition(), metadata.offset());
+        log.atInfo()
+            .addKeyValue("event", "outbox.published")
+            .addKeyValue("eventId", outbox.getEventId())
+            .addKeyValue("orderId", outbox.getOrderId())
+            .addKeyValue("partition", metadata.partition())
+            .addKeyValue("offset", metadata.offset())
+            .log("Outbox 전송 성공. eventId={}, orderId={}, topic={}, partition={}, offset={}",
+                outbox.getEventId(), outbox.getOrderId(), metadata.topic(), metadata.partition(), metadata.offset());
     }
 
     private Span.Builder publishSpan(Outbox outbox) {

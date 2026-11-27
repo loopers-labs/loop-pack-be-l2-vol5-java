@@ -1,6 +1,17 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <configuration>
-    <springProfile name="local,local-dev,test">
+    <springProfile name="local,local-dev">
+        <include resource="appenders/plain-console-appender.xml"/>
+        <include resource="appenders/json-file-appender.xml"/>
+        <logger name="com.loopers" level="DEBUG"/>
+        <root level="INFO">
+            <appender-ref ref="CONSOLE"/>
+            <appender-ref ref="ASYNC-FILE"/>
+        </root>
+    </springProfile>
+
+    <!-- 테스트는 파일을 남기지 않는다. 로그 증거는 테스트가 직접 수집한다. -->
+    <springProfile name="test">
         <include resource="appenders/plain-console-appender.xml"/>
         <logger name="com.loopers" level="DEBUG"/>
         <root level="INFO">

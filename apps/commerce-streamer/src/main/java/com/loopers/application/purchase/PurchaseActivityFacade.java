@@ -4,6 +4,8 @@ import com.loopers.application.purchase.dto.PurchaseSaveResult;
 import com.loopers.application.purchase.dto.SavePurchaseActivityCommand;
 import com.loopers.domain.purchase.OrderConfirmation;
 import com.loopers.domain.purchase.PurchaseActivityService;
+import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -15,6 +17,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  * <p>유일 제약 경쟁에서 진 쪽은 트랜잭션이 rollback 된 뒤 그 밖에서 저장된 사실을 다시 읽어 같은지 확인한다. 실패한
  * 트랜잭션 안에서는 예외를 삼키고 계속할 수 없어 {@link TransactionTemplate} 으로 경계를 직접 잡는다.
  */
+@Slf4j
 @Component
 public class PurchaseActivityFacade {
 
@@ -27,7 +30,19 @@ public class PurchaseActivityFacade {
     }
 
     public PurchaseSaveResult save(SavePurchaseActivityCommand command) {
-        OrderConfirmation confirmation = command.toConfirmation();
+        try (var ignored = MDC.putCloseable("orderId", String.valueOf(command.orderId()))) {
+            PurchaseSaveResult result = saveOnce(command.toConfirmation());
+            log.atInfo()
+                .addKeyValue("event", "purchase.activity.saved")
+                .addKeyValue("eventId", command.eventId())
+                .addKeyValue("orderId", command.orderId())
+                .addKeyValue("outcome", result)
+                .log("구매 활동 저장: eventId={}, outcome={}", command.eventId(), result);
+            return result;
+        }
+    }
+
+    private PurchaseSaveResult saveOnce(OrderConfirmation confirmation) {
         try {
             boolean saved = Boolean.TRUE.equals(transaction.execute(status -> purchaseActivityService.save(confirmation)));
             return saved ? PurchaseSaveResult.SAVED : PurchaseSaveResult.DUPLICATE;

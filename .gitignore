@@ -53,3 +53,6 @@ docs/notes/
 
 ### k6 결과 ###
 k6/results/
+
+### Logs ###
+logs/
