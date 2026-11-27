@@ -15,10 +15,13 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -58,6 +61,7 @@ import static org.mockito.Mockito.doAnswer;
 /** HTTP TX B failure after a real SQL write, with an independent committed-state observer connection. */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
+@ExtendWith(OutputCaptureExtension.class)
 @Timeout(25)
 class PaymentRecoveryRollbackIntegrationTest {
     private static final LocalTestPg PG = createPg();
@@ -117,7 +121,7 @@ class PaymentRecoveryRollbackIntegrationTest {
     @ParameterizedTest
     @CsvSource({"SUCCESS,true", "SUCCESS,false", "FAILED,true", "FAILED,false"})
     void realSqlFailureRollsBackEveryLocalFactAndTheOtherRecoveryEntryCanApplyTheExternalResultOnce(
-        String externalResult, boolean callbackFirst) throws Exception {
+        String externalResult, boolean callbackFirst, CapturedOutput output) throws Exception {
         Fixture fixture = pending();
         PG.setStatus("TEST-TX-1", externalResult);
         var before = state();
@@ -152,6 +156,14 @@ class PaymentRecoveryRollbackIntegrationTest {
             assertThat(evidence.changedState().get("revision")).isEqualTo(before.get("revision"));
             assertThat(readState(observer)).as("Independent DB connection sees full rollback after HTTP returns")
                 .isEqualTo(before);
+            String source = callbackFirst ? "CALLBACK" : "RECONCILE";
+            String identity = " orderId=" + fixture.orderId() + " attemptKey=" + fixture.attemptKey()
+                + " providerOrderId=" + fixture.providerOrderId() + " transactionKey=TEST-TX-1";
+            assertThat(output.getOut()).contains("payment_gateway_result source=" + source + " operation=LOOKUP_BY_KEY"
+                + identity + " result=OBSERVED reason=NONE pgStatus=" + externalResult);
+            String completion = "payment_apply phase=COMPLETED observation=" + externalResult + identity;
+            assertThat(output.getOut().lines().filter(line -> line.contains(completion))).singleElement()
+                .asString().endsWith("decision=APPLIED txOutcome=ROLLED_BACK");
         }
 
         assertThat(state()).isEqualTo(before);
@@ -187,8 +199,9 @@ class PaymentRecoveryRollbackIntegrationTest {
         Product product = products.save(new Product(brands.save(new Brand("복구 브랜드")), "복구 상품", 100, 5));
         long orderId = orders.create("alice", List.of(new OrderQuantities.Item(product.getId(), 2))).orderId();
         String providerOrderId = ProviderOrderId.resolve(orderId, null);
-        coordinator.startOrReuse("alice", orderId, UUID.randomUUID(), providerOrderId, "TEST", CARD);
-        return new Fixture(orderId, product.getId(), unrelated.getId(), providerOrderId);
+        UUID attemptKey = UUID.randomUUID();
+        coordinator.startOrReuse("alice", orderId, attemptKey, providerOrderId, "TEST", CARD);
+        return new Fixture(orderId, product.getId(), unrelated.getId(), providerOrderId, attemptKey);
     }
 
     private ResponseEntity<JsonNode> reconcile(Fixture fixture) {
@@ -291,7 +304,7 @@ class PaymentRecoveryRollbackIntegrationTest {
         }
     }
 
-    private record Fixture(long orderId, long productId, long unrelatedProductId, String providerOrderId) { }
+    private record Fixture(long orderId, long productId, long unrelatedProductId, String providerOrderId, UUID attemptKey) { }
 
     private record WriteEvidence(int completedWrites, int failures, List<String> executedSql, String failedSql,
                                  boolean transactionActive, boolean autoCommit, long connectionId,

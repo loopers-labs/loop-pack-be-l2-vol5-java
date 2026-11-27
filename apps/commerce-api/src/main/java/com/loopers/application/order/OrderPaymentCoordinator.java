@@ -1,6 +1,5 @@
 package com.loopers.application.order;
 
-import com.loopers.domain.payment.PaymentCreateRequest;
 import com.loopers.domain.payment.PaymentGateway;
 import com.loopers.domain.payment.PaymentGatewayResult;
 import com.loopers.domain.payment.PaymentAttemptStatus;
@@ -103,9 +102,8 @@ public class OrderPaymentCoordinator {
         PaymentGatewayResult observation;
         try {
             requireOutsideTransaction();
-            observation = stored.transactionKey() == null
-                ? gateway.findByProviderOrderId(stored.providerOrderId())
-                : gateway.findByTransactionKey(stored.transactionKey());
+            observation = PaymentGatewayCall.lookup(gateway, PaymentGatewayCall.Source.CONFIRM, orderId, attemptKey,
+                stored.providerOrderId(), stored.transactionKey());
         } catch (PaymentLookupNotPermittedException denied) {
             return new PaymentConfirmationWaiter.LookupAttempt<>(
                 stocks.inspectPrepared(requester, orderId, attemptKey).result(), false);
@@ -117,8 +115,7 @@ public class OrderPaymentCoordinator {
                                                              String cardType, String cardNo) {
         // 외부 TX가 없는 호출에서 별도 Spring 프록시가 반환했으므로 TX A 커밋이 완료됐다.
         requireOutsideTransaction();
-        var observation = gateway.create(new PaymentCreateRequest(prepared.providerOrderId(), prepared.amount(),
-            cardType, cardNo));
+        var observation = PaymentGatewayCall.create(gateway, prepared, cardType, cardNo);
         if (observation.kind() == PaymentGatewayResult.Kind.REJECTED_NO_EFFECT) {
             return stocks.rejectBeforeCreate(prepared.orderId(), prepared.attemptKey(), prepared.providerAccount(),
                 prepared.providerOrderId(), prepared.amount());
@@ -139,9 +136,8 @@ public class OrderPaymentCoordinator {
         requireOutsideTransaction();
         PaymentGatewayResult observation;
         try {
-            observation = stored.transactionKey() == null
-                ? gateway.findByProviderOrderId(stored.providerOrderId())
-                : gateway.findByTransactionKey(stored.transactionKey());
+            observation = PaymentGatewayCall.lookup(gateway, PaymentGatewayCall.Source.REFRESH, orderId, attemptKey,
+                stored.providerOrderId(), stored.transactionKey());
         } catch (PaymentLookupNotPermittedException denied) {
             return stocks.inspectPrepared(requester, orderId, attemptKey).result();
         }
