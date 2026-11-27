@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="UTF-8" ?>
-<configuration>
-    <appender name="CONSOLE" class="ch.qos.logback.core.read.ListAppender"/>
-    <include resource="appenders/async-console-appender.xml"/>
-    <root level="INFO">
-        <appender-ref ref="ASYNC-CONSOLE"/>
-    </root>
-</configuration>
