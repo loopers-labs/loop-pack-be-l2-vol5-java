@@ -1,0 +1,33 @@
+[pg-sim] http://127.0.0.1:8082 pid=88105 startedAt=2026-11-27T03:36:26+00:00
+[pg-sim] callback LP-ORD-0000000001 20261127:TR:8ff8d58 → 200
+[pg-sim] callback LP-ORD-0000000003 20261127:TR:3deeda3 → 200
+[pg-sim] callback LP-ORD-0000000002 20261127:TR:24b24e1 → 200
+[pg-sim] callback LP-ORD-0000000004 20261127:TR:fc0f565 → 200
+[pg-sim] callback LP-ORD-0000000005 20261127:TR:ffc79c4 → 200
+[pg-sim] callback LP-ORD-0000000006 20261127:TR:a899684 → 200
+[pg-sim] callback LP-ORD-0000000007 20261127:TR:38bc1c1 → 200
+[pg-sim] callback LP-ORD-0000000008 20261127:TR:b76a926 → 200
+[pg-sim] callback LP-ORD-0000000009 20261127:TR:9e561c3 → 200
+[pg-sim] callback LP-ORD-0000000010 20261127:TR:16559a8 → 200
+[pg-sim] 응답 유실 목록 = ['LP-ORD-0000000012', 'LP-ORD-0000000015', 'LP-ORD-0000000018']
+[pg-sim] 응답 유실 LP-ORD-0000000012 20261127:TR:cffeef4 — 생성 응답을 5초 뒤에 보낸다
+[pg-sim] 응답 유실 LP-ORD-0000000015 20261127:TR:a285047 — 생성 응답을 5초 뒤에 보낸다
+[pg-sim] 응답 유실 LP-ORD-0000000018 20261127:TR:e265e59 — 생성 응답을 5초 뒤에 보낸다
+[pg-sim] callback LP-ORD-0000000011 20261127:TR:2ad1fb7 → 200
+[pg-sim] LP-ORD-0000000012 SUCCESS · callback 보관
+[pg-sim] callback LP-ORD-0000000013 20261127:TR:a85c1aa → 200
+[pg-sim] callback LP-ORD-0000000014 20261127:TR:abc54cd → 200
+[pg-sim] LP-ORD-0000000015 SUCCESS · callback 보관
+[pg-sim] callback LP-ORD-0000000016 20261127:TR:1a8c8e0 → 200
+[pg-sim] callback LP-ORD-0000000017 20261127:TR:ca3009c → 200
+[pg-sim] LP-ORD-0000000018 SUCCESS · callback 보관
+[pg-sim] callback LP-ORD-0000000019 20261127:TR:b3e70a8 → 200
+[pg-sim] callback LP-ORD-0000000020 20261127:TR:f4175b4 → 200
+[pg-sim] 응답 유실 LP-ORD-0000000012 늦은 응답을 썼다 (받는 쪽이 이미 끊었으면 버려진다)
+[pg-sim] 응답 유실 LP-ORD-0000000015 늦은 응답을 썼다 (받는 쪽이 이미 끊었으면 버려진다)
+[pg-sim] 응답 유실 LP-ORD-0000000018 늦은 응답을 썼다 (받는 쪽이 이미 끊었으면 버려진다)
+[pg-sim] 응답 유실 목록 = []
+[pg-sim] callback LP-ORD-0000000012 20261127:TR:cffeef4 → 200
+[pg-sim] callback LP-ORD-0000000015 20261127:TR:a285047 → 200
+[pg-sim] callback LP-ORD-0000000018 20261127:TR:e265e59 → 200
+[pg-sim] 보관 callback 전송 {'sent': 3, 'failed': 0}

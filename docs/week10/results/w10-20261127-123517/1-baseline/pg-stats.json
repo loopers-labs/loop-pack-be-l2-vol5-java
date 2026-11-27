@@ -1,0 +1,26 @@
+{
+  "pid": 88105,
+  "startedAt": "2026-11-27T03:36:26+00:00",
+  "drop": [],
+  "create": 10,
+  "lookup": 10,
+  "transactions": 10,
+  "createsByOrder": {
+    "LP-ORD-0000000001": 1,
+    "LP-ORD-0000000002": 1,
+    "LP-ORD-0000000003": 1,
+    "LP-ORD-0000000004": 1,
+    "LP-ORD-0000000005": 1,
+    "LP-ORD-0000000006": 1,
+    "LP-ORD-0000000007": 1,
+    "LP-ORD-0000000008": 1,
+    "LP-ORD-0000000009": 1,
+    "LP-ORD-0000000010": 1
+  },
+  "duplicates": {},
+  "callback": {
+    "sent": 10,
+    "failed": 0,
+    "held": 0
+  }
+}

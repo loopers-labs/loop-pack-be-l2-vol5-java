@@ -1,0 +1,155 @@
+name	expected	actual	result
+baseline: 응답 유실 꺼짐	[]	[]	PASS
+baseline: 주문 1 확정 요청 접수	202	202	PASS
+baseline: 주문 2 확정 요청 접수	202	202	PASS
+baseline: 주문 3 확정 요청 접수	202	202	PASS
+baseline: 주문 4 확정 요청 접수	202	202	PASS
+baseline: 주문 5 확정 요청 접수	202	202	PASS
+baseline: 주문 6 확정 요청 접수	202	202	PASS
+baseline: 주문 7 확정 요청 접수	202	202	PASS
+baseline: 주문 8 확정 요청 접수	202	202	PASS
+baseline: 주문 9 확정 요청 접수	202	202	PASS
+baseline: 주문 10 확정 요청 접수	202	202	PASS
+baseline: 같은 MySQL 컨테이너	2b3c9ad61bc91c8cea04d397921ce8e414a3fa0db0af791cbde58948f1101365	2b3c9ad61bc91c8cea04d397921ce8e414a3fa0db0af791cbde58948f1101365	PASS
+baseline: 같은 pg-sim 프로세스	88105@2026-11-27T03:36:26+00:00	88105@2026-11-27T03:36:26+00:00	PASS
+baseline: health	UP	UP	PASS
+baseline: 업무 지표 UNKNOWN	0.0	0.0	PASS
+baseline: 업무 지표 PENDING	0.0	0.0	PASS
+baseline: 상품 재고	90	90	PASS
+baseline: 확정 주문	10	10	PASS
+baseline: 선점 CONSUMED	10	10	PASS
+baseline: PG 거래 수	10	10	PASS
+baseline: PG create 호출 수	10	10	PASS
+fault: 응답 유실 목록 = 지정한 3건	["LP-ORD-0000000012","LP-ORD-0000000015","LP-ORD-0000000018"]	["LP-ORD-0000000012","LP-ORD-0000000015","LP-ORD-0000000018"]	PASS
+fault: 주문 11 확정 요청 접수	202	202	PASS
+fault: 주문 12 확정 요청 접수	202	202	PASS
+fault: 주문 13 확정 요청 접수	202	202	PASS
+fault: 주문 14 확정 요청 접수	202	202	PASS
+fault: 주문 15 확정 요청 접수	202	202	PASS
+fault: 주문 16 확정 요청 접수	202	202	PASS
+fault: 주문 17 확정 요청 접수	202	202	PASS
+fault: 주문 18 확정 요청 접수	202	202	PASS
+fault: 주문 19 확정 요청 접수	202	202	PASS
+fault: 주문 20 확정 요청 접수	202	202	PASS
+fault: 같은 MySQL 컨테이너	2b3c9ad61bc91c8cea04d397921ce8e414a3fa0db0af791cbde58948f1101365	2b3c9ad61bc91c8cea04d397921ce8e414a3fa0db0af791cbde58948f1101365	PASS
+fault: 같은 pg-sim 프로세스	88105@2026-11-27T03:36:26+00:00	88105@2026-11-27T03:36:26+00:00	PASS
+fault: health (사고 중에도)	UP	UP	PASS
+fault: 업무 지표 UNKNOWN	3.0	3.0	PASS
+fault: Prometheus 저장값 UNKNOWN (PromQL)	3	3	PASS
+fault: Prometheus PG 생성 호출 최대 지연 ms (outcome=UNKNOWN)	≥2900	≥2900	PASS
+fault: 장애 집합 결제 SUCCESS	7	7	PASS
+fault: 장애 집합 결제 UNKNOWN	3	3	PASS
+fault: 장애 집합 거래 키 NULL	3	3	PASS
+fault: 장애 집합 PG 거래 SUCCESS	10	10	PASS
+fault: 상품 재고	80	80	PASS
+fault: 선점 RESERVED	3	3	PASS
+fault: 선점 CONSUMED	17	17	PASS
+fault: 확정 주문	17	17	PASS
+fault: PG create 호출 수	20	20	PASS
+fault: 중복 create	{}	{}	PASS
+fault: 보관한 callback	3	3	PASS
+fault: 미종결 결제 목록 줄 수	3	3	PASS
+fault: 주문 12 PG 조회 = SUCCESS 1건 · 금액 10000	1/SUCCESS/10000	1/SUCCESS/10000	PASS
+fault: 주문 12 로그 ② 결과	result=UNKNOWN cause=READ_TIMEOUT	result=UNKNOWN cause=READ_TIMEOUT	PASS
+fault: 주문 12 로그 ② 기다린 ms	≥2900	≥2900	PASS
+fault: 주문 12 로그 ⑤ 반영 실패 줄	0	0	PASS
+fault: 주문 12 로그 ②에 traceId	32	32	PASS
+fault: 주문 12 trace PG 호출 span ms	≥2900	≥2900	PASS
+fault: 주문 12 trace PG 호출 span 오류	true	true	PASS
+fault: 주문 12 trace에 확정 요청 span	true	true	PASS
+fault: 주문 12 pg-sim이 받은 traceparent의 traceId	12c5acdde85df896ae3fcc4cf18647e0	12c5acdde85df896ae3fcc4cf18647e0	PASS
+fault: 주문 12 Loki 로그 ② (LogQL)	1	1	PASS
+fault: 주문 12 Loki trace_id로 찾은 ②	1	1	PASS
+fault: 주문 15 PG 조회 = SUCCESS 1건 · 금액 10000	1/SUCCESS/10000	1/SUCCESS/10000	PASS
+fault: 주문 15 로그 ② 결과	result=UNKNOWN cause=READ_TIMEOUT	result=UNKNOWN cause=READ_TIMEOUT	PASS
+fault: 주문 15 로그 ② 기다린 ms	≥2900	≥2900	PASS
+fault: 주문 15 로그 ⑤ 반영 실패 줄	0	0	PASS
+fault: 주문 15 로그 ②에 traceId	32	32	PASS
+fault: 주문 15 trace PG 호출 span ms	≥2900	≥2900	PASS
+fault: 주문 15 trace PG 호출 span 오류	true	true	PASS
+fault: 주문 15 trace에 확정 요청 span	true	true	PASS
+fault: 주문 15 pg-sim이 받은 traceparent의 traceId	b88cdbd55d1574d32f7ee4b25ee5912e	b88cdbd55d1574d32f7ee4b25ee5912e	PASS
+fault: 주문 15 Loki 로그 ② (LogQL)	1	1	PASS
+fault: 주문 15 Loki trace_id로 찾은 ②	1	1	PASS
+fault: 주문 18 PG 조회 = SUCCESS 1건 · 금액 10000	1/SUCCESS/10000	1/SUCCESS/10000	PASS
+fault: 주문 18 로그 ② 결과	result=UNKNOWN cause=READ_TIMEOUT	result=UNKNOWN cause=READ_TIMEOUT	PASS
+fault: 주문 18 로그 ② 기다린 ms	≥2900	≥2900	PASS
+fault: 주문 18 로그 ⑤ 반영 실패 줄	0	0	PASS
+fault: 주문 18 로그 ②에 traceId	32	32	PASS
+fault: 주문 18 trace PG 호출 span ms	≥2900	≥2900	PASS
+fault: 주문 18 trace PG 호출 span 오류	true	true	PASS
+fault: 주문 18 trace에 확정 요청 span	true	true	PASS
+fault: 주문 18 pg-sim이 받은 traceparent의 traceId	2f960802061a90cb94f1dd769a0ca7ba	2f960802061a90cb94f1dd769a0ca7ba	PASS
+fault: 주문 18 Loki 로그 ② (LogQL)	1	1	PASS
+fault: 주문 18 Loki trace_id로 찾은 ②	1	1	PASS
+fault: 가설 판정 (1 기각 · 2 지지 · 3 기각)	기각/지지/기각	기각/지지/기각	PASS
+recovery: 응답 유실 꺼짐	[]	[]	PASS
+recovery: 주문 12 reconcile 응답	200/SUCCESS/CONFIRMED	200/SUCCESS/CONFIRMED	PASS
+recovery: 주문 12 뒤 PG create 호출 수	20	20	PASS
+recovery: 주문 15 reconcile 응답	200/SUCCESS/CONFIRMED	200/SUCCESS/CONFIRMED	PASS
+recovery: 주문 15 뒤 PG create 호출 수	20	20	PASS
+recovery: 주문 18 reconcile 응답	200/SUCCESS/CONFIRMED	200/SUCCESS/CONFIRMED	PASS
+recovery: 주문 18 뒤 PG create 호출 수	20	20	PASS
+recovery: 주문 12 다시 reconcile 응답	200/SUCCESS	200/SUCCESS	PASS
+recovery: 주문 15 다시 reconcile 응답	200/SUCCESS	200/SUCCESS	PASS
+recovery: 주문 18 다시 reconcile 응답	200/SUCCESS	200/SUCCESS	PASS
+recovery: 보관 callback 전송	3/0	3/0	PASS
+recovery: 반복 뒤 fault.outbox.rows 그대로	10	10	PASS
+recovery: 반복 뒤 fault.activity.rows 그대로	10	10	PASS
+recovery: 반복 뒤 all.reservation.CONSUMED 그대로	20	20	PASS
+recovery: 반복 뒤 all.order.CONFIRMED 그대로	20	20	PASS
+recovery: 반복 뒤 product.stock 그대로	80	80	PASS
+recovery: 반복 뒤 all.outbox.rows 그대로	20	20	PASS
+recovery: 반복 뒤 all.activity.rows 그대로	20	20	PASS
+recovery: 같은 MySQL 컨테이너	2b3c9ad61bc91c8cea04d397921ce8e414a3fa0db0af791cbde58948f1101365	2b3c9ad61bc91c8cea04d397921ce8e414a3fa0db0af791cbde58948f1101365	PASS
+recovery: 같은 pg-sim 프로세스	88105@2026-11-27T03:36:26+00:00	88105@2026-11-27T03:36:26+00:00	PASS
+recovery: health	UP	UP	PASS
+recovery: 업무 지표 UNKNOWN	0.0	0.0	PASS
+recovery: Prometheus 저장값 UNKNOWN (PromQL)	0	0	PASS
+recovery: 장애 집합 결제 SUCCESS	10	10	PASS
+recovery: 장애 집합 결제 UNKNOWN	0	0	PASS
+recovery: 장애 집합 거래 키 NULL	0	0	PASS
+recovery: 장애 집합 PG 거래 = fault 때와 같은 10개	LP-ORD-0000000011 20261127:TR:2ad1fb7,LP-ORD-0000000012 20261127:TR:cffeef4,LP-ORD-0000000013 20261127:TR:a85c1aa,LP-ORD-0000000014 20261127:TR:abc54cd,LP-ORD-0000000015 20261127:TR:a285047,LP-ORD-0000000016 20261127:TR:1a8c8e0,LP-ORD-0000000017 20261127:TR:ca3009c,LP-ORD-0000000018 20261127:TR:e265e59,LP-ORD-0000000019 20261127:TR:b3e70a8,LP-ORD-0000000020 20261127:TR:f4175b4	LP-ORD-0000000011 20261127:TR:2ad1fb7,LP-ORD-0000000012 20261127:TR:cffeef4,LP-ORD-0000000013 20261127:TR:a85c1aa,LP-ORD-0000000014 20261127:TR:abc54cd,LP-ORD-0000000015 20261127:TR:a285047,LP-ORD-0000000016 20261127:TR:1a8c8e0,LP-ORD-0000000017 20261127:TR:ca3009c,LP-ORD-0000000018 20261127:TR:e265e59,LP-ORD-0000000019 20261127:TR:b3e70a8,LP-ORD-0000000020 20261127:TR:f4175b4	PASS
+recovery: DB 거래 키 = PG 거래 키	LP-ORD-0000000011 20261127:TR:2ad1fb7,LP-ORD-0000000012 20261127:TR:cffeef4,LP-ORD-0000000013 20261127:TR:a85c1aa,LP-ORD-0000000014 20261127:TR:abc54cd,LP-ORD-0000000015 20261127:TR:a285047,LP-ORD-0000000016 20261127:TR:1a8c8e0,LP-ORD-0000000017 20261127:TR:ca3009c,LP-ORD-0000000018 20261127:TR:e265e59,LP-ORD-0000000019 20261127:TR:b3e70a8,LP-ORD-0000000020 20261127:TR:f4175b4	LP-ORD-0000000011 20261127:TR:2ad1fb7,LP-ORD-0000000012 20261127:TR:cffeef4,LP-ORD-0000000013 20261127:TR:a85c1aa,LP-ORD-0000000014 20261127:TR:abc54cd,LP-ORD-0000000015 20261127:TR:a285047,LP-ORD-0000000016 20261127:TR:1a8c8e0,LP-ORD-0000000017 20261127:TR:ca3009c,LP-ORD-0000000018 20261127:TR:e265e59,LP-ORD-0000000019 20261127:TR:b3e70a8,LP-ORD-0000000020 20261127:TR:f4175b4	PASS
+recovery: 금액 불일치	0	0	PASS
+recovery: PG create 호출 수	20	20	PASS
+recovery: 중복 create	{}	{}	PASS
+recovery: PG 거래 수	20	20	PASS
+recovery: 상품 재고 (79면 이중 차감)	80	80	PASS
+recovery: 장애 집합 선점 RESERVED	0	0	PASS
+recovery: 장애 집합 선점 CONSUMED	10	10	PASS
+recovery: 포인트 기록 (fault 때와 같음)	0	0	PASS
+recovery: 쿠폰 보유 (fault 때와 같음)	0	0	PASS
+recovery: 장애 집합 Outbox 줄	10	10	PASS
+recovery: 장애 집합 Outbox 발행됨	10	10	PASS
+recovery: 주문당 Outbox 줄 최대	1	1	PASS
+recovery: 장애 집합 구매 활동 줄	10	10	PASS
+recovery: 주문당 구매 활동 줄 최대	1	1	PASS
+recovery: 장애 집합 구매 수량 합	10	10	PASS
+recovery: 구매 활동 확정 시각 = 주문 확정 시각	0	0	PASS
+recovery: 확정 시각 빈 주문	0	0	PASS
+recovery: 확정 주문이 걸친 주 수	1	1	PASS
+recovery: 미종결 결제 목록 줄 수	0	0	PASS
+recovery: 주문 12 로그 ④ reconcile API로 SUCCESS	1	1	PASS
+recovery: 주문 15 로그 ④ reconcile API로 SUCCESS	1	1	PASS
+recovery: 주문 18 로그 ④ reconcile API로 SUCCESS	1	1	PASS
+recovery: 구매 활동 저장 로그에 traceId	32	32	PASS
+recovery: 발행·소비가 같은 trace	commerce-api,commerce-streamer	commerce-api,commerce-streamer	PASS
+recovery: 응답 유실 주문 Outbox에 trace 문맥	3	3	PASS
+recovery: reconcile 요청 trace = 구매 활동 소비 trace	8a0d8aba705fe152d3802ba96072e20f	8a0d8aba705fe152d3802ba96072e20f	PASS
+recovery: 그 trace에 reconcile 요청 span	true	true	PASS
+ranking: batch 종료 코드 (periodStart=2026-11-23)	0	0	PASS
+ranking: 새 snapshot 입력 줄·수량 합	20/20	20/20	PASS
+ranking: 랭킹 API 1위 상품·점수	1/1/20	1/1/20	PASS
+monitoring: service graph commerce-api → commerce-streamer 호출 수	≥1	≥1	PASS
+monitoring: span 지표 시계열 수 (traces_spanmetrics_calls_total)	≥1	≥1	PASS
+monitoring: Loki commerce-api 로그 줄 수	≥1	≥1	PASS
+monitoring: Loki commerce-streamer 로그 줄 수	≥1	≥1	PASS
+monitoring: Loki pg-sim 로그 줄 수	≥1	≥1	PASS
+monitoring: Loki label에 orderId·traceId 없음 (stream이 늘지 않게)	0	0	PASS
+monitoring: Loki에 카드 번호 줄	0	0	PASS
+monitoring: Loki에 Spring Security 임시 비밀번호 줄	0	0	PASS
+monitoring: Grafana 대시보드	w10-incident	w10-incident	PASS
+monitoring: Grafana 단계 표시(annotation) 수	≥4	≥4	PASS
+끝: fault 증거를 덮어쓰지 않음	OK	OK	PASS
+끝: 카드 번호가 증거·로그에 없음	0	0	PASS
