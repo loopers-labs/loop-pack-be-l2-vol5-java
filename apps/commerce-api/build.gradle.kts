@@ -29,7 +29,7 @@ tasks.test {
     }
 }
 
-// E2E 테스트는 streamer 를 별도 프로세스로 띄우므로 실행 jar 를 먼저 만든다. 제품 runtime 의존은 만들지 않는다.
+// E2E 테스트는 streamer·batch 를 별도 프로세스로 띄우므로 실행 jar 를 먼저 만든다. 제품 runtime 의존은 만들지 않는다.
 tasks.register<Test>("e2eTest") {
     description = "@Tag(\"e2e\") E2E 테스트만 실행한다."
     group = "verification"
@@ -42,10 +42,12 @@ tasks.register<Test>("e2eTest") {
     systemProperty("user.timezone", "Asia/Seoul")
     systemProperty("spring.profiles.active", "test")
     jvmArgs("-Xshare:off")
-    dependsOn(":apps:commerce-streamer:bootJar")
+    dependsOn(":apps:commerce-streamer:bootJar", ":apps:commerce-batch:bootJar")
     doFirst {
         val streamerJar = project(":apps:commerce-streamer").tasks.getByName("bootJar").outputs.files.singleFile
         systemProperty("streamer.jar", streamerJar.absolutePath)
+        val batchJar = project(":apps:commerce-batch").tasks.getByName("bootJar").outputs.files.singleFile
+        systemProperty("batch.jar", batchJar.absolutePath)
     }
 }
 

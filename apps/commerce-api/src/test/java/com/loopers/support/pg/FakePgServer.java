@@ -13,9 +13,12 @@ import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -47,6 +50,9 @@ public final class FakePgServer implements AutoCloseable {
     private final AtomicInteger createCalls = new AtomicInteger();
     private final AtomicInteger lookupByKeyCalls = new AtomicInteger();
     private final AtomicInteger lookupByOrderCalls = new AtomicInteger();
+    private final Set<String> createdOrderIds = ConcurrentHashMap.newKeySet();
+    private final AtomicInteger duplicateCreates = new AtomicInteger();
+    private final Set<String> dropResponseOrderIds = ConcurrentHashMap.newKeySet();
 
     private volatile CreateBehavior createBehavior = accept();
     private volatile Duration lookupDelay = Duration.ZERO;
@@ -96,6 +102,23 @@ public final class FakePgServer implements AutoCloseable {
         this.createBehavior = behavior;
     }
 
+    /**
+     * 지정한 주문의 create 만 거래를 만든 뒤 응답 없이 연결을 끊는다. 다른 주문은 {@link #onCreate} 동작을 따른다.
+     * 실행 순서가 아니라 실제 주문 식별자로 장애 대상을 고정할 때 쓴다.
+     */
+    public void dropResponseFor(Collection<String> providerOrderIds) {
+        dropResponseOrderIds.addAll(providerOrderIds);
+    }
+
+    /** 응답 유실 대상을 비운다. 이미 만든 거래와 기록은 그대로 둔다. */
+    public void clearDropResponse() {
+        dropResponseOrderIds.clear();
+    }
+
+    public boolean isDroppingResponses() {
+        return !dropResponseOrderIds.isEmpty();
+    }
+
     /** 거래 조회(키·주문 모두)가 항상 이 상태로 응답하게 한다. */
     public void failLookups(int status) {
         this.lookupOverride = new Reply(status, "{\"code\":\"FAKE_PG_LOOKUP_FAILURE\"}", false);
@@ -131,6 +154,9 @@ public final class FakePgServer implements AutoCloseable {
         createCalls.set(0);
         lookupByKeyCalls.set(0);
         lookupByOrderCalls.set(0);
+        createdOrderIds.clear();
+        duplicateCreates.set(0);
+        dropResponseOrderIds.clear();
         createBehavior = accept();
         resetLookupFaults();
     }
@@ -157,6 +183,11 @@ public final class FakePgServer implements AutoCloseable {
 
     public int createCalls() {
         return createCalls.get();
+    }
+
+    /** 같은 주문으로 두 번째 이후 들어온 create 수. 어떤 응답을 했든 시도 자체를 센다. */
+    public int duplicateCreates() {
+        return duplicateCreates.get();
     }
 
     public int lookupByKeyCalls() {
@@ -279,6 +310,13 @@ public final class FakePgServer implements AutoCloseable {
         JsonNode body = request.json();
         if (!isValidCreateBody(body)) {
             return error(400, "BAD_REQUEST");
+        }
+        String orderId = body.get("orderId").asText();
+        if (!createdOrderIds.add(orderId)) {
+            duplicateCreates.incrementAndGet();
+        }
+        if (dropResponseOrderIds.contains(orderId)) {
+            return acceptThenDropResponse().handle(this, body);
         }
         return createBehavior.handle(this, body);
     }

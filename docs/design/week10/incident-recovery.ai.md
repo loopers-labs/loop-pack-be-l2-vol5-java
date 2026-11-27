@@ -101,6 +101,7 @@
 - `apps/commerce-api` `CheckoutIncidentE2ETest`, `@Tag("e2e")`, `PaymentFlowTestSupport` 상속, `@Test` 하나에서 단계 메서드를 순서대로 호출.
 - 프로세스: api는 테스트 JVM(`RANDOM_PORT`, `management.server.port=0`, `@LocalManagementPort`). streamer는 `StreamerProcess`. batch는 신규 `BatchProcess`(`java -jar` + `--job.name=weeklyRanking periodStart=… revision=1`, 종료 코드 0 대기, 같은 datasource 속성 전달).
 - `e2eTest` 태스크에 `dependsOn(":apps:commerce-batch:bootJar")`, `batch.jar` 시스템 속성 추가.
+- `BatchProcess`는 `--spring.jpa.hibernate.ddl-auto=update`로 띄운다. test 프로필의 `create`는 batch가 읽기 전용으로 매핑한 `product_purchase_activity`를 다시 만들어 streamer가 저장한 입력을 지운다. streamer는 test 프로필(`create`, 자기 테이블만) 그대로 두되 baseline 전에 먼저 띄운다.
 
 | 대안 | 탈락 이유 |
 |---|---|
