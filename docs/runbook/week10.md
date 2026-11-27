@@ -150,6 +150,9 @@ mysql loopers -e "SET @fault_ids = '12,15,18'; SET @product_id = 1; SOURCE docs/
 - 증거를 저장하기 전에 reconcile을 부른다
 
 **후속 개선**
+- 알림 — `max(commerce_payment_unresolved{status="UNKNOWN"}) > 0`이 **5분 넘게** 이어지면 당직에게 알리고, 메시지에 이 runbook과 대시보드 `w10-incident` 링크를 붙인다. 지금은 알림 규칙이 없어 누가 대시보드를 열어야 안다 (AI 진단 Q14도 같은 지적)
+  - 5분인 이유: 자동 reconcile이 정상이면 응답 유실은 약 5초 안에 풀린다. 5분 넘게 남았다면 자동 복구도 못 고치는 상태다 (PG 조회 실패 · 스케줄러 멈춤 · `MULTIPLE`)
+  - 순간 값(`> 0`)으로 울리면 5초짜리 깜빡임마다 알림이 온다
 - 운영자 전용 reconcile 경로 (지금은 고객 API이거나 스케줄러를 기다려야 한다)
 - `만료 뒤 성공 — 환불 필요`를 사람 손이 아닌 환불 절차로
 
@@ -162,4 +165,4 @@ mysql loopers -e "SET @fault_ids = '12,15,18'; SET @product_id = 1; SOURCE docs/
 | 서버 여러 대의 업무 지표 | 한 대만 띄웠다 |
 | 복구 중 Kafka·DB 장애 | 이번 사고 범위 밖 |
 | 월요일 00:00 UTC를 넘는 복구 | run.sh가 그 근처 실행을 거부해 피했을 뿐이다. 넘으면 복구한 주문은 다음 주로 집계된다 |
-| PG → callback · Outbox relay · batch 구간의 trace | 새 trace로 시작한다 — `orderId` · `eventId` · `snapshotId`로 잇는다 |
+| PG → callback · batch 구간의 trace | 새 trace로 시작한다 — `orderId` · `snapshotId`로 잇는다. Outbox relay → Kafka → streamer는 `order_outbox.trace_parent`로 같은 trace에 잇는다 (plan.md D-12 (나)) |
