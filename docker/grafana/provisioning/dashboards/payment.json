@@ -15,6 +15,21 @@
   },
   "panels": [
     {
+      "id": 32,
+      "type": "text",
+      "title": "알림이 울렸을 때",
+      "gridPos": {
+        "h": 5,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "알림이 울리면 아래에서 먼저 볼 것을 확인한다. 절차 전체는 [runbook](https://github.com/loopers-labs/loop-pack-be-l2-vol5-java/blob/seeun0210/docs/runbook/week10.md) 에 있다.\n\n| 알림 | 뜻 | 먼저 볼 것 |\n|---|---|---|\n| `PaymentResponsesLost` | PG 응답을 잃고 있다 | 이 화면의 **지금 결과를 모르는 결제**가 내려가는지 |\n| `PaymentUnknownStuck` | 미확인 결제를 sweeper 가 닫지 못한다 | runbook 2 장에서 주문 목록을 고정하고 4 장으로 |\n| `PaymentDbExporterDown` | 남은 건수를 못 세고 있다 | exporter 와 DB 연결. 그동안은 runbook 2 장의 조회로 직접 센다 |\n| `PurchaseActivityLagStuck` | 확정된 주문이 구매 활동에 반영되지 않는다 | 이 화면의 **컨슈머가 아직 읽지 않은 메시지**, streamer 가 살아 있는지 |\n"
+      }
+    },
+    {
       "id": 1,
       "type": "row",
       "title": "결제: 끝났는가 (프로세스가 정상이어도 여기가 어긋날 수 있다)",
@@ -23,7 +38,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 0
+        "y": 5
       }
     },
     {
@@ -35,7 +50,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 1
+        "y": 6
       },
       "fieldConfig": {
         "defaults": {
@@ -85,7 +100,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 1
+        "y": 6
       },
       "fieldConfig": {
         "defaults": {
@@ -127,7 +142,7 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 1
+        "y": 6
       },
       "fieldConfig": {
         "defaults": {
@@ -173,7 +188,7 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 1
+        "y": 6
       },
       "fieldConfig": {
         "defaults": {
@@ -220,7 +235,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 5
+        "y": 10
       },
       "fieldConfig": {
         "defaults": {
@@ -263,7 +278,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 5
+        "y": 10
       },
       "fieldConfig": {
         "defaults": {
@@ -305,7 +320,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 13
+        "y": 18
       },
       "fieldConfig": {
         "defaults": {
@@ -350,7 +365,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 13
+        "y": 18
       },
       "fieldConfig": {
         "defaults": {
@@ -395,7 +410,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 21
+        "y": 26
       },
       "fieldConfig": {
         "defaults": {
@@ -439,7 +454,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 29
+        "y": 34
       },
       "collapsed": false,
       "panels": []
@@ -453,7 +468,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 30
+        "y": 35
       },
       "fieldConfig": {
         "defaults": {
@@ -496,7 +511,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 30
+        "y": 35
       },
       "fieldConfig": {
         "defaults": {
@@ -539,7 +554,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 38
+        "y": 43
       }
     },
     {
@@ -551,7 +566,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 39
+        "y": 44
       },
       "fieldConfig": {
         "defaults": {
@@ -595,7 +610,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 39
+        "y": 44
       },
       "fieldConfig": {
         "defaults": {
@@ -642,7 +657,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 39
+        "y": 44
       },
       "fieldConfig": {
         "defaults": {
@@ -689,7 +704,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 47
+        "y": 52
       }
     },
     {
@@ -701,7 +716,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 48
+        "y": 53
       },
       "fieldConfig": {
         "defaults": {
@@ -744,7 +759,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 48
+        "y": 53
       },
       "fieldConfig": {
         "defaults": {
@@ -787,7 +802,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 48
+        "y": 53
       },
       "fieldConfig": {
         "defaults": {
@@ -833,7 +848,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 56
+        "y": 61
       }
     },
     {
@@ -845,7 +860,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 57
+        "y": 62
       },
       "fieldConfig": {
         "defaults": {
@@ -894,7 +909,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 57
+        "y": 62
       },
       "fieldConfig": {
         "defaults": {
@@ -947,7 +962,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 57
+        "y": 62
       },
       "fieldConfig": {
         "defaults": {
@@ -991,7 +1006,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 65
+        "y": 70
       },
       "fieldConfig": {
         "defaults": {
@@ -1034,7 +1049,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 65
+        "y": 70
       },
       "fieldConfig": {
         "defaults": {
@@ -1082,7 +1097,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 65
+        "y": 70
       },
       "fieldConfig": {
         "defaults": {
@@ -1129,7 +1144,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 73
+        "y": 78
       }
     },
     {
@@ -1141,7 +1156,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 74
+        "y": 79
       },
       "fieldConfig": {
         "defaults": {
@@ -1198,7 +1213,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 74
+        "y": 79
       },
       "fieldConfig": {
         "defaults": {

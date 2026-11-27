@@ -1,0 +1,9 @@
+apiVersion: 1
+
+policies:
+  - orgId: 1
+    receiver: payment-slack
+    group_by: ['source_alert']
+    group_wait: 10s
+    group_interval: 1m
+    repeat_interval: 4h

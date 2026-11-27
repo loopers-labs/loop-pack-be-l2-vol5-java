@@ -1,0 +1,39 @@
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: prometheus-alert-relay
+    folder: commerce
+    interval: 10s
+    rules:
+      - uid: prometheus-alert-relay
+        title: Prometheus 알림 전달
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 60
+              to: 0
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: 'label_replace(max by (alertname, severity) (ALERTS{alertstate="firing"}), "source_alert", "$1", "alertname", "(.+)")'
+              instant: true
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0]
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        annotations:
+          summary: 'Prometheus 알림 {{ $labels.source_alert }} 이 울리고 있다. 조건과 건수는 Prometheus 의 /alerts 에서 본다'
+          runbook_url: 'https://github.com/loopers-labs/loop-pack-be-l2-vol5-java/blob/seeun0210/docs/runbook/week10.md'
+          __dashboardUid__: commerce-payment
+          __panelId__: '6'
