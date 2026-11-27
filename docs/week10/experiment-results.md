@@ -120,7 +120,7 @@ PG의 SUCCESS 거래와 내부 미종결 상태가 함께 존재해도 Health는
 
 ## 2. 증거 보존
 
-생성 위치는 `apps/commerce-api/build/incident-evidence/<runId>/`다. 앞선 실행 `20261126-221331-a72bcf37`의 별도 원본도 그 경로에서 확인했다. 남아 있는 두 실행의 매니페스트는 모두 PASSED였으며 실패 매니페스트는 발견되지 않았다.
+생성 위치는 `apps/commerce-api/build/incident-evidence/<runId>/`다. 앞선 실행 `20261126-221331-a72bcf37`의 별도 원본도 당시 그 경로에서 확인했다. 다만 S10 최종 회귀에서 `clean`을 실행했으므로 **빌드 산출물의 원본은 지금 남아 있지 않다.** 지금 조회할 수 있는 것은 `docs/week10/evidence/`로 복사해 둔 실행들뿐이고, 이 실행은 복사 대상이 아니었다. 남아 있는 두 실행의 매니페스트는 모두 PASSED였으며 실패 매니페스트는 발견되지 않았다.
 
 제출 실행의 아래 네 파일을 바이트 그대로 복사했고, 복사본을 원본과 대조했다. `fault.json.sha256`은 복사본의 FAULT 본문과 일치한다.
 
@@ -271,7 +271,140 @@ commerce_payment_unresolved_refresh_total{application="commerce-api",result="suc
 - 집계 실패 후 스케줄러 자동 회복과 비활성 전환은 여전히 미검증이다.
 - 동일 실행 통합 테스트는 1건 통과, 실패·오류·skip 각 0건이다. 증거는 `apps/commerce-api/build/incident-evidence/20261127-050500-5e8f1e57/`에 생성하고 제출본을 별도 폴더에 보존했다. [실행 정보](evidence/20261127-050500-5e8f1e57/run.json), [BASELINE](evidence/20261127-050500-5e8f1e57/baseline.json), [FAULT](evidence/20261127-050500-5e8f1e57/fault.json), [FAULT 체크섬](evidence/20261127-050500-5e8f1e57/fault.json.sha256), [진단](evidence/20261127-050500-5e8f1e57/diagnosis.json), [복구 전 r1](evidence/20261127-050500-5e8f1e57/ranking-r1.json), [복구](evidence/20261127-050500-5e8f1e57/recovery.json), [테스트 결과](evidence/20261127-050500-5e8f1e57/test-result.json).
 
-## 6. 후속 실험 기록란
+## 6. S8 복구된 사실의 후속 결과와 r2 공개
+
+실행 `20261127-051516-bb5ff22c`에서 BASELINE → FAULT → DIAGNOSE → RANKING R1 → RECOVERY → DOWNSTREAM을 **한 사고 실행**으로 이었다. §5와 별개의 새 runId이며 단계 사이에 DB와 PG 원장을 초기화하지 않았다. 여섯 단계 모두 PASSED다. 서로 다른 runId의 관측을 섞지 않았다.
+
+### 6.1. 복구된 주문의 발행과 소비
+
+| 관측 | 값 |
+| --- | --- |
+| 이 단계에서 발행한 Outbox | 3 |
+| 전체 Outbox | 20건 PUBLISHED, 비PUBLISHED 0 |
+| `product_purchase_activity` | 20행, quantity 합계 20 |
+| `processed_order_confirmation` | 20행 |
+| 주문·상품·수량·확정시각 정합 | 20행 전부 일치 |
+| event_id 규칙 | 20행 전부 `order-confirmed:v1:{order_id}` |
+| 복구 3건의 활동·장부 | 각 주문당 정확히 1행 |
+
+정합은 조인으로 확인했다. `product_purchase_activity`를 `orders`와 `order_items`에 상품·수량으로 조인하고 `confirmed_at`까지 같은 행이 20건이다. 누락도 중복도 없다.
+
+```text
+{"order_id": 1, "product_id": 1, "quantity": 1, "confirmed_at": "2026-11-27T05:15:35.669"}
+{"event_id": "order-confirmed:v1:1", "order_id": 1, "confirmed_at": "2026-11-27T05:15:35.669"}
+```
+
+### 6.2. 중복 발행과 중복 소비
+
+복구된 3건의 Outbox payload를 실제 sender로 다시 발행했다. 발행은 3회 성공했고, 그 뒤 유한 대기 동안 구매 활동과 장부가 **20행에서 변하지 않았다.** 활동 테이블의 전체 행을 재발행 전후로 비교해 동일함을 확인했다. 발행 횟수와 업무 활동 수를 같은 수로 취급하지 않는다.
+
+### 6.3. r2 공개와 r1 불변
+
+| 관측 | 값 |
+| --- | --- |
+| r2 snapshotId | `weekly-20261123-r2` |
+| 배치 | `COMPLETED`, revision status `COMPLETED` |
+| r2 frozen input | 20행 |
+| 공개 포인터 | `weekly-20261123-r2`, revision 2 |
+| 랭킹 API | `PUBLISHED`, score **20**, rank 1 |
+| r1 frozen input | **17행 그대로** |
+| r1 점수 행 | `[{product_id=1, score=17, ranking=1}]` 전체 행 불변 |
+
+```text
+{"status":"PUBLISHED","periodStart":"2026-11-23","periodEnd":"2026-11-30","snapshotId":"weekly-20261123-r2",
+  "frozenAt":"2026-11-27T05:15:44Z","items":[{"productId":1,"productName":"S5 synthetic product","score":20,"rank":1,"calcRank":1}]}
+```
+
+늦게 도착한 사실이 이미 공개한 snapshot을 바꾸지 않았고, 새 revision이 복구를 반영했다. 주간 소속은 내부 최초 확정 시각이 결정했다. 기존 17건의 `confirmed_at`은 r1 공개 시점의 값과 모두 같았고, 복구된 3건에만 새 확정 시각이 생겼으며 모두 `2026-11-23 ~ 2026-11-29` 안이다.
+
+### 6.4. 결제와 증거 불변
+
+PG create 누적 20회, PG 거래 20건, 가용 재고 10개, 내부 SUCCESS 20건, UNKNOWN 0건이 후속 처리 뒤에도 유지됐다. `fault.json`과 체크섬의 바이트도 이 단계 전후로 동일하다(`faultEvidenceUnchanged=true`).
+
+동일 실행 통합 테스트는 1건 통과, 실패·오류·skip 각 0건이다. 증거는 `apps/commerce-api/build/incident-evidence/20261127-051516-bb5ff22c/`에 생성하고 제출본을 보존했다. [실행 정보](evidence/20261127-051516-bb5ff22c/run.json), [BASELINE](evidence/20261127-051516-bb5ff22c/baseline.json), [FAULT](evidence/20261127-051516-bb5ff22c/fault.json), [FAULT 체크섬](evidence/20261127-051516-bb5ff22c/fault.json.sha256), [진단](evidence/20261127-051516-bb5ff22c/diagnosis.json), [r1](evidence/20261127-051516-bb5ff22c/ranking-r1.json), [복구](evidence/20261127-051516-bb5ff22c/recovery.json), [후속 결과](evidence/20261127-051516-bb5ff22c/downstream.json), [테스트 결과](evidence/20261127-051516-bb5ff22c/test-result.json).
+
+## 7. S9 전 보완 검증
+
+실행 `20261127-052251-d8d97825`에서 S8의 네 항목을 보완해 다시 전 단계를 이어 실행했다. 여섯 단계 모두 PASSED다.
+
+| 보완 항목 | 이전 | 이번 관측 |
+| --- | --- | --- |
+| 중복 재발행의 실제 소비 완료 대기 | 수만 3초간 불변 확인 | 소비자 그룹 **committed offset 23**(20 + 재발행 3)까지 기다린 뒤 활동·장부 20행 불변 확인 |
+| r1 frozen input 전체 행 | 행 수 17만 비교 | `(order_id, product_id, quantity, confirmed_at)` **17행 전체 내용** 동일 |
+| Outbox·장부 event_id 집합 | 규칙 일치만 확인 | 양방향 차집합 0, 정렬 목록 비교로 **집합 일치** |
+| 포인트·쿠폰 보존 | 빈 상태 유지 | 잔액 500,000 충전과 쿠폰 1건을 미리 심고 **복구 전후 동일** 확인 |
+
+포인트는 기존 `POST /api/v1/points/charge`로 충전했고 쿠폰은 행만 심었다. 쿠폰과 PG의 도메인 구조는 바꾸지 않았다. 이로써 불변 조건이 "빈 상태 유지"가 아니라 **실제 데이터 보존**으로 검증된다.
+
+r2는 `weekly-20261123-r2`로 공개되고 포인터 revision 2, 랭킹 API score 20이며 r1은 17로 남았다.
+
+증거는 [실행 정보](evidence/20261127-052251-d8d97825/run.json), [r1](evidence/20261127-052251-d8d97825/ranking-r1.json), [복구](evidence/20261127-052251-d8d97825/recovery.json), [후속 결과](evidence/20261127-052251-d8d97825/downstream.json), [테스트 결과](evidence/20261127-052251-d8d97825/test-result.json)에 있다.
+
+## 8. S10 최종 회귀 검증
+
+작업 트리 최종 상태에서 `clean` 후 전 모듈을 다시 실행했다. 이전 실행의 산출물을 재사용하지 않았고 `UP-TO-DATE`로 넘어간 테스트 task 는 없다.
+
+### 8.1. 실행 명령과 결과
+
+```bash
+./gradlew clean :apps:commerce-api:check :apps:commerce-streamer:check :apps:commerce-batch:check
+./gradlew :modules:jpa:check :modules:kafka:check :modules:redis:check :modules:ranking-schema:check \
+          :supports:jackson:check :supports:logging:check :supports:monitoring:check
+```
+
+| 대상 | 실행 | 성공 | 실패 | 오류 | skip |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| commerce-api `test` | 638 | 638 | 0 | 0 | 0 |
+| commerce-api `crossAppTest` | 4 | 4 | 0 | 0 | 0 |
+| commerce-streamer `test` | 43 | 43 | 0 | 0 | 0 |
+| commerce-batch `test` | 24 | 24 | 0 | 0 | 0 |
+| modules/kafka `test` | 3 | 3 | 0 | 0 | 0 |
+| modules/jpa·redis·ranking-schema, supports/* | 0 | — | — | — | — |
+
+마지막 줄은 **테스트가 없는 모듈**이다. 0건을 통과로 세지 않는다. `check`는 실행했고 Checkstyle 만 적용됐다.
+
+Checkstyle 은 리포트가 생성된 11개 소스셋에서 모두 `errors=0`이다. commerce-api 의 `main`·`test`·`crossAppTest`, commerce-streamer·commerce-batch 의 `main`·`test`, modules/kafka 3개, modules/jpa·redis 2개씩, modules/ranking-schema 와 supports/jackson 각 1개다. supports/logging·monitoring 은 Java 소스가 없어 리포트가 없다.
+
+ArchUnit(`ArchitectureTest`)은 3건 실행·0 실패다. 계층 의존 세 규칙이 적용됐다.
+
+### 8.2. 누적 기능 회귀 (실행 건수)
+
+| 기능 | 대표 테스트 | 실행 |
+| --- | --- | ---: |
+| PG 결제·조정 | `PaymentReconcileIntegrationTest` / `PaymentScheduledLookupIntegrationTest` / `PaymentV1ApiE2ETest` | 12 / 9 / 16 |
+| 주문·결제 연동 | `OrderPaymentIntegrationTest` | 14 |
+| adapter 계약 | `HttpPaymentGatewayContractTest` | 54 |
+| Outbox·소비 | `OrderConfirmedOutboxRelayTest` / `PurchaseActivityIntegrationTest` | 9 / 3 |
+| 쿠폰 | `Coupon*` 전체 | 96 |
+| 랭킹 배치 | `WeeklyRankingJobRestartTest` / `OpenWeeklyRankingConvergenceTest` / `WeeklyRankingRevisionRejectTest` | 3 / 1 / 1 |
+| 10주차 신규 | `PaymentAttemptRepositoryIntegrationTest` / `PaymentUnresolvedMetricsTest` / `PaymentUnresolvedMetricsPrometheusTest` / `PaymentApplyLogIntegrationTest` / `TestPaymentPgServerIncidentTest` / `HttpPaymentGatewayUnknownMappingTest` | 6 / 8 / 1 / 1 / 6 / 6 |
+
+### 8.3. 최종 제출 증거
+
+최종 제출 증거는 **`20261127-064920-a0cedcfa`** 하나다. S10 회귀에서 실행된 사고 테스트의 결과이며 BASELINE 부터 DOWNSTREAM 까지 **같은 runId**다. 서로 다른 실행의 관측을 섞지 않았다.
+
+| 단계 | 결과 |
+| --- | --- |
+| baseline / fault / diagnose | PASSED |
+| ranking-r1 / recovery / downstream | PASSED |
+
+핵심 관측값은 committed offset 23, r1 frozen input 17행 유지, r2 `weekly-20261123-r2` 공개, 랭킹 API score 20, 포인트 잔액 500,000 과 쿠폰 1건 불변이다. `fault.json` 체크섬 검증은 OK 다.
+
+개발 과정의 이전 실행 증거 4건(`20261126-221445-c02e381c`, `20261126-222348-37dab0a6`, `20261127-050500-5e8f1e57`, `20261127-051516-bb5ff22c`, `20261127-052251-d8d97825`)도 덮어쓰지 않고 그대로 보존했다.
+
+### 8.4. 검증되지 않은 상태로 남긴 것
+
+다음은 이번에도 **미검증**이다. 완료로 바꾸지 않는다.
+
+- 운영 배포, 실계정, 실제 PG, 부하 상황, 월간 SLO
+- 분산 추적. trace id 는 한 요청 안의 로그만 잇고 PG·Kafka 로 문맥을 전파하지 않는다
+- 지표 집계 실패 후 스케줄러 자동 회복과 비활성 전환
+- `STATUS_UNKNOWN` 트랜잭션 완료 경로의 실행
+- management 엔드포인트 접근 제한 등 운영 보안 정책
+- 운영자가 사용자를 대신해 복구하는 권한 경로
+- 쿠폰 발급과 PG 결제의 상호 무영향을 직접 검증하는 회귀 테스트. 이번 사고 실행의 쿠폰 1건 보존 관측이 유일한 근거다
+
+## 9. 후속 실험 기록란
 
 | 단계 | 상태 | 이 문서에 추가할 결과 |
 | --- | --- | --- |

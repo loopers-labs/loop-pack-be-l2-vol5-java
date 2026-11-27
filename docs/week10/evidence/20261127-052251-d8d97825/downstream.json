@@ -1,0 +1,818 @@
+{
+  "runId" : "20261127-052251-d8d97825",
+  "phase" : "downstream",
+  "startedAt" : "2026-11-27T05:23:16.134837Z",
+  "r1SnapshotId" : "weekly-20261123-r1",
+  "outboxPublishedInThisStage" : 3,
+  "activities" : [ {
+    "order_id" : 1,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-27T05:23:10.445"
+  }, {
+    "order_id" : 2,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-27T05:23:10.558"
+  }, {
+    "order_id" : 3,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-27T05:23:10.637"
+  }, {
+    "order_id" : 4,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-27T05:23:10.713"
+  }, {
+    "order_id" : 5,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-27T05:23:10.784"
+  }, {
+    "order_id" : 6,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-27T05:23:10.854"
+  }, {
+    "order_id" : 7,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-27T05:23:10.918"
+  }, {
+    "order_id" : 8,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-27T05:23:10.979"
+  }, {
+    "order_id" : 9,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-27T05:23:11.053"
+  }, {
+    "order_id" : 10,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-27T05:23:11.118"
+  }, {
+    "order_id" : 11,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-27T05:23:15.878"
+  }, {
+    "order_id" : 12,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-27T05:23:15.851"
+  }, {
+    "order_id" : 13,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-27T05:23:15.818"
+  }, {
+    "order_id" : 14,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-27T05:23:13.668"
+  }, {
+    "order_id" : 15,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-27T05:23:13.772"
+  }, {
+    "order_id" : 16,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-27T05:23:13.89"
+  }, {
+    "order_id" : 17,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-27T05:23:13.984"
+  }, {
+    "order_id" : 18,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-27T05:23:14.053"
+  }, {
+    "order_id" : 19,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-27T05:23:14.116"
+  }, {
+    "order_id" : 20,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-27T05:23:14.181"
+  } ],
+  "ledger" : [ {
+    "event_id" : "order-confirmed:v1:1",
+    "order_id" : 1,
+    "confirmed_at" : "2026-11-27T05:23:10.445"
+  }, {
+    "event_id" : "order-confirmed:v1:2",
+    "order_id" : 2,
+    "confirmed_at" : "2026-11-27T05:23:10.558"
+  }, {
+    "event_id" : "order-confirmed:v1:3",
+    "order_id" : 3,
+    "confirmed_at" : "2026-11-27T05:23:10.637"
+  }, {
+    "event_id" : "order-confirmed:v1:4",
+    "order_id" : 4,
+    "confirmed_at" : "2026-11-27T05:23:10.713"
+  }, {
+    "event_id" : "order-confirmed:v1:5",
+    "order_id" : 5,
+    "confirmed_at" : "2026-11-27T05:23:10.784"
+  }, {
+    "event_id" : "order-confirmed:v1:6",
+    "order_id" : 6,
+    "confirmed_at" : "2026-11-27T05:23:10.854"
+  }, {
+    "event_id" : "order-confirmed:v1:7",
+    "order_id" : 7,
+    "confirmed_at" : "2026-11-27T05:23:10.918"
+  }, {
+    "event_id" : "order-confirmed:v1:8",
+    "order_id" : 8,
+    "confirmed_at" : "2026-11-27T05:23:10.979"
+  }, {
+    "event_id" : "order-confirmed:v1:9",
+    "order_id" : 9,
+    "confirmed_at" : "2026-11-27T05:23:11.053"
+  }, {
+    "event_id" : "order-confirmed:v1:10",
+    "order_id" : 10,
+    "confirmed_at" : "2026-11-27T05:23:11.118"
+  }, {
+    "event_id" : "order-confirmed:v1:11",
+    "order_id" : 11,
+    "confirmed_at" : "2026-11-27T05:23:15.878"
+  }, {
+    "event_id" : "order-confirmed:v1:12",
+    "order_id" : 12,
+    "confirmed_at" : "2026-11-27T05:23:15.851"
+  }, {
+    "event_id" : "order-confirmed:v1:13",
+    "order_id" : 13,
+    "confirmed_at" : "2026-11-27T05:23:15.818"
+  }, {
+    "event_id" : "order-confirmed:v1:14",
+    "order_id" : 14,
+    "confirmed_at" : "2026-11-27T05:23:13.668"
+  }, {
+    "event_id" : "order-confirmed:v1:15",
+    "order_id" : 15,
+    "confirmed_at" : "2026-11-27T05:23:13.772"
+  }, {
+    "event_id" : "order-confirmed:v1:16",
+    "order_id" : 16,
+    "confirmed_at" : "2026-11-27T05:23:13.89"
+  }, {
+    "event_id" : "order-confirmed:v1:17",
+    "order_id" : 17,
+    "confirmed_at" : "2026-11-27T05:23:13.984"
+  }, {
+    "event_id" : "order-confirmed:v1:18",
+    "order_id" : 18,
+    "confirmed_at" : "2026-11-27T05:23:14.053"
+  }, {
+    "event_id" : "order-confirmed:v1:19",
+    "order_id" : 19,
+    "confirmed_at" : "2026-11-27T05:23:14.116"
+  }, {
+    "event_id" : "order-confirmed:v1:20",
+    "order_id" : 20,
+    "confirmed_at" : "2026-11-27T05:23:14.181"
+  } ],
+  "committedOffsetAfterRepublish" : 23,
+  "republishedEvents" : 3,
+  "confirmedAt" : {
+    "1" : "2026-11-27T05:23:10.445",
+    "2" : "2026-11-27T05:23:10.558",
+    "3" : "2026-11-27T05:23:10.637",
+    "4" : "2026-11-27T05:23:10.713",
+    "5" : "2026-11-27T05:23:10.784",
+    "6" : "2026-11-27T05:23:10.854",
+    "7" : "2026-11-27T05:23:10.918",
+    "8" : "2026-11-27T05:23:10.979",
+    "9" : "2026-11-27T05:23:11.053",
+    "10" : "2026-11-27T05:23:11.118",
+    "11" : "2026-11-27T05:23:15.878",
+    "12" : "2026-11-27T05:23:15.851",
+    "13" : "2026-11-27T05:23:15.818",
+    "14" : "2026-11-27T05:23:13.668",
+    "15" : "2026-11-27T05:23:13.772",
+    "16" : "2026-11-27T05:23:13.890",
+    "17" : "2026-11-27T05:23:13.984",
+    "18" : "2026-11-27T05:23:14.053",
+    "19" : "2026-11-27T05:23:14.116",
+    "20" : "2026-11-27T05:23:14.181"
+  },
+  "r2SnapshotId" : "weekly-20261123-r2",
+  "jobStatus" : "COMPLETED",
+  "jobExitDescription" : "",
+  "publication" : {
+    "snapshot_id" : "weekly-20261123-r2",
+    "revision" : 2
+  },
+  "rankingResponse" : {
+    "status" : "PUBLISHED",
+    "periodStart" : "2026-11-23",
+    "periodEnd" : "2026-11-30",
+    "snapshotId" : "weekly-20261123-r2",
+    "frozenAt" : "2026-11-27T05:23:16Z",
+    "items" : [ {
+      "productId" : 1,
+      "productName" : "S5 synthetic product",
+      "score" : 20,
+      "rank" : 1,
+      "calcRank" : 1
+    } ]
+  },
+  "r1ScoresAfter" : [ {
+    "product_id" : 1,
+    "score" : 17,
+    "ranking" : 1
+  } ],
+  "r1InputsAfter" : [ {
+    "order_id" : 1,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-27T05:23:10.445"
+  }, {
+    "order_id" : 2,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-27T05:23:10.558"
+  }, {
+    "order_id" : 3,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-27T05:23:10.637"
+  }, {
+    "order_id" : 4,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-27T05:23:10.713"
+  }, {
+    "order_id" : 5,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-27T05:23:10.784"
+  }, {
+    "order_id" : 6,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-27T05:23:10.854"
+  }, {
+    "order_id" : 7,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-27T05:23:10.918"
+  }, {
+    "order_id" : 8,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-27T05:23:10.979"
+  }, {
+    "order_id" : 9,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-27T05:23:11.053"
+  }, {
+    "order_id" : 10,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-27T05:23:11.118"
+  }, {
+    "order_id" : 14,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-27T05:23:13.668"
+  }, {
+    "order_id" : 15,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-27T05:23:13.772"
+  }, {
+    "order_id" : 16,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-27T05:23:13.89"
+  }, {
+    "order_id" : 17,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-27T05:23:13.984"
+  }, {
+    "order_id" : 18,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-27T05:23:14.053"
+  }, {
+    "order_id" : 19,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-27T05:23:14.116"
+  }, {
+    "order_id" : 20,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-27T05:23:14.181"
+  } ],
+  "snapshot" : {
+    "orders" : [ {
+      "order_id" : 1,
+      "order_status" : "CONFIRMED",
+      "paid_amount" : 1000,
+      "confirmed_at" : "2026-11-27T05:23:10.445",
+      "attempt_id" : 1,
+      "attempt_key" : "s5-20261127-052251-d8d97825-1",
+      "provider_order_id" : "LP-ORD-0000000001",
+      "transaction_key" : "TEST-TX-000001",
+      "attempt_status" : "SUCCESS",
+      "amount" : 1000,
+      "created_at" : "2026-11-27T05:23:10.320497",
+      "updated_at" : "2026-11-27T05:23:10.439984",
+      "lookup_count" : 0,
+      "reservation_id" : 1,
+      "reservation_status" : "CONSUMED",
+      "reservation_quantity" : 1
+    }, {
+      "order_id" : 2,
+      "order_status" : "CONFIRMED",
+      "paid_amount" : 1000,
+      "confirmed_at" : "2026-11-27T05:23:10.558",
+      "attempt_id" : 2,
+      "attempt_key" : "s5-20261127-052251-d8d97825-2",
+      "provider_order_id" : "LP-ORD-0000000002",
+      "transaction_key" : "TEST-TX-000002",
+      "attempt_status" : "SUCCESS",
+      "amount" : 1000,
+      "created_at" : "2026-11-27T05:23:10.52269",
+      "updated_at" : "2026-11-27T05:23:10.55623",
+      "lookup_count" : 0,
+      "reservation_id" : 2,
+      "reservation_status" : "CONSUMED",
+      "reservation_quantity" : 1
+    }, {
+      "order_id" : 3,
+      "order_status" : "CONFIRMED",
+      "paid_amount" : 1000,
+      "confirmed_at" : "2026-11-27T05:23:10.637",
+      "attempt_id" : 3,
+      "attempt_key" : "s5-20261127-052251-d8d97825-3",
+      "provider_order_id" : "LP-ORD-0000000003",
+      "transaction_key" : "TEST-TX-000003",
+      "attempt_status" : "SUCCESS",
+      "amount" : 1000,
+      "created_at" : "2026-11-27T05:23:10.602191",
+      "updated_at" : "2026-11-27T05:23:10.633869",
+      "lookup_count" : 0,
+      "reservation_id" : 3,
+      "reservation_status" : "CONSUMED",
+      "reservation_quantity" : 1
+    }, {
+      "order_id" : 4,
+      "order_status" : "CONFIRMED",
+      "paid_amount" : 1000,
+      "confirmed_at" : "2026-11-27T05:23:10.713",
+      "attempt_id" : 4,
+      "attempt_key" : "s5-20261127-052251-d8d97825-4",
+      "provider_order_id" : "LP-ORD-0000000004",
+      "transaction_key" : "TEST-TX-000004",
+      "attempt_status" : "SUCCESS",
+      "amount" : 1000,
+      "created_at" : "2026-11-27T05:23:10.682045",
+      "updated_at" : "2026-11-27T05:23:10.711873",
+      "lookup_count" : 0,
+      "reservation_id" : 4,
+      "reservation_status" : "CONSUMED",
+      "reservation_quantity" : 1
+    }, {
+      "order_id" : 5,
+      "order_status" : "CONFIRMED",
+      "paid_amount" : 1000,
+      "confirmed_at" : "2026-11-27T05:23:10.784",
+      "attempt_id" : 5,
+      "attempt_key" : "s5-20261127-052251-d8d97825-5",
+      "provider_order_id" : "LP-ORD-0000000005",
+      "transaction_key" : "TEST-TX-000005",
+      "attempt_status" : "SUCCESS",
+      "amount" : 1000,
+      "created_at" : "2026-11-27T05:23:10.753274",
+      "updated_at" : "2026-11-27T05:23:10.782276",
+      "lookup_count" : 0,
+      "reservation_id" : 5,
+      "reservation_status" : "CONSUMED",
+      "reservation_quantity" : 1
+    }, {
+      "order_id" : 6,
+      "order_status" : "CONFIRMED",
+      "paid_amount" : 1000,
+      "confirmed_at" : "2026-11-27T05:23:10.854",
+      "attempt_id" : 6,
+      "attempt_key" : "s5-20261127-052251-d8d97825-6",
+      "provider_order_id" : "LP-ORD-0000000006",
+      "transaction_key" : "TEST-TX-000006",
+      "attempt_status" : "SUCCESS",
+      "amount" : 1000,
+      "created_at" : "2026-11-27T05:23:10.823575",
+      "updated_at" : "2026-11-27T05:23:10.8528",
+      "lookup_count" : 0,
+      "reservation_id" : 6,
+      "reservation_status" : "CONSUMED",
+      "reservation_quantity" : 1
+    }, {
+      "order_id" : 7,
+      "order_status" : "CONFIRMED",
+      "paid_amount" : 1000,
+      "confirmed_at" : "2026-11-27T05:23:10.918",
+      "attempt_id" : 7,
+      "attempt_key" : "s5-20261127-052251-d8d97825-7",
+      "provider_order_id" : "LP-ORD-0000000007",
+      "transaction_key" : "TEST-TX-000007",
+      "attempt_status" : "SUCCESS",
+      "amount" : 1000,
+      "created_at" : "2026-11-27T05:23:10.886658",
+      "updated_at" : "2026-11-27T05:23:10.91674",
+      "lookup_count" : 0,
+      "reservation_id" : 7,
+      "reservation_status" : "CONSUMED",
+      "reservation_quantity" : 1
+    }, {
+      "order_id" : 8,
+      "order_status" : "CONFIRMED",
+      "paid_amount" : 1000,
+      "confirmed_at" : "2026-11-27T05:23:10.979",
+      "attempt_id" : 8,
+      "attempt_key" : "s5-20261127-052251-d8d97825-8",
+      "provider_order_id" : "LP-ORD-0000000008",
+      "transaction_key" : "TEST-TX-000008",
+      "attempt_status" : "SUCCESS",
+      "amount" : 1000,
+      "created_at" : "2026-11-27T05:23:10.950747",
+      "updated_at" : "2026-11-27T05:23:10.977214",
+      "lookup_count" : 0,
+      "reservation_id" : 8,
+      "reservation_status" : "CONSUMED",
+      "reservation_quantity" : 1
+    }, {
+      "order_id" : 9,
+      "order_status" : "CONFIRMED",
+      "paid_amount" : 1000,
+      "confirmed_at" : "2026-11-27T05:23:11.053",
+      "attempt_id" : 9,
+      "attempt_key" : "s5-20261127-052251-d8d97825-9",
+      "provider_order_id" : "LP-ORD-0000000009",
+      "transaction_key" : "TEST-TX-000009",
+      "attempt_status" : "SUCCESS",
+      "amount" : 1000,
+      "created_at" : "2026-11-27T05:23:11.019778",
+      "updated_at" : "2026-11-27T05:23:11.051839",
+      "lookup_count" : 0,
+      "reservation_id" : 9,
+      "reservation_status" : "CONSUMED",
+      "reservation_quantity" : 1
+    }, {
+      "order_id" : 10,
+      "order_status" : "CONFIRMED",
+      "paid_amount" : 1000,
+      "confirmed_at" : "2026-11-27T05:23:11.118",
+      "attempt_id" : 10,
+      "attempt_key" : "s5-20261127-052251-d8d97825-10",
+      "provider_order_id" : "LP-ORD-0000000010",
+      "transaction_key" : "TEST-TX-000010",
+      "attempt_status" : "SUCCESS",
+      "amount" : 1000,
+      "created_at" : "2026-11-27T05:23:11.087442",
+      "updated_at" : "2026-11-27T05:23:11.116366",
+      "lookup_count" : 0,
+      "reservation_id" : 10,
+      "reservation_status" : "CONSUMED",
+      "reservation_quantity" : 1
+    }, {
+      "order_id" : 11,
+      "order_status" : "CONFIRMED",
+      "paid_amount" : 1000,
+      "confirmed_at" : "2026-11-27T05:23:15.878",
+      "attempt_id" : 11,
+      "attempt_key" : "s5-20261127-052251-d8d97825-11",
+      "provider_order_id" : "LP-ORD-0000000011",
+      "transaction_key" : "TEST-TX-000011",
+      "attempt_status" : "SUCCESS",
+      "amount" : 1000,
+      "created_at" : "2026-11-27T05:23:11.969716",
+      "updated_at" : "2026-11-27T05:23:15.877129",
+      "lookup_count" : 0,
+      "reservation_id" : 11,
+      "reservation_status" : "CONSUMED",
+      "reservation_quantity" : 1
+    }, {
+      "order_id" : 12,
+      "order_status" : "CONFIRMED",
+      "paid_amount" : 1000,
+      "confirmed_at" : "2026-11-27T05:23:15.851",
+      "attempt_id" : 12,
+      "attempt_key" : "s5-20261127-052251-d8d97825-12",
+      "provider_order_id" : "LP-ORD-0000000012",
+      "transaction_key" : "TEST-TX-000012",
+      "attempt_status" : "SUCCESS",
+      "amount" : 1000,
+      "created_at" : "2026-11-27T05:23:12.519897",
+      "updated_at" : "2026-11-27T05:23:15.8502",
+      "lookup_count" : 0,
+      "reservation_id" : 12,
+      "reservation_status" : "CONSUMED",
+      "reservation_quantity" : 1
+    }, {
+      "order_id" : 13,
+      "order_status" : "CONFIRMED",
+      "paid_amount" : 1000,
+      "confirmed_at" : "2026-11-27T05:23:15.818",
+      "attempt_id" : 13,
+      "attempt_key" : "s5-20261127-052251-d8d97825-13",
+      "provider_order_id" : "LP-ORD-0000000013",
+      "transaction_key" : "TEST-TX-000013",
+      "attempt_status" : "SUCCESS",
+      "amount" : 1000,
+      "created_at" : "2026-11-27T05:23:13.087473",
+      "updated_at" : "2026-11-27T05:23:15.816968",
+      "lookup_count" : 0,
+      "reservation_id" : 13,
+      "reservation_status" : "CONSUMED",
+      "reservation_quantity" : 1
+    }, {
+      "order_id" : 14,
+      "order_status" : "CONFIRMED",
+      "paid_amount" : 1000,
+      "confirmed_at" : "2026-11-27T05:23:13.668",
+      "attempt_id" : 14,
+      "attempt_key" : "s5-20261127-052251-d8d97825-14",
+      "provider_order_id" : "LP-ORD-0000000014",
+      "transaction_key" : "TEST-TX-000014",
+      "attempt_status" : "SUCCESS",
+      "amount" : 1000,
+      "created_at" : "2026-11-27T05:23:13.635563",
+      "updated_at" : "2026-11-27T05:23:13.665986",
+      "lookup_count" : 0,
+      "reservation_id" : 14,
+      "reservation_status" : "CONSUMED",
+      "reservation_quantity" : 1
+    }, {
+      "order_id" : 15,
+      "order_status" : "CONFIRMED",
+      "paid_amount" : 1000,
+      "confirmed_at" : "2026-11-27T05:23:13.772",
+      "attempt_id" : 15,
+      "attempt_key" : "s5-20261127-052251-d8d97825-15",
+      "provider_order_id" : "LP-ORD-0000000015",
+      "transaction_key" : "TEST-TX-000015",
+      "attempt_status" : "SUCCESS",
+      "amount" : 1000,
+      "created_at" : "2026-11-27T05:23:13.712019",
+      "updated_at" : "2026-11-27T05:23:13.769714",
+      "lookup_count" : 0,
+      "reservation_id" : 15,
+      "reservation_status" : "CONSUMED",
+      "reservation_quantity" : 1
+    }, {
+      "order_id" : 16,
+      "order_status" : "CONFIRMED",
+      "paid_amount" : 1000,
+      "confirmed_at" : "2026-11-27T05:23:13.89",
+      "attempt_id" : 16,
+      "attempt_key" : "s5-20261127-052251-d8d97825-16",
+      "provider_order_id" : "LP-ORD-0000000016",
+      "transaction_key" : "TEST-TX-000016",
+      "attempt_status" : "SUCCESS",
+      "amount" : 1000,
+      "created_at" : "2026-11-27T05:23:13.838124",
+      "updated_at" : "2026-11-27T05:23:13.887841",
+      "lookup_count" : 0,
+      "reservation_id" : 16,
+      "reservation_status" : "CONSUMED",
+      "reservation_quantity" : 1
+    }, {
+      "order_id" : 17,
+      "order_status" : "CONFIRMED",
+      "paid_amount" : 1000,
+      "confirmed_at" : "2026-11-27T05:23:13.984",
+      "attempt_id" : 17,
+      "attempt_key" : "s5-20261127-052251-d8d97825-17",
+      "provider_order_id" : "LP-ORD-0000000017",
+      "transaction_key" : "TEST-TX-000017",
+      "attempt_status" : "SUCCESS",
+      "amount" : 1000,
+      "created_at" : "2026-11-27T05:23:13.943912",
+      "updated_at" : "2026-11-27T05:23:13.98226",
+      "lookup_count" : 0,
+      "reservation_id" : 17,
+      "reservation_status" : "CONSUMED",
+      "reservation_quantity" : 1
+    }, {
+      "order_id" : 18,
+      "order_status" : "CONFIRMED",
+      "paid_amount" : 1000,
+      "confirmed_at" : "2026-11-27T05:23:14.053",
+      "attempt_id" : 18,
+      "attempt_key" : "s5-20261127-052251-d8d97825-18",
+      "provider_order_id" : "LP-ORD-0000000018",
+      "transaction_key" : "TEST-TX-000018",
+      "attempt_status" : "SUCCESS",
+      "amount" : 1000,
+      "created_at" : "2026-11-27T05:23:14.024575",
+      "updated_at" : "2026-11-27T05:23:14.052333",
+      "lookup_count" : 0,
+      "reservation_id" : 18,
+      "reservation_status" : "CONSUMED",
+      "reservation_quantity" : 1
+    }, {
+      "order_id" : 19,
+      "order_status" : "CONFIRMED",
+      "paid_amount" : 1000,
+      "confirmed_at" : "2026-11-27T05:23:14.116",
+      "attempt_id" : 19,
+      "attempt_key" : "s5-20261127-052251-d8d97825-19",
+      "provider_order_id" : "LP-ORD-0000000019",
+      "transaction_key" : "TEST-TX-000019",
+      "attempt_status" : "SUCCESS",
+      "amount" : 1000,
+      "created_at" : "2026-11-27T05:23:14.089555",
+      "updated_at" : "2026-11-27T05:23:14.11537",
+      "lookup_count" : 0,
+      "reservation_id" : 19,
+      "reservation_status" : "CONSUMED",
+      "reservation_quantity" : 1
+    }, {
+      "order_id" : 20,
+      "order_status" : "CONFIRMED",
+      "paid_amount" : 1000,
+      "confirmed_at" : "2026-11-27T05:23:14.181",
+      "attempt_id" : 20,
+      "attempt_key" : "s5-20261127-052251-d8d97825-20",
+      "provider_order_id" : "LP-ORD-0000000020",
+      "transaction_key" : "TEST-TX-000020",
+      "attempt_status" : "SUCCESS",
+      "amount" : 1000,
+      "created_at" : "2026-11-27T05:23:14.150745",
+      "updated_at" : "2026-11-27T05:23:14.180307",
+      "lookup_count" : 0,
+      "reservation_id" : 20,
+      "reservation_status" : "CONSUMED",
+      "reservation_quantity" : 1
+    } ],
+    "transactions" : [ {
+      "transactionKey" : "TEST-TX-000001",
+      "providerOrderId" : "LP-ORD-0000000001",
+      "amount" : 1000,
+      "status" : "SUCCESS"
+    }, {
+      "transactionKey" : "TEST-TX-000002",
+      "providerOrderId" : "LP-ORD-0000000002",
+      "amount" : 1000,
+      "status" : "SUCCESS"
+    }, {
+      "transactionKey" : "TEST-TX-000003",
+      "providerOrderId" : "LP-ORD-0000000003",
+      "amount" : 1000,
+      "status" : "SUCCESS"
+    }, {
+      "transactionKey" : "TEST-TX-000004",
+      "providerOrderId" : "LP-ORD-0000000004",
+      "amount" : 1000,
+      "status" : "SUCCESS"
+    }, {
+      "transactionKey" : "TEST-TX-000005",
+      "providerOrderId" : "LP-ORD-0000000005",
+      "amount" : 1000,
+      "status" : "SUCCESS"
+    }, {
+      "transactionKey" : "TEST-TX-000006",
+      "providerOrderId" : "LP-ORD-0000000006",
+      "amount" : 1000,
+      "status" : "SUCCESS"
+    }, {
+      "transactionKey" : "TEST-TX-000007",
+      "providerOrderId" : "LP-ORD-0000000007",
+      "amount" : 1000,
+      "status" : "SUCCESS"
+    }, {
+      "transactionKey" : "TEST-TX-000008",
+      "providerOrderId" : "LP-ORD-0000000008",
+      "amount" : 1000,
+      "status" : "SUCCESS"
+    }, {
+      "transactionKey" : "TEST-TX-000009",
+      "providerOrderId" : "LP-ORD-0000000009",
+      "amount" : 1000,
+      "status" : "SUCCESS"
+    }, {
+      "transactionKey" : "TEST-TX-000010",
+      "providerOrderId" : "LP-ORD-0000000010",
+      "amount" : 1000,
+      "status" : "SUCCESS"
+    }, {
+      "transactionKey" : "TEST-TX-000011",
+      "providerOrderId" : "LP-ORD-0000000011",
+      "amount" : 1000,
+      "status" : "SUCCESS"
+    }, {
+      "transactionKey" : "TEST-TX-000012",
+      "providerOrderId" : "LP-ORD-0000000012",
+      "amount" : 1000,
+      "status" : "SUCCESS"
+    }, {
+      "transactionKey" : "TEST-TX-000013",
+      "providerOrderId" : "LP-ORD-0000000013",
+      "amount" : 1000,
+      "status" : "SUCCESS"
+    }, {
+      "transactionKey" : "TEST-TX-000014",
+      "providerOrderId" : "LP-ORD-0000000014",
+      "amount" : 1000,
+      "status" : "SUCCESS"
+    }, {
+      "transactionKey" : "TEST-TX-000015",
+      "providerOrderId" : "LP-ORD-0000000015",
+      "amount" : 1000,
+      "status" : "SUCCESS"
+    }, {
+      "transactionKey" : "TEST-TX-000016",
+      "providerOrderId" : "LP-ORD-0000000016",
+      "amount" : 1000,
+      "status" : "SUCCESS"
+    }, {
+      "transactionKey" : "TEST-TX-000017",
+      "providerOrderId" : "LP-ORD-0000000017",
+      "amount" : 1000,
+      "status" : "SUCCESS"
+    }, {
+      "transactionKey" : "TEST-TX-000018",
+      "providerOrderId" : "LP-ORD-0000000018",
+      "amount" : 1000,
+      "status" : "SUCCESS"
+    }, {
+      "transactionKey" : "TEST-TX-000019",
+      "providerOrderId" : "LP-ORD-0000000019",
+      "amount" : 1000,
+      "status" : "SUCCESS"
+    }, {
+      "transactionKey" : "TEST-TX-000020",
+      "providerOrderId" : "LP-ORD-0000000020",
+      "amount" : 1000,
+      "status" : "SUCCESS"
+    } ],
+    "creates" : {
+      "LP-ORD-0000000001" : 1,
+      "LP-ORD-0000000002" : 1,
+      "LP-ORD-0000000003" : 1,
+      "LP-ORD-0000000004" : 1,
+      "LP-ORD-0000000005" : 1,
+      "LP-ORD-0000000006" : 1,
+      "LP-ORD-0000000007" : 1,
+      "LP-ORD-0000000008" : 1,
+      "LP-ORD-0000000009" : 1,
+      "LP-ORD-0000000010" : 1,
+      "LP-ORD-0000000011" : 1,
+      "LP-ORD-0000000012" : 1,
+      "LP-ORD-0000000013" : 1,
+      "LP-ORD-0000000014" : 1,
+      "LP-ORD-0000000015" : 1,
+      "LP-ORD-0000000016" : 1,
+      "LP-ORD-0000000017" : 1,
+      "LP-ORD-0000000018" : 1,
+      "LP-ORD-0000000019" : 1,
+      "LP-ORD-0000000020" : 1
+    },
+    "lookups" : {
+      "LP-ORD-0000000001" : 1,
+      "LP-ORD-0000000002" : 1,
+      "LP-ORD-0000000003" : 1,
+      "LP-ORD-0000000004" : 1,
+      "LP-ORD-0000000005" : 1,
+      "LP-ORD-0000000006" : 1,
+      "LP-ORD-0000000007" : 1,
+      "LP-ORD-0000000008" : 1,
+      "LP-ORD-0000000009" : 1,
+      "LP-ORD-0000000010" : 1,
+      "LP-ORD-0000000011" : 2,
+      "LP-ORD-0000000012" : 2,
+      "LP-ORD-0000000013" : 2,
+      "LP-ORD-0000000014" : 1,
+      "LP-ORD-0000000015" : 1,
+      "LP-ORD-0000000016" : 1,
+      "LP-ORD-0000000017" : 1,
+      "LP-ORD-0000000018" : 1,
+      "LP-ORD-0000000019" : 1,
+      "LP-ORD-0000000020" : 1
+    },
+    "createCount" : 20,
+    "stock" : 10
+  },
+  "faultEvidenceUnchanged" : true,
+  "result" : "PASSED",
+  "endedAt" : "2026-11-27T05:23:16.805088Z"
+}

@@ -1,0 +1,8 @@
+{
+  "suite": "crossAppTest CheckoutIncidentE2ETest",
+  "tests": 1,
+  "skipped": 0,
+  "failures": 0,
+  "errors": 0,
+  "timeSeconds": 11.025
+}

@@ -1,6 +1,6 @@
 # 10주차 구현 계획 — 결제 사고 관측·진단·복구
 
-작성 기준: `docs/week10/reference/learning.md`, `practice.md`, `reference/implementation-plan.md`(요구 프롬프트) 및 현재 작업 트리(`applejeong/volume-9`) 실제 코드.
+작성 기준: 과제 학습·실습 자료(`docs/week10/reference/` 아래 원본, 수업 제공분이라 커밋하지 않는다)와 현재 작업 트리(`applejeong/volume-9`)의 실제 코드.
 
 이 문서는 단계별 계획과 기존 실행 기록을 담는다.
 

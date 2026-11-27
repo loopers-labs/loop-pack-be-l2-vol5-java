@@ -179,7 +179,7 @@ S5~S10은 과제 필수 단계다. S5 착수 전 권위 조회 금액 검증과 
 - [ ] DB 직접 UPDATE 로 통과시키지 않음
 - [ ] `recovery.json` 기록
 
-## S8. RANKING r2 + 후속
+## S8. RANKING r2 + 후속 (완료: 20261127-051516-bb5ff22c, r2 score 20)
 
 - [ ] `runOnce()` → 복구 3건의 Outbox PUBLISHED
 - [ ] consumer 수신 → `product_purchase_activity` 20행, `processed_order_confirmation` 20행 (주문×상품 1회)
@@ -191,7 +191,7 @@ S5~S10은 과제 필수 단계다. S5 착수 전 권위 조회 금액 검증과 
 - [ ] `ranking-r2.json`, `downstream.json` 기록
 - [ ] `@AfterAll`: 자신이 켠 drop 해제, fixture close, `DatabaseCleanUp`(BATCH_* 제외). 실패해도 거래·증거 초기화 금지
 
-## S9. Runbook
+## S9. Runbook (완료: docs/runbook/week10.md)
 
 - [ ] `docs/runbook/week10.md` 생성
 - [ ] 증상 / 영향 범위 산정
@@ -217,7 +217,7 @@ S5~S10은 과제 필수 단계다. S5 착수 전 권위 조회 금액 검증과 
 - [ ] 재발 방지: 확인 가능한 한도 문장으로 작성
 - [ ] DB 강제 UPDATE·재결제 명령 **없음**
 
-## S10. 회귀와 종료
+## S10. 회귀와 종료 (완료: clean 후 전 모듈 재실행, 최종 runId 20261127-064920-a0cedcfa)
 
 - [ ] `./gradlew :apps:commerce-api:check :apps:commerce-streamer:check :apps:commerce-batch:check`
 - [ ] `./gradlew :apps:commerce-batch:test --tests '*WeeklyRankingJobRestartTest'` (chunk restart 회귀 생략 금지)

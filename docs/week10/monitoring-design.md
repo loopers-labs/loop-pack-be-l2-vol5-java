@@ -286,6 +286,8 @@ S1~S4의 계약과 기존 실행 기록을 현재 소스·테스트와 대조했
 
 - [implementation-plan.md](implementation-plan.md)는 단계별 계획과 기존 실행 기록이다. S5는 §3의 지표를, S6는 §5의 진단 기준을, S7은 §6의 응답·복구 계약을 따른다.
 - [checklist.md](checklist.md)는 단계별 확인 항목이다. 현재 구현과 실행 증거의 범위는 §8에 기록한다.
-- `../runbook/week10.md`: 실제 진단 질의, 중단 조건 및 재진입 절차 (작성 예정)
-- `evidence/`: 제출용 실제 사고 증거 (확보 예정)
-- [학습 자료](reference/learning.md), [실습](reference/practice.md), [요구사항](reference/requirements.md), [W5 결제 계약](../week5/commerce-payment.md)
+- [../runbook/week10.md](../runbook/week10.md)는 운영자용 대응 절차다. 증상 탐지, 진단 질의, 중단 조건, 복구 절차, 재진입을 담는다.
+- [experiment-results.md](experiment-results.md)는 실제 실행의 관측값이다. 최종 제출 실행은 `20261127-064920-a0cedcfa`다.
+- `evidence/<runId>/`에 실행별 원문 증거가 있다. 최종 제출 실행은 [evidence/20261127-064920-a0cedcfa](evidence/20261127-064920-a0cedcfa)다.
+- [W5 결제 계약](../week5/commerce-payment.md)
+- 과제 학습·실습·요구사항 자료(`reference/learning.md`, `reference/practice.md`, `reference/requirements.md`)는 수업에서 받은 원본이라 저장소에 커밋하지 않는다. 이 설계서를 읽는 데 필요한 내용은 본문에 옮겨 적었다.
