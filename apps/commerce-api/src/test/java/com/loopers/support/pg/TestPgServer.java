@@ -18,6 +18,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -66,6 +67,7 @@ public final class TestPgServer implements AutoCloseable {
     private final Map<String, TestPgTransaction> transactions = new ConcurrentHashMap<>();
     private final AtomicLong sequence = new AtomicLong();
     private final AtomicInteger createCount = new AtomicInteger();
+    private final Map<String, AtomicInteger> createCountByOrder = new ConcurrentHashMap<>();
     private final AtomicInteger lookupByKeyCount = new AtomicInteger();
     private final AtomicInteger lookupByOrderCount = new AtomicInteger();
     private final List<TestPgRequest> requests = new CopyOnWriteArrayList<>();
@@ -116,6 +118,24 @@ public final class TestPgServer implements AutoCloseable {
     /** 받은 거래 생성 요청 수. 형식 오류·통제로 실패한 요청도 받은 순간 센다. */
     public int createCount() {
         return createCount.get();
+    }
+
+    /**
+     * 이 주문 번호로 받은 생성 요청 수. 형식 검사를 통과한 요청만 주문 번호를 알 수 있어 그것만 센다.
+     * 통제로 거절·실패시킨 요청도 받은 순간 세고, 오류로 응답했다고 지우지 않는다.
+     */
+    public int createCountOf(String orderId) {
+        AtomicInteger count = createCountByOrder.get(orderId);
+        return count == null ? 0 : count.get();
+    }
+
+    /** 생성 요청을 두 번 이상 받은 주문 번호들 (정렬). 비어 있지 않으면 누군가 같은 주문으로 create를 다시 보냈다. */
+    public List<String> duplicateCreates() {
+        return createCountByOrder.entrySet().stream()
+            .filter(entry -> entry.getValue().get() > 1)
+            .map(Map.Entry::getKey)
+            .sorted()
+            .toList();
     }
 
     /** 받은 단건 조회 요청 수. */
@@ -185,6 +205,25 @@ public final class TestPgServer implements AutoCloseable {
         controls.setNextCreate(new CreateControl.Drop());
     }
 
+    /**
+     * 이 주문 번호들의 생성 요청은 거래를 저장한 뒤 응답을 붙잡는다 ({@link #MAX_HOLD} 상한). 호출 순서가 아니라 주문 번호로 대상을 고른다.
+     * {@link #releaseCreateHolds()}나 {@link #reset()}까지 유지되고, 다른 생성 통제와 겹쳐 걸 수 없다.
+     * 클라이언트의 생성 read timeout이 {@link #MAX_HOLD}보다 짧으면, 거래는 생겼는데 클라이언트는 timeout을 받는 장면이 된다.
+     */
+    public void holdCreateResponsesFor(Set<String> orderIds) {
+        controls.holdCreateResponsesFor(orderIds);
+    }
+
+    /** 주문 번호로 고른 응답 붙잡기가 걸려 있는지. */
+    public boolean isCreateHoldActive() {
+        return controls.isCreateHoldActive();
+    }
+
+    /** 주문 번호로 고른 응답 붙잡기를 지우고 붙잡힌 응답을 푼다. 저장된 거래·호출 기록은 그대로 둔다. */
+    public void releaseCreateHolds() {
+        controls.releaseCreateHolds();
+    }
+
     /** 다음 {@code count}번의 조회 요청을 {@code failure} 방식으로 실패시킨다. */
     public void failNextLookups(int count, TestPgLookupFailure failure) {
         controls.failNextLookups(count, failure);
@@ -235,6 +274,7 @@ public final class TestPgServer implements AutoCloseable {
         controls.reset();
         transactions.clear();
         createCount.set(0);
+        createCountByOrder.clear();
         lookupByKeyCount.set(0);
         lookupByOrderCount.set(0);
         requests.clear();
@@ -308,6 +348,14 @@ public final class TestPgServer implements AutoCloseable {
         CreateInput input = TestPgContract.validateCreate(accountOf(exchange), body);
         if (input == null) {
             respond(exchange, 400, TestPgContract.error(TestPgContract.INVALID_REQUEST));
+            return;
+        }
+
+        createCountByOrder.computeIfAbsent(input.orderId(), orderId -> new AtomicInteger()).incrementAndGet();
+        if (controls.isCreateHoldTarget(input.orderId())) {
+            TestPgTransaction transaction = store(input, TestPgStatus.PENDING);
+            controls.awaitRelease();
+            respond(exchange, 202, TestPgContract.transaction(transaction));
             return;
         }
 

@@ -2,6 +2,7 @@ package com.loopers.infrastructure.payment;
 
 import com.loopers.domain.payment.PaymentAttemptModel;
 import com.loopers.domain.payment.PaymentAttemptRepository;
+import com.loopers.domain.payment.PaymentAttemptStatus;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -45,5 +46,10 @@ public class PaymentAttemptRepositoryImpl implements PaymentAttemptRepository {
             return List.of();
         }
         return paymentAttemptJpaRepository.findAllByOrderIdIn(orderIds);
+    }
+
+    @Override
+    public long countByStatus(PaymentAttemptStatus status) {
+        return paymentAttemptJpaRepository.countByStatus(status);
     }
 }

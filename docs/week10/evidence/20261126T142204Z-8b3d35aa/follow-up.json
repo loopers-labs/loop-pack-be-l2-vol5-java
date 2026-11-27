@@ -1,0 +1,113 @@
+{
+  "activities" : {
+    "1" : {
+      "processedEventIds" : [ "order-confirmed:v1:1" ],
+      "outboxAttempts" : 1,
+      "activityRows" : 1
+    },
+    "2" : {
+      "processedEventIds" : [ "order-confirmed:v1:2" ],
+      "outboxAttempts" : 1,
+      "activityRows" : 1
+    },
+    "3" : {
+      "processedEventIds" : [ "order-confirmed:v1:3" ],
+      "outboxAttempts" : 1,
+      "activityRows" : 1
+    },
+    "4" : {
+      "processedEventIds" : [ "order-confirmed:v1:4" ],
+      "outboxAttempts" : 1,
+      "activityRows" : 1
+    },
+    "5" : {
+      "processedEventIds" : [ "order-confirmed:v1:5" ],
+      "outboxAttempts" : 1,
+      "activityRows" : 1
+    },
+    "6" : {
+      "processedEventIds" : [ "order-confirmed:v1:6" ],
+      "outboxAttempts" : 1,
+      "activityRows" : 1
+    },
+    "7" : {
+      "processedEventIds" : [ "order-confirmed:v1:7" ],
+      "outboxAttempts" : 1,
+      "activityRows" : 1
+    },
+    "8" : {
+      "processedEventIds" : [ "order-confirmed:v1:8" ],
+      "outboxAttempts" : 1,
+      "activityRows" : 1
+    },
+    "9" : {
+      "processedEventIds" : [ "order-confirmed:v1:9" ],
+      "outboxAttempts" : 1,
+      "activityRows" : 1
+    },
+    "10" : {
+      "processedEventIds" : [ "order-confirmed:v1:10" ],
+      "outboxAttempts" : 1,
+      "activityRows" : 1
+    },
+    "11" : {
+      "processedEventIds" : [ "order-confirmed:v1:11" ],
+      "outboxAttempts" : 1,
+      "activityRows" : 1
+    },
+    "12" : {
+      "processedEventIds" : [ "order-confirmed:v1:12" ],
+      "outboxAttempts" : 1,
+      "activityRows" : 1
+    },
+    "13" : {
+      "processedEventIds" : [ "order-confirmed:v1:13" ],
+      "outboxAttempts" : 1,
+      "activityRows" : 1
+    },
+    "14" : {
+      "processedEventIds" : [ "order-confirmed:v1:14" ],
+      "outboxAttempts" : 1,
+      "activityRows" : 1
+    },
+    "15" : {
+      "processedEventIds" : [ "order-confirmed:v1:15" ],
+      "outboxAttempts" : 1,
+      "activityRows" : 1
+    },
+    "16" : {
+      "processedEventIds" : [ "order-confirmed:v1:16" ],
+      "outboxAttempts" : 1,
+      "activityRows" : 1
+    },
+    "17" : {
+      "processedEventIds" : [ "order-confirmed:v1:17" ],
+      "outboxAttempts" : 1,
+      "activityRows" : 1
+    },
+    "18" : {
+      "processedEventIds" : [ "order-confirmed:v1:18" ],
+      "outboxAttempts" : 1,
+      "activityRows" : 1
+    },
+    "19" : {
+      "processedEventIds" : [ "order-confirmed:v1:19" ],
+      "outboxAttempts" : 1,
+      "activityRows" : 1
+    },
+    "20" : {
+      "processedEventIds" : [ "order-confirmed:v1:20" ],
+      "outboxAttempts" : 1,
+      "activityRows" : 1
+    }
+  },
+  "relay" : {
+    "failed" : 0,
+    "published" : 20,
+    "picked" : 20
+  },
+  "runId" : "20261126T142204Z-8b3d35aa",
+  "snapshotInputRows" : 20,
+  "snapshotId" : "weekly-20270201-r1",
+  "committedOffset" : 20
+}

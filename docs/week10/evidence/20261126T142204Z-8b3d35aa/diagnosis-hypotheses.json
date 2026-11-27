@@ -1,0 +1,20 @@
+{
+  "runId" : "20261126T142204Z-8b3d35aa",
+  "orders" : [ 12, 15, 18 ],
+  "hypotheses" : [ {
+    "id" : "H1",
+    "hypothesis" : "PG 처리 자체가 지연",
+    "expectedObservation" : "같은 주문의 권위 조회가 PENDING",
+    "howToCheck" : "해당 주문 번호의 거래 조회"
+  }, {
+    "id" : "H2",
+    "hypothesis" : "PG 성공 응답 유실",
+    "expectedObservation" : "PG SUCCESS, 내부 UNKNOWN, unknown_reason=TIMEOUT, 성공 적용 시도 없음",
+    "howToCheck" : "거래 조회 + adapter 결과(pg.create.result) + 주문·시도 상태"
+  }, {
+    "id" : "H3",
+    "hypothesis" : "성공 결과의 내부 반영 실패",
+    "expectedObservation" : "PG SUCCESS, 성공 적용 시도(payment.apply SUCCEEDED) 뒤 ROLLED_BACK",
+    "howToCheck" : "payment.apply·payment.apply.tx 기록, 예약·Outbox 상태"
+  } ]
+}

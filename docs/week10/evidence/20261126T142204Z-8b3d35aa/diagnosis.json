@@ -1,0 +1,38 @@
+{
+  "missingEvidence" : [ "분산 trace는 구현하지 않았다. 판정은 같은 주문 번호로 이은 경계 로그·DB 상태·PG 조회에 기댄다.", "테스트 PG fixture가 응답을 붙잡은 사실은 fixture 내부 상태라 운영 PG에서는 같은 근거를 얻을 수 없다. 운영에서는 PG 측 요청 로그가 필요하다." ],
+  "verdicts" : [ {
+    "id" : "H1",
+    "verdict" : "기각",
+    "evidence" : "3건 모두 권위 조회가 1건·SUCCESS·저장 금액과 같음"
+  }, {
+    "id" : "H2",
+    "verdict" : "지지",
+    "evidence" : "3건 모두 pg.create.result outcome=UNKNOWN reason=TIMEOUT, payment.apply REQUESTED→UNKNOWN COMMITTED, unknown_reason=TIMEOUT, 거래 키 미보유"
+  }, {
+    "id" : "H3",
+    "verdict" : "기각",
+    "evidence" : "3건에 payment.apply effect=SUCCEEDED와 payment.apply.tx ROLLED_BACK 기록이 없음"
+  } ],
+  "orders" : [ 12, 15, 18 ],
+  "authoritativeLookups" : {
+    "12" : [ {
+      "transactionKey" : "TEST-TX-0012",
+      "providerOrderId" : "LP-ORD-0000000012",
+      "amount" : 7000,
+      "status" : "SUCCESS"
+    } ],
+    "15" : [ {
+      "transactionKey" : "TEST-TX-0015",
+      "providerOrderId" : "LP-ORD-0000000015",
+      "amount" : 7000,
+      "status" : "SUCCESS"
+    } ],
+    "18" : [ {
+      "transactionKey" : "TEST-TX-0018",
+      "providerOrderId" : "LP-ORD-0000000018",
+      "amount" : 7000,
+      "status" : "SUCCESS"
+    } ]
+  },
+  "runId" : "20261126T142204Z-8b3d35aa"
+}

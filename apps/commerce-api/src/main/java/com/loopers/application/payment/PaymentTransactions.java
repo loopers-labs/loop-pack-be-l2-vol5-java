@@ -10,6 +10,7 @@ import com.loopers.domain.order.StockReservationModel;
 import com.loopers.domain.order.StockReservationService;
 import com.loopers.domain.payment.PaymentAttemptModel;
 import com.loopers.domain.payment.PaymentAttemptService;
+import com.loopers.domain.payment.PaymentAttemptStatus;
 import com.loopers.domain.payment.PaymentEffect;
 import com.loopers.domain.payment.PgCreateResult;
 import com.loopers.domain.payment.PgTransaction;
@@ -17,9 +18,13 @@ import com.loopers.domain.product.ProductRevisionService;
 import com.loopers.domain.product.ProductService;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
+import com.loopers.support.log.BoundaryLog;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.Clock;
 import java.util.Comparator;
@@ -39,6 +44,7 @@ import java.util.function.Function;
  * <p>Facade와 다른 빈이라 {@code @Transactional}이 프록시를 거쳐 적용된다. 같은 객체 안에서 부르면 적용되지 않는다 (design.md 7-4절 반례 1).
  * 잠금 순서는 주문 → 결제 시도 → 재고 예약 → 상품(id 오름차순) → 상품 revision이다 (design.md 9-5절).
  */
+@Slf4j
 @RequiredArgsConstructor
 @Component
 public class PaymentTransactions {
@@ -91,6 +97,12 @@ public class PaymentTransactions {
         // 재고가 줄었으므로 상품 캐시의 revision을 올린다. 다른 잠금을 모두 잡은 뒤 마지막에 올린다
         productRevisionService.increaseAll(items.stream().map(OrderItem::getProductId).toList());
 
+        BoundaryLog.event("payment.attempt.created")
+            .with("orderId", orderId)
+            .with("attemptKey", attempt.getAttemptKey())
+            .with("providerOrderId", attempt.getProviderOrderId())
+            .with("amount", attempt.getAmount())
+            .info(log);
         return new Started(outcomeOf(order, attempt), true, attempt.getProviderOrderId(), attempt.getAmount());
     }
 
@@ -130,13 +142,18 @@ public class PaymentTransactions {
         PaymentAttemptModel attempt = paymentAttemptService.getByOrderIdForUpdate(orderId);
         StockReservationModel reservation = stockReservationService.getByOrderIdForUpdate(orderId);
 
+        PaymentAttemptStatus before = attempt.getStatus();
         PaymentEffect effect = observation.apply(attempt);
+        String eventId = null;
         switch (effect) {
             case SUCCEEDED -> {
                 order.completePgPayment(attempt.getAmount(), clock.instant());
                 reservation.consume();
                 // 확정 사실과 보낼 사실을 함께 commit한다. Outbox 저장이 실패하면 확정·예약 소비도 rollback된다 (W7 design.md 3절)
-                orderOutboxService.append(OrderConfirmedEvent.from(order), order.getConfirmedAt());
+                OrderConfirmedEvent event = OrderConfirmedEvent.from(order);
+                orderOutboxService.append(event, order.getConfirmedAt());
+                // 로그용 eventId는 append 반환값이 아니라 같은 사건에서 읽는다. 로그가 Outbox 저장 결과에 기대어 흐름을 바꾸지 않게 한다
+                eventId = event.eventId();
             }
             case FAILED -> {
                 order.failPgPayment();
@@ -147,7 +164,45 @@ public class PaymentTransactions {
             case NONE -> {
             }
         }
+        logApply(order, attempt, before, effect, eventId);
         return outcomeOf(order, attempt);
+    }
+
+    // 결과 적용 경계: 관찰이 시도 상태를 어떻게 바꿨는지와, 그 트랜잭션이 실제로 commit됐는지 rollback됐는지를 같은 주문으로 남긴다.
+    // "외부 성공 뒤 내부 적용 실패" 가설은 메서드 안의 로그로는 가를 수 없어 트랜잭션 완료 시점에 한 번 더 기록한다
+    private static void logApply(OrderModel order, PaymentAttemptModel attempt, PaymentAttemptStatus before, PaymentEffect effect, String eventId) {
+        BoundaryLog.event("payment.apply")
+            .with("orderId", order.getId())
+            .with("attemptKey", attempt.getAttemptKey())
+            .with("providerOrderId", attempt.getProviderOrderId())
+            .with("from", before)
+            .with("to", attempt.getStatus())
+            .with("effect", effect)
+            .with("unknownReason", attempt.getUnknownReason())
+            .with("conflict", attempt.getConflict())
+            .with("orderStatus", order.getStatus())
+            .with("eventId", eventId)
+            .info(log);
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            return;
+        }
+        Long orderId = order.getId();
+        PaymentAttemptStatus after = attempt.getStatus();
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCompletion(int status) {
+                BoundaryLog entry = BoundaryLog.event("payment.apply.tx")
+                    .with("orderId", orderId)
+                    .with("to", after)
+                    .with("effect", effect)
+                    .with("tx", status == STATUS_COMMITTED ? "COMMITTED" : status == STATUS_ROLLED_BACK ? "ROLLED_BACK" : "UNKNOWN");
+                if (status == STATUS_COMMITTED) {
+                    entry.info(log);
+                } else {
+                    entry.warn(log);
+                }
+            }
+        });
     }
 
     // 확보했던 수량을 한 번 되돌린다. 품목은 상품 id 오름차순으로 잠그고, revision은 모두 처리한 뒤 올린다
