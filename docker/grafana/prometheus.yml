@@ -6,3 +6,8 @@ scrape_configs:
     metrics_path: '/actuator/prometheus'
     static_configs:
       - targets: ['host.docker.internal:8081']
+  # streamer 를 api 와 함께 띄울 때는 --management.server.port=8084 로 관리 포트를 옮긴다.
+  - job_name: 'commerce-streamer'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['host.docker.internal:8084']

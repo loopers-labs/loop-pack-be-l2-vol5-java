@@ -14,7 +14,7 @@ Loopers 에서 제공하는 Spring Boot(Java 21) 멀티 모듈 커머스 템플�
 
 설계 문서는 `docs/design/{주차}/`에 두며, 사람용(`{주제}.md`, 300줄 이내)과 AI용 상세(`{주제}.ai.md`)로 나눕니다.
 
-`local` 프로필 실행 전에 `docker/infra-compose.yml`로 인프라(MySQL, Redis)를 먼저 띄웁니다. 모니터링(Prometheus + Grafana)은 `docker/monitoring-compose.yml`로 별도 실행하며 http://localhost:3000 (admin/admin) 으로 접속합니다.
+`local` 프로필 실행 전에 `docker/infra-compose.yml`로 인프라(MySQL, Redis)를 먼저 띄웁니다. 모니터링(Prometheus + Tempo + Grafana)은 `docker/monitoring-compose.yml`로 별도 실행하며 http://localhost:3000 (admin/admin) 으로 접속합니다. local 프로필 앱은 trace를 Tempo(`localhost:4318`)로 보내고, 알람 규칙·Slack contact point는 `docker/grafana/provisioning/alerting`에 있습니다(webhook은 `SLACK_WEBHOOK_URL` 환경변수로만 줍니다).
 
 ## 빌드 및 테스트 명령어
 

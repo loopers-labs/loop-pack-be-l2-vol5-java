@@ -84,6 +84,10 @@
 - notification policy: `repeat_interval 4h`, resolved 알림 1회. webhook은 환경변수로만 주입(저장소에 비밀값 없음).
 - 값은 실험용 예시. 탐지 지연 = gauge 주기 + scrape 주기 + for.
 - Slack logback appender(`ASYNC-SLACK`)는 주석 상태 유지.
+- 파일: `docker/monitoring-compose.yml`(prometheus v2.55.1·tempo 2.6.1·grafana 11.3.0 고정), `docker/tempo/tempo.yml`, `docker/grafana/provisioning/{datasources,alerting,dashboards}`. datasource uid는 `prometheus`·`tempo`(규칙이 uid로 참조).
+- Prometheus 이름: 건수 gauge는 단위를 두지 않아 `commerce_payment_unresolved`, 대기시간은 `commerce_payment_unresolved_oldest_age_seconds`. 단위를 주면 접미사가 붙어 규칙과 어긋난다.
+- streamer를 함께 띄우면 `--management.server.port=8084`(수집 대상 `commerce-streamer`).
+- 로컬 확인(2026-11-27): 규칙 3개·정책(repeat 4h)·대시보드 로드, 규칙 health ok, 응답 유실 1건에서 UNKNOWN=1·대기시간 증가 수집, confirm 요청 trace(PG `http post` span 포함)가 Tempo에 저장됨. Slack 실제 발송·알람 발화는 미확인.
 
 | 대안 | 탈락 이유 |
 |---|---|
