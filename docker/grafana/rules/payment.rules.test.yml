@@ -1,0 +1,124 @@
+rule_files:
+  - payment.rules.yml
+
+evaluation_interval: 15s
+
+tests:
+  - name: 결과를 모르는 결제가 2 분 넘게 남으면 울리고, 0 이 되면 꺼진다
+    interval: 15s
+    input_series:
+      - series: 'payment_unresolved{job="payment-db",status="unknown"}'
+        values: '0 0 3x12 0x8'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: PaymentUnknownStuck
+        exp_alerts: []
+      - eval_time: 2m45s
+        alertname: PaymentUnknownStuck
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations:
+              summary: '결과를 모르는 결제 3 건이 2 분 넘게 남아 있다'
+              runbook: 'docs/runbook/week10.md'
+      - eval_time: 4m
+        alertname: PaymentUnknownStuck
+        exp_alerts: []
+
+  - name: sweeper 가 30 초 안에 닫은 결제에는 울리지 않는다
+    interval: 15s
+    input_series:
+      - series: 'payment_unresolved{job="payment-db",status="unknown"}'
+        values: '0 3 3 0x16'
+    alert_rule_test:
+      - eval_time: 30s
+        alertname: PaymentUnknownStuck
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: PaymentUnknownStuck
+        exp_alerts: []
+
+  - name: 5 분 안에 응답을 3 건 잃으면 기다리지 않고 울린다
+    interval: 15s
+    input_series:
+      - series: 'payment_create_total{application="commerce-api",result="unknown"}'
+        values: '0 0 0 0 1 2 3 3 3 3'
+      - series: 'payment_create_total{application="commerce-api",result="accepted"}'
+        values: '0+10x9'
+    alert_rule_test:
+      - eval_time: 1m15s
+        alertname: PaymentResponsesLost
+        exp_alerts: []
+      - eval_time: 1m45s
+        alertname: PaymentResponsesLost
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: '최근 5 분 동안 PG 생성 응답을 3 건 이상 잃었다'
+              runbook: 'docs/runbook/week10.md'
+
+  - name: 5 분 안에 응답을 2 건만 잃으면 울리지 않는다
+    interval: 15s
+    input_series:
+      - series: 'payment_create_total{application="commerce-api",result="unknown"}'
+        values: '0 0 1 2 2 2 2 2 2 2'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: PaymentResponsesLost
+        exp_alerts: []
+
+  - name: 남은 건수를 세는 exporter 가 1 분 넘게 안 보이면 울린다
+    interval: 15s
+    input_series:
+      - series: 'up{job="payment-db",instance="sql-exporter:9399"}'
+        values: '1 1 0x8'
+    alert_rule_test:
+      - eval_time: 1m15s
+        alertname: PaymentDbExporterDown
+        exp_alerts: []
+      - eval_time: 1m45s
+        alertname: PaymentDbExporterDown
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: payment-db
+              instance: 'sql-exporter:9399'
+            exp_annotations:
+              summary: '남은 결제 수를 세는 exporter 가 안 보인다. 미확인 결제 알림이 조용한 것은 이 때문일 수 있다'
+              runbook: 'docs/runbook/week10.md'
+
+  - name: 구매 활동 컨슈머의 lag 이 2 분 넘게 남으면 울리고, 다 읽으면 꺼진다
+    interval: 15s
+    input_series:
+      - series: 'kafka_consumergroup_lag{job="kafka-lag",consumergroup="purchase-activity",topic="order-events",partition="0"}'
+        values: '0 0 200x12 0x8'
+      - series: 'kafka_consumergroup_lag{job="kafka-lag",consumergroup="purchase-activity",topic="order-events",partition="1"}'
+        values: '0 0 201x12 0x8'
+      - series: 'kafka_consumergroup_lag{job="kafka-lag",consumergroup="coupon-issue",topic="coupon-issues",partition="0"}'
+        values: '0x22'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: PurchaseActivityLagStuck
+        exp_alerts: []
+      - eval_time: 2m45s
+        alertname: PurchaseActivityLagStuck
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: '구매 활동 컨슈머가 읽지 않은 메시지 401 건이 2 분 넘게 남아 있다'
+              runbook: 'docs/runbook/week10.md'
+      - eval_time: 4m
+        alertname: PurchaseActivityLagStuck
+        exp_alerts: []
+
+  - name: 컨슈머가 30 초 안에 따라잡은 lag 에는 울리지 않는다
+    interval: 15s
+    input_series:
+      - series: 'kafka_consumergroup_lag{job="kafka-lag",consumergroup="purchase-activity",topic="order-events",partition="0"}'
+        values: '0 143 401 0x16'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: PurchaseActivityLagStuck
+        exp_alerts: []

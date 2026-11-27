@@ -16,3 +16,17 @@ metrics:
       ) s
       LEFT JOIN payment p ON p.status = s.status
       GROUP BY s.status
+
+  - metric_name: order_outbox_unpublished
+    type: gauge
+    help: '아직 Kafka 로 나가지 않은 주문 이벤트 수. order_event_outbox 테이블을 상태별로 센 값이라 수집 주기만큼 늦다.'
+    key_labels: [status]
+    values: [events]
+    query: |
+      SELECT LOWER(s.status) AS status, COUNT(o.id) AS events
+      FROM (
+        SELECT 'PENDING' AS status
+        UNION ALL SELECT 'BLOCKED'
+      ) s
+      LEFT JOIN order_event_outbox o ON o.status = s.status
+      GROUP BY s.status

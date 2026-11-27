@@ -1,0 +1,37 @@
+groups:
+  - name: payment
+    rules:
+      - alert: PaymentResponsesLost
+        expr: sum(increase(payment_create_total{result="unknown"}[5m])) >= 3
+        labels:
+          severity: warning
+        annotations:
+          summary: '최근 5 분 동안 PG 생성 응답을 3 건 이상 잃었다'
+          runbook: 'docs/runbook/week10.md'
+
+      - alert: PaymentUnknownStuck
+        expr: sum(payment_unresolved{job="payment-db",status="unknown"}) > 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: '결과를 모르는 결제 {{ $value }} 건이 2 분 넘게 남아 있다'
+          runbook: 'docs/runbook/week10.md'
+
+      - alert: PaymentDbExporterDown
+        expr: up{job="payment-db"} == 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: '남은 결제 수를 세는 exporter 가 안 보인다. 미확인 결제 알림이 조용한 것은 이 때문일 수 있다'
+          runbook: 'docs/runbook/week10.md'
+
+      - alert: PurchaseActivityLagStuck
+        expr: sum(kafka_consumergroup_lag{job="kafka-lag",consumergroup="purchase-activity"}) > 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: '구매 활동 컨슈머가 읽지 않은 메시지 {{ $value }} 건이 2 분 넘게 남아 있다'
+          runbook: 'docs/runbook/week10.md'

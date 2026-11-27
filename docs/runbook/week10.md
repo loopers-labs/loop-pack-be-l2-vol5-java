@@ -43,6 +43,30 @@ health 가 `UP` 인 것은 이 사고와 모순이 아니다. health 는 프로�
 
 "얼마나 오래 묶여 있는가"를 알려 주는 지표는 없다. 가장 오래된 결제는 DB 를 봐야 알 수 있다. 2 장의 조회 결과에서 `requested_at` 이 가장 이른 행이 그것이다.
 
+### 알림
+
+지표를 사람이 보고 있지 않아도 사고를 알 수 있게 Prometheus 규칙 넷을 둔다. 규칙은 `docker/grafana/rules/payment.rules.yml` 에 있다.
+
+| 알림 | 조건 | 뜻 | 먼저 할 일 |
+|---|---|---|---|
+| `PaymentResponsesLost` (warning) | 최근 5 분 동안 `UNKNOWN` 으로 들어온 결제가 3 건 이상 | PG 응답을 잃고 있다. 기다리지 않고 바로 울린다 | 이 문서 1 장부터. sweeper 가 닫고 있는지 `payment_unresolved` 를 본다 |
+| `PaymentUnknownStuck` (critical) | `payment_unresolved{status="unknown"}` 이 0 보다 큰 채로 2 분 | sweeper 가 닫지 못하고 있다. 사람이 봐야 한다 | 2 장에서 목록을 고정하고 4 장으로 간다 |
+| `PaymentDbExporterDown` (warning) | `up{job="payment-db"}` 가 0 인 채로 1 분 | 남은 건수를 못 세고 있다. 위 알림이 조용한 것은 이 때문일 수 있다 | exporter 와 DB 연결을 살리고, 그동안 2 장의 조회로 직접 센다 |
+| `PurchaseActivityLagStuck` (warning) | `purchase-activity` 컨슈머의 lag 이 0 보다 큰 채로 2 분 | 확정된 주문이 구매 활동과 랭킹에 반영되지 않고 있다 | streamer 가 살아 있는지 본다. 결제 복구와는 별개다 |
+
+기준값의 출처는 모두 `정함`이다. 요구사항에 없고 운영 데이터도 없이 정했다.
+
+- **근거**: 정상일 때 `UNKNOWN` 은 sweeper 가 20 초 안에 닫고, 컨슈머는 lag 을 10 초 안에 따라잡는다(로컬 측정). 2 분은 그 여섯 배 이상이다. 3 건은 한두 건의 우연한 timeout 에는 울리지 않게 하려는 값이다.
+- **뒤집을 조건**: 사고가 아닌데 울리면 올리고, 고객 문의가 알림보다 먼저 오면 내린다.
+- **판정 주기는 15 초다.** 알림은 조건이 채워진 뒤 최대 15 초 늦게 울리고 꺼진다. `PaymentResponsesLost` 는 5 분 창을 보므로 유실이 멈춘 뒤에도 최대 5 분 동안 울린다.
+- **전달 경로는 붙이지 않았다.** 알림은 Prometheus 화면(`/alerts`)에서만 보인다. Slack 같은 곳으로 보내려면 Alertmanager 가 필요하다.
+
+규칙은 `promtool` 로 확인한다.
+
+```bash
+docker run --rm -v "$PWD/docker/grafana/rules:/rules" --entrypoint promtool prom/prometheus test rules /rules/payment.rules.test.yml
+```
+
 ## 2. 영향 범위를 고정한다
 
 진단과 복구는 같은 주문 목록을 대상으로 한다. 먼저 목록을 뽑아 적어 둔다.
@@ -175,7 +199,14 @@ order by observed_at;
 | 복구 기록 | 주문마다 `payment_status_changed`, `source=reconcile`, `from=UNKNOWN` 이 한 줄 | 4 장의 로그 검색 |
 | 후속 이벤트 | 주문마다 `order_event_outbox` 한 행, relay 뒤 `PUBLISHED` | `select order_id, event_id, status from order_event_outbox where order_id in (…)` |
 
-outbox 가 `PUBLISHED` 인 것은 메시지가 Kafka 에 나갔다는 뜻이다. 그 메시지가 구매 활동과 주간 랭킹에 반영됐는지는 streamer 와 batch 쪽에서 따로 확인한다.
+outbox 가 `PUBLISHED` 인 것은 메시지가 Kafka 에 나갔다는 뜻이다. 그 뒤는 지표 둘로 본다.
+
+| 물음 | 지표 | 정상 |
+|---|---|---|
+| 아직 안 나간 이벤트가 있는가 | `order_outbox_unpublished{status}` (sql exporter) | `pending` 이 잠깐 올랐다가 0, `blocked` 는 0 |
+| 나간 메시지를 컨슈머가 읽었는가 | `kafka_consumergroup_lag{consumergroup="purchase-activity"}` (kafka exporter) | 0 으로 돌아온다 |
+
+lag 이 0 이면 streamer 가 메시지를 읽었다는 뜻이다. 읽은 메시지가 구매 활동 행으로 남았는지, 주간 랭킹에 반영됐는지는 streamer 와 batch 쪽에서 따로 확인한다.
 
 ## 8. 재진입
 
@@ -190,7 +221,8 @@ outbox 가 `PUBLISHED` 인 것은 메시지가 Kafka 에 나갔다는 뜻이다.
 | 확인함 | 확인하지 않음 |
 |---|---|
 | 응답 timeout 2 건과 연결 끊김 1 건이 `UNKNOWN` 으로 남고, 같은 주문의 reconcile 로 생성 호출 증가 없이 확정된다 | 운영 환경, 실제 PG, 부하가 있는 상황 |
-| 그동안 health 는 `UP`, `UNKNOWN` 으로 들어온 수는 0 → 3, 나간 수는 0 → 3 | 지표에 거는 알림과 그 기준값 |
+| 그동안 health 는 `UP`, `UNKNOWN` 으로 들어온 수는 0 → 3, 나간 수는 0 → 3 | 알림의 기준값이 운영에서 맞는지, 알림을 사람에게 전달하는 경로 |
 | 로컬에서 앱을 띄워 같은 사고를 재현하고 Prometheus · Loki · Tempo 에서 지표, 로그, trace 를 본다 | sql exporter 가 내는 값을 자동 테스트로. 로컬에서 초당 30 건 부하를 걸어 DB 를 직접 센 값과 5 초 안에 같아지는 것, 앱을 내려도 값이 그대로 나오는 것을 손으로 봤다 |
 | 가설 2 와 3 을 로그로 가른다 | 가설 3(내부 반영 실패)이 실제로 난 상태에서의 복구 절차 전체 |
+| 알림 넷이 조건대로 울리고 꺼진다(`promtool` 테스트 7 개, 로컬에서 응답 3 건을 잃고 streamer 를 내려 실제로 울리는 것을 봤다) | 실제 Kafka · DB 장애에서 exporter 자신이 어떻게 동작하는지 |
 | 복구한 주문의 메시지가 실제 Kafka 에 주문당 한 번 나간다 | 그 메시지가 구매 활동과 주간 랭킹까지 이어지는 것을 같은 실행으로 |

@@ -30,7 +30,7 @@
       "id": 2,
       "type": "stat",
       "title": "지금 결과를 모르는 결제",
-      "description": "결과를 모르는 채 남은 결제 수. 상태가 바뀌어 커밋되는 즉시 반영된다. 재시작하면 0 에서 다시 시작하고, 재시작 전에 남은 결제가 닫히면 음수가 된다.",
+      "description": "결과를 모르는 채 남은 결제 수. sql exporter 가 DB 를 세어 낸 값이라 수집 주기(5 초)만큼 늦다. 값이 아예 없으면 exporter 가 죽은 것이다.",
       "gridPos": {
         "h": 4,
         "w": 6,
@@ -215,7 +215,7 @@
       "id": 6,
       "type": "timeseries",
       "title": "남은 미완료 결제 수 (상태별)",
-      "description": "상태가 바뀌어 커밋될 때마다 앱이 올리고 내리는 값이다. DB 를 세지 않아 늦지 않는다. 재시작하면 0 에서 다시 시작한다.",
+      "description": "sql exporter 가 payment 테이블을 상태별로 세어 낸 값이다. 수집 주기(5 초)만큼 늦고, 앱이 재시작하거나 내려가 있어도 값이 나온다.",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -257,8 +257,8 @@
     {
       "id": 7,
       "type": "timeseries",
-      "title": "결제가 끝나는 데 걸린 시간 (구간별 누적 건수)",
-      "description": "요청부터 성공이나 실패로 끝날 때까지 걸린 시간. le 는 그 초 안에 끝난 결제의 누적 수다. 끝난 결제만 센다. 아직 안 끝난 결제는 여기에 없다.",
+      "title": "최근 5 분 동안 끝난 결제, 걸린 시간별 건수",
+      "description": "요청부터 성공이나 실패로 끝날 때까지 걸린 시간. 최근 5 분 동안 끝난 결제 중 그 초 안에 끝난 건수다. 선이 벌어지면 늦게 끝난 결제가 생긴 것이다. 아직 안 끝난 결제는 여기에 없다.",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -291,7 +291,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (le) (payment_settle_seconds_bucket{application=\"commerce-api\"})",
+          "expr": "sum by (le) (increase(payment_settle_seconds_bucket{application=\"commerce-api\"}[5m]))",
           "legendFormat": "{{le}} 초 안"
         }
       ]
@@ -432,6 +432,105 @@
       ]
     },
     {
+      "id": 29,
+      "type": "row",
+      "title": "후속: 이벤트가 나갔고 읽혔는가",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 29
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 30,
+      "type": "timeseries",
+      "title": "아직 Kafka 로 나가지 않은 주문 이벤트 (상태별)",
+      "description": "order_event_outbox 에서 아직 발행되지 않은 행 수. sql exporter 가 DB 를 세어 낸다. 잠깐 오르고 내려가는 것은 정상이고, 내려가지 않으면 relay 가 멈춘 것이다.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 30
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineInterpolation": "stepAfter"
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (status) (order_outbox_unpublished{job=\"payment-db\"})",
+          "legendFormat": "{{status}}"
+        }
+      ]
+    },
+    {
+      "id": 31,
+      "type": "timeseries",
+      "title": "컨슈머가 아직 읽지 않은 메시지 (그룹별)",
+      "description": "Kafka 컨슈머 그룹의 lag. kafka exporter 가 브로커에서 읽어 낸다. purchase-activity 가 0 으로 돌아오지 않으면 확정된 주문이 구매 활동과 랭킹에 반영되지 않고 있는 것이다.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 30
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineInterpolation": "stepAfter"
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (consumergroup) (kafka_consumergroup_lag{job=\"kafka-lag\"})",
+          "legendFormat": "{{consumergroup}}"
+        }
+      ]
+    },
+    {
       "id": 10,
       "type": "row",
       "title": "PG 경계: 회로와 동시 실행 제한",
@@ -440,7 +539,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 29
+        "y": 38
       }
     },
     {
@@ -452,7 +551,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 30
+        "y": 39
       },
       "fieldConfig": {
         "defaults": {
@@ -496,7 +595,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 30
+        "y": 39
       },
       "fieldConfig": {
         "defaults": {
@@ -543,7 +642,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 30
+        "y": 39
       },
       "fieldConfig": {
         "defaults": {
@@ -590,7 +689,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 38
+        "y": 47
       }
     },
     {
@@ -602,7 +701,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 39
+        "y": 48
       },
       "fieldConfig": {
         "defaults": {
@@ -645,7 +744,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 39
+        "y": 48
       },
       "fieldConfig": {
         "defaults": {
@@ -688,7 +787,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 39
+        "y": 48
       },
       "fieldConfig": {
         "defaults": {
@@ -734,7 +833,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 47
+        "y": 56
       }
     },
     {
@@ -746,7 +845,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 48
+        "y": 57
       },
       "fieldConfig": {
         "defaults": {
@@ -795,7 +894,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 48
+        "y": 57
       },
       "fieldConfig": {
         "defaults": {
@@ -848,7 +947,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 48
+        "y": 57
       },
       "fieldConfig": {
         "defaults": {
@@ -892,7 +991,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 56
+        "y": 65
       },
       "fieldConfig": {
         "defaults": {
@@ -935,7 +1034,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 56
+        "y": 65
       },
       "fieldConfig": {
         "defaults": {
@@ -983,7 +1082,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 56
+        "y": 65
       },
       "fieldConfig": {
         "defaults": {
@@ -1030,7 +1129,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 64
+        "y": 73
       }
     },
     {
@@ -1042,7 +1141,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 65
+        "y": 74
       },
       "fieldConfig": {
         "defaults": {
@@ -1099,7 +1198,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 65
+        "y": 74
       },
       "fieldConfig": {
         "defaults": {
