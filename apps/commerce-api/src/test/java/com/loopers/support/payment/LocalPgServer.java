@@ -14,6 +14,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Queue;
+import java.util.Set;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -37,6 +38,7 @@ public final class LocalPgServer implements AutoCloseable {
     private volatile String rejectionBodyOverride;
     private volatile String createResponseBodyOverride;
     private volatile CreateResponse createResponse = CreateResponse.NORMAL;
+    private volatile Set<String> approvedOrdersWithLostResponse = Set.of();
     private volatile int lookupResponseStatus = 200;
     private volatile String lookupResponseBodyOverride;
     private volatile boolean truncateLookupBody;
@@ -77,6 +79,7 @@ public final class LocalPgServer implements AutoCloseable {
         rejectionBodyOverride = null;
         createResponseBodyOverride = null;
         createResponse = CreateResponse.NORMAL;
+        approvedOrdersWithLostResponse = Set.of();
         lookupResponseStatus = 200;
         lookupResponseBodyOverride = null;
         truncateLookupBody = false;
@@ -97,6 +100,14 @@ public final class LocalPgServer implements AutoCloseable {
 
     public void loseResponseAfterCreatingTransaction() {
         createResponse = CreateResponse.LOST;
+    }
+
+    public void loseResponseAfterApprovalFor(Set<String> providerOrderIds) {
+        approvedOrdersWithLostResponse = Set.copyOf(providerOrderIds);
+    }
+
+    public boolean isCreateResponseLossEnabled() {
+        return createResponse == CreateResponse.LOST || !approvedOrdersWithLostResponse.isEmpty();
     }
 
     public void rejectBeforeCreatingTransaction() {
@@ -290,9 +301,12 @@ public final class LocalPgServer implements AutoCloseable {
                 sendRejection(exchange, request);
                 return;
             }
+            String providerOrderId = request.path("orderId").asText();
+            boolean loseApprovedResponse = approvedOrdersWithLostResponse.contains(providerOrderId);
             Transaction transaction = new Transaction(
                     "TEST-TX-" + transactionSequence.incrementAndGet(),
-                    request.path("orderId").asText(), request.path("amount").asLong(), TransactionStatus.PENDING);
+                    providerOrderId, request.path("amount").asLong(),
+                    loseApprovedResponse ? TransactionStatus.SUCCESS : TransactionStatus.PENDING);
             // 같은 주문번호라도 매 POST마다 새 거래다. PG가 중복 결제를 막아주지 않는다.
             transactions.add(transaction);
             createStarted.countDown();
@@ -308,7 +322,7 @@ public final class LocalPgServer implements AutoCloseable {
             awaitResponseRelease(responseGate);
             exchange.getResponseHeaders().set("Content-Type", "application/json");
             exchange.sendResponseHeaders(202, body.length);
-            if (responseMode == CreateResponse.LOST) {
+            if (responseMode == CreateResponse.LOST || loseApprovedResponse) {
                 // 거래는 남기고 응답 본문을 보내지 않은 채 연결을 닫는다.
                 return;
             }

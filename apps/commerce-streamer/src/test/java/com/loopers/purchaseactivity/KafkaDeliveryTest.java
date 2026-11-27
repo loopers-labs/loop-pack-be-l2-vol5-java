@@ -212,7 +212,11 @@ class KafkaDeliveryTest {
         assertThat(confirmations.count()).isZero();
         assertThat(activities.count()).isZero();
         assertThat(LISTENER_KAFKA.committedOffset(target)).isEqualTo(target.offset());
-        assertThat(output.getAll()).contains("W6 second item DB failure");
+        String boundary = "step=purchase_activity orderId=" + event.orderId() + " eventId=" + event.eventId();
+        assertThat(output.getAll()).contains("W6 second item DB failure",
+                        boundary + " outcome=failed partition=" + target.partition()
+                                + " offset=" + target.offset() + " errorType=DataAccessResourceFailureException")
+                .doesNotContain(boundary + " outcome=recorded");
         assertThat(deliveries).hasSize(1);
 
         // Act: 원인만 제거하고 같은 listener와 group을 다시 시작한다.
@@ -233,6 +237,8 @@ class KafkaDeliveryTest {
         });
         assertThat(activities.findByOrderIdOrderByProductId(event.orderId()))
                 .extracting(row -> row.toDomain().quantity()).containsExactly(2, 1);
+        assertThat(output.getAll()).contains(boundary + " outcome=recorded partition=" + target.partition()
+                + " offset=" + target.offset());
         System.out.printf("W6_LISTENER_RECOVERY topic=%s group=%s partition=%d offset=%d "
                         + "stoppedOffset=%d recoveredOffset=%d activities=%d%n", target.topic(), LISTENER_KAFKA.group(),
                 target.partition(), target.offset(), target.offset(), LISTENER_KAFKA.committedOffset(target), activities.count());

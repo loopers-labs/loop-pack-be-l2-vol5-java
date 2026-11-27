@@ -4,6 +4,7 @@ import com.loopers.application.payment.PaymentGateway;
 
 import io.github.resilience4j.retry.Retry;
 import io.github.resilience4j.retry.RetryConfig;
+import lombok.extern.slf4j.Slf4j;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Primary;
@@ -14,11 +15,14 @@ import org.springframework.web.client.ResourceAccessException;
 import java.io.InterruptedIOException;
 import java.time.Duration;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 
+@Slf4j
 @Component
 @Primary
 public class RetryingPaymentGateway implements PaymentGateway {
@@ -63,16 +67,51 @@ public class RetryingPaymentGateway implements PaymentGateway {
                         && remainingNanos(startedAt) - retryWaitNanos >= TimeUnit.MILLISECONDS.toNanos(1))
                 .build();
         var retry = Retry.of("pg-payment-lookup", config);
-        return retry.executeSupplier(() -> lookup.apply(remainingTimeout(startedAt)));
+        var attemptCount = new AtomicInteger();
+        return retry.executeSupplier(() -> lookupAttempt(lookup, startedAt, attemptCount.incrementAndGet()));
+    }
+
+    private <T> T lookupAttempt(Function<Duration, T> lookup, long startedAt, int attempt) {
+        Duration budget;
+        try {
+            budget = remainingTimeout(startedAt);
+        } catch (UnconfirmedException failure) {
+            logAttempt(attempt, "not_sent", failure.reason().name().toLowerCase(Locale.ROOT), null);
+            throw failure;
+        }
+        T result;
+        try {
+            result = lookup.apply(budget);
+        } catch (LookupBlockedException blocked) {
+            logAttempt(attempt, "not_sent", "circuit_blocked", null);
+            throw blocked;
+        } catch (UnconfirmedException failure) {
+            logAttempt(attempt, "failed", failure.reason().name().toLowerCase(Locale.ROOT), failure.pgHttpStatus());
+            throw failure;
+        }
+        logAttempt(attempt, "success", null, null);
+        return result;
+    }
+
+    private static void logAttempt(int attempt, String outcome, String reason, Integer pgHttpStatus) {
+        var entry = log.atInfo().addKeyValue("step", "pg_lookup_attempt").addKeyValue("pgLookupAttempt", attempt)
+                .addKeyValue("outcome", outcome);
+        if (reason != null) {
+            entry.addKeyValue("reason", reason);
+        }
+        if (pgHttpStatus != null) {
+            entry.addKeyValue("pgHttpStatus", pgHttpStatus);
+        }
+        entry.log("PG lookup attempt {} outcome={}", attempt, outcome);
     }
 
     private Duration remainingTimeout(long startedAt) {
         if (Thread.currentThread().isInterrupted()) {
-            throw new UnconfirmedException(new InterruptedIOException("PG 조회가 중단됐습니다."));
+            throw new UnconfirmedException(FailureReason.CANCELLED, null, new InterruptedIOException("PG 조회가 중단됐습니다."));
         }
         long remaining = remainingNanos(startedAt);
         if (remaining < TimeUnit.MILLISECONDS.toNanos(1)) {
-            throw new UnconfirmedException(new TimeoutException("PG 조회의 총 대기 예산을 소진했습니다."));
+            throw new UnconfirmedException(FailureReason.TIMEOUT, null, new TimeoutException("PG 조회의 총 대기 예산을 소진했습니다."));
         }
         return Duration.ofNanos(remaining);
     }

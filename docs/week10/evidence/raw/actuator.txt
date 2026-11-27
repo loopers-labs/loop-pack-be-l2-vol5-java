@@ -1,0 +1,31 @@
+[baseline] GET /actuator/health
+{"status":"UP","groups":["liveness","readiness"]}
+
+[baseline] GET /actuator/prometheus (commerce_payment_unknown excerpt)
+# HELP commerce_payment_unknown Payments in UNKNOWN status in the commerce database at scrape time
+# TYPE commerce_payment_unknown gauge
+commerce_payment_unknown{application="commerce-api"} 0.0
+
+[fault] GET /actuator/health
+{"status":"UP","groups":["liveness","readiness"]}
+
+[fault] GET /actuator/prometheus (commerce_payment_unknown excerpt)
+# HELP commerce_payment_unknown Payments in UNKNOWN status in the commerce database at scrape time
+# TYPE commerce_payment_unknown gauge
+commerce_payment_unknown{application="commerce-api"} 3.0
+
+[recovery] GET /actuator/health
+{"status":"UP","groups":["liveness","readiness"]}
+
+[recovery] GET /actuator/prometheus (commerce_payment_unknown excerpt)
+# HELP commerce_payment_unknown Payments in UNKNOWN status in the commerce database at scrape time
+# TYPE commerce_payment_unknown gauge
+commerce_payment_unknown{application="commerce-api"} 0.0
+
+[recovery] GET /actuator/prometheus (HTTP URI labels, run-7450624646105360358)
+http_client_requests_seconds_count{application="commerce-api",client_name="localhost",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/v1/orders/{orderId}"} 43
+http_client_requests_seconds_count{application="commerce-api",client_name="localhost",error="none",exception="none",method="POST",outcome="SUCCESS",status="200",uri="/api/v1/orders/{orderId}/payment/reconcile"} 30
+http_client_requests_seconds_count{application="commerce-api",client_name="localhost",error="none",exception="none",method="POST",outcome="SUCCESS",status="202",uri="/api/v1/orders/{orderId}/confirm"} 30
+http_server_requests_seconds_count{application="commerce-api",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/v1/orders/{orderId}"} 43
+http_server_requests_seconds_count{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="200",uri="/api/v1/orders/{orderId}/payment/reconcile"} 30
+http_server_requests_seconds_count{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="202",uri="/api/v1/orders/{orderId}/confirm"} 30

@@ -12,8 +12,10 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.ResourceAccessException;
 
 import java.net.URI;
+import java.net.http.HttpTimeoutException;
 import java.time.Duration;
 import java.util.concurrent.CancellationException;
 
@@ -64,7 +66,22 @@ class HttpPaymentGatewayCancellationTest {
         Throwable lookupFailure = catchThrowable(() -> protectedGateway.findByOrderId("LP-ORD-0000000042"));
 
         // assert
-        assertThat(lookupFailure).isInstanceOf(PaymentGateway.UnconfirmedException.class);
+        assertThat(lookupFailure).isInstanceOfSatisfying(PaymentGateway.UnconfirmedException.class, failure -> {
+            assertThat(failure.reason()).isEqualTo(PaymentGateway.FailureReason.CANCELLED);
+            assertThat(failure.pgHttpStatus()).isNull();
+        });
         assertThat(lookupCircuit.getMetrics().getNumberOfFailedCalls()).isEqualTo(1);
+    }
+
+    @Test
+    void HTTP_응답을_받기_전_타임아웃은_상태_코드_없이_구분한다() {
+        when(httpClient.get()).thenThrow(new ResourceAccessException("lookup", new HttpTimeoutException("deadline")));
+
+        Throwable lookupFailure = catchThrowable(() -> paymentGateway.findByOrderId("LP-ORD-0000000042"));
+
+        assertThat(lookupFailure).isInstanceOfSatisfying(PaymentGateway.UnconfirmedException.class, failure -> {
+            assertThat(failure.reason()).isEqualTo(PaymentGateway.FailureReason.TIMEOUT);
+            assertThat(failure.pgHttpStatus()).isNull();
+        });
     }
 }

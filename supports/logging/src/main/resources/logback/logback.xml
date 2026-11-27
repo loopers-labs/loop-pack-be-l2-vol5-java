@@ -46,4 +46,16 @@
              -->
         </root>
     </springProfile>
+    <springProfile name="local,local-dev,test,dev,qa,prd">
+        <appender name="ASYNC-ORDER-EVENTS" class="ch.qos.logback.classic.AsyncAppender">
+            <discardingThreshold>0</discardingThreshold>
+            <appender-ref ref="CONSOLE"/>
+        </appender>
+        <logger name="com.loopers.application.order.OrderOutboxRelay" additivity="false">
+            <appender-ref ref="ASYNC-ORDER-EVENTS"/>
+        </logger>
+        <logger name="com.loopers.purchaseactivity.interfaces.OrderConfirmedListener" additivity="false">
+            <appender-ref ref="ASYNC-ORDER-EVENTS"/>
+        </logger>
+    </springProfile>
 </configuration>

@@ -1,0 +1,281 @@
+{
+  "reservations" : {
+    "21" : {
+      "quantity" : 1,
+      "status" : "CONSUMED"
+    },
+    "22" : {
+      "quantity" : 1,
+      "status" : "HELD"
+    },
+    "23" : {
+      "quantity" : 1,
+      "status" : "CONSUMED"
+    },
+    "24" : {
+      "quantity" : 1,
+      "status" : "CONSUMED"
+    },
+    "25" : {
+      "quantity" : 1,
+      "status" : "HELD"
+    },
+    "26" : {
+      "quantity" : 1,
+      "status" : "CONSUMED"
+    },
+    "27" : {
+      "quantity" : 1,
+      "status" : "CONSUMED"
+    },
+    "28" : {
+      "quantity" : 1,
+      "status" : "HELD"
+    },
+    "29" : {
+      "quantity" : 1,
+      "status" : "CONSUMED"
+    },
+    "30" : {
+      "quantity" : 1,
+      "status" : "CONSUMED"
+    }
+  },
+  "pgTransactions" : [ {
+    "transactionKey" : "TEST-TX-21",
+    "orderId" : "LP-ORD-0000000021",
+    "amount" : 7000,
+    "status" : "SUCCESS"
+  }, {
+    "transactionKey" : "TEST-TX-22",
+    "orderId" : "LP-ORD-0000000022",
+    "amount" : 7000,
+    "status" : "SUCCESS"
+  }, {
+    "transactionKey" : "TEST-TX-23",
+    "orderId" : "LP-ORD-0000000023",
+    "amount" : 7000,
+    "status" : "SUCCESS"
+  }, {
+    "transactionKey" : "TEST-TX-24",
+    "orderId" : "LP-ORD-0000000024",
+    "amount" : 7000,
+    "status" : "SUCCESS"
+  }, {
+    "transactionKey" : "TEST-TX-25",
+    "orderId" : "LP-ORD-0000000025",
+    "amount" : 7000,
+    "status" : "SUCCESS"
+  }, {
+    "transactionKey" : "TEST-TX-26",
+    "orderId" : "LP-ORD-0000000026",
+    "amount" : 7000,
+    "status" : "SUCCESS"
+  }, {
+    "transactionKey" : "TEST-TX-27",
+    "orderId" : "LP-ORD-0000000027",
+    "amount" : 7000,
+    "status" : "SUCCESS"
+  }, {
+    "transactionKey" : "TEST-TX-28",
+    "orderId" : "LP-ORD-0000000028",
+    "amount" : 7000,
+    "status" : "SUCCESS"
+  }, {
+    "transactionKey" : "TEST-TX-29",
+    "orderId" : "LP-ORD-0000000029",
+    "amount" : 7000,
+    "status" : "SUCCESS"
+  }, {
+    "transactionKey" : "TEST-TX-30",
+    "orderId" : "LP-ORD-0000000030",
+    "amount" : 7000,
+    "status" : "SUCCESS"
+  } ],
+  "pgCreateRequests" : 20,
+  "affectedOrderIds" : [ 22, 25, 28 ],
+  "observedAt" : "2026-11-24T12:07:37.952271Z",
+  "pgLookupRequests" : 20,
+  "orders" : [ {
+    "orderId" : 21,
+    "status" : "CONFIRMED",
+    "items" : [ {
+      "productId" : 2,
+      "quantity" : 1,
+      "unitPrice" : 7000,
+      "lineAmount" : 7000
+    } ],
+    "totalAmount" : 7000,
+    "paidAmount" : 7000,
+    "paymentResult" : "SUCCESS",
+    "paymentMethod" : "CARD",
+    "payment" : {
+      "paymentAttemptKey" : "017f22e2-79b0-7cc3-98c4-000000000015",
+      "providerOrderId" : "LP-ORD-0000000021",
+      "transactionKey" : "TEST-TX-21",
+      "status" : "SUCCESS"
+    }
+  }, {
+    "orderId" : 22,
+    "status" : "PAYMENT_PENDING",
+    "items" : [ {
+      "productId" : 2,
+      "quantity" : 1,
+      "unitPrice" : 7000,
+      "lineAmount" : 7000
+    } ],
+    "totalAmount" : 7000,
+    "paymentMethod" : "CARD",
+    "payment" : {
+      "paymentAttemptKey" : "017f22e2-79b0-7cc3-98c4-000000000016",
+      "providerOrderId" : "LP-ORD-0000000022",
+      "status" : "UNKNOWN"
+    }
+  }, {
+    "orderId" : 23,
+    "status" : "CONFIRMED",
+    "items" : [ {
+      "productId" : 2,
+      "quantity" : 1,
+      "unitPrice" : 7000,
+      "lineAmount" : 7000
+    } ],
+    "totalAmount" : 7000,
+    "paidAmount" : 7000,
+    "paymentResult" : "SUCCESS",
+    "paymentMethod" : "CARD",
+    "payment" : {
+      "paymentAttemptKey" : "017f22e2-79b0-7cc3-98c4-000000000017",
+      "providerOrderId" : "LP-ORD-0000000023",
+      "transactionKey" : "TEST-TX-23",
+      "status" : "SUCCESS"
+    }
+  }, {
+    "orderId" : 24,
+    "status" : "CONFIRMED",
+    "items" : [ {
+      "productId" : 2,
+      "quantity" : 1,
+      "unitPrice" : 7000,
+      "lineAmount" : 7000
+    } ],
+    "totalAmount" : 7000,
+    "paidAmount" : 7000,
+    "paymentResult" : "SUCCESS",
+    "paymentMethod" : "CARD",
+    "payment" : {
+      "paymentAttemptKey" : "017f22e2-79b0-7cc3-98c4-000000000018",
+      "providerOrderId" : "LP-ORD-0000000024",
+      "transactionKey" : "TEST-TX-24",
+      "status" : "SUCCESS"
+    }
+  }, {
+    "orderId" : 25,
+    "status" : "PAYMENT_PENDING",
+    "items" : [ {
+      "productId" : 2,
+      "quantity" : 1,
+      "unitPrice" : 7000,
+      "lineAmount" : 7000
+    } ],
+    "totalAmount" : 7000,
+    "paymentMethod" : "CARD",
+    "payment" : {
+      "paymentAttemptKey" : "017f22e2-79b0-7cc3-98c4-000000000019",
+      "providerOrderId" : "LP-ORD-0000000025",
+      "status" : "UNKNOWN"
+    }
+  }, {
+    "orderId" : 26,
+    "status" : "CONFIRMED",
+    "items" : [ {
+      "productId" : 2,
+      "quantity" : 1,
+      "unitPrice" : 7000,
+      "lineAmount" : 7000
+    } ],
+    "totalAmount" : 7000,
+    "paidAmount" : 7000,
+    "paymentResult" : "SUCCESS",
+    "paymentMethod" : "CARD",
+    "payment" : {
+      "paymentAttemptKey" : "017f22e2-79b0-7cc3-98c4-00000000001a",
+      "providerOrderId" : "LP-ORD-0000000026",
+      "transactionKey" : "TEST-TX-26",
+      "status" : "SUCCESS"
+    }
+  }, {
+    "orderId" : 27,
+    "status" : "CONFIRMED",
+    "items" : [ {
+      "productId" : 2,
+      "quantity" : 1,
+      "unitPrice" : 7000,
+      "lineAmount" : 7000
+    } ],
+    "totalAmount" : 7000,
+    "paidAmount" : 7000,
+    "paymentResult" : "SUCCESS",
+    "paymentMethod" : "CARD",
+    "payment" : {
+      "paymentAttemptKey" : "017f22e2-79b0-7cc3-98c4-00000000001b",
+      "providerOrderId" : "LP-ORD-0000000027",
+      "transactionKey" : "TEST-TX-27",
+      "status" : "SUCCESS"
+    }
+  }, {
+    "orderId" : 28,
+    "status" : "PAYMENT_PENDING",
+    "items" : [ {
+      "productId" : 2,
+      "quantity" : 1,
+      "unitPrice" : 7000,
+      "lineAmount" : 7000
+    } ],
+    "totalAmount" : 7000,
+    "paymentMethod" : "CARD",
+    "payment" : {
+      "paymentAttemptKey" : "017f22e2-79b0-7cc3-98c4-00000000001c",
+      "providerOrderId" : "LP-ORD-0000000028",
+      "status" : "UNKNOWN"
+    }
+  }, {
+    "orderId" : 29,
+    "status" : "CONFIRMED",
+    "items" : [ {
+      "productId" : 2,
+      "quantity" : 1,
+      "unitPrice" : 7000,
+      "lineAmount" : 7000
+    } ],
+    "totalAmount" : 7000,
+    "paidAmount" : 7000,
+    "paymentResult" : "SUCCESS",
+    "paymentMethod" : "CARD",
+    "payment" : {
+      "paymentAttemptKey" : "017f22e2-79b0-7cc3-98c4-00000000001d",
+      "providerOrderId" : "LP-ORD-0000000029",
+      "transactionKey" : "TEST-TX-29",
+      "status" : "SUCCESS"
+    }
+  }, {
+    "orderId" : 30,
+    "status" : "CONFIRMED",
+    "items" : [ {
+      "productId" : 2,
+      "quantity" : 1,
+      "unitPrice" : 7000,
+      "lineAmount" : 7000
+    } ],
+    "totalAmount" : 7000,
+    "paidAmount" : 7000,
+    "paymentResult" : "SUCCESS",
+    "paymentMethod" : "CARD",
+    "payment" : {
+      "paymentAttemptKey" : "017f22e2-79b0-7cc3-98c4-00000000001e",
+      "providerOrderId" : "LP-ORD-0000000030",
+      "transactionKey" : "TEST-TX-30",
+      "status" : "SUCCESS"
+    }
+  } ]
+}

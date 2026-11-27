@@ -1,0 +1,24 @@
+{
+  "afterByOrderId" : {
+    "22" : {
+      "availableStock" : 3,
+      "pointBalance" : 50000,
+      "ownedCouponIds" : [ 1 ]
+    },
+    "25" : {
+      "availableStock" : 3,
+      "pointBalance" : 50000,
+      "ownedCouponIds" : [ 1 ]
+    },
+    "28" : {
+      "availableStock" : 3,
+      "pointBalance" : 50000,
+      "ownedCouponIds" : [ 1 ]
+    }
+  },
+  "before" : {
+    "availableStock" : 3,
+    "pointBalance" : 50000,
+    "ownedCouponIds" : [ 1 ]
+  }
+}

@@ -86,7 +86,7 @@ public class OrderOutboxEntity {
         attemptCountInCycle++;
         nextAttemptAt = retryAt;
         return Optional.of(new OutboxDeliveryStore.DeliveryEvent(
-                eventId, destinationTopic, messageKey, payload, attemptCountInCycle));
+                eventId, orderId, destinationTopic, messageKey, payload, attemptCountInCycle));
     }
 
     void markPublished(Instant now) {

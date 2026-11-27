@@ -7,7 +7,9 @@ import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
+import org.springframework.core.NestedExceptionUtils;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -16,6 +18,7 @@ import java.util.UUID;
 
 @Component
 @RequiredArgsConstructor
+@Slf4j
 public class RequestOrderPaymentFacade {
     private final OrderPaymentTransactions transactions;
     private final PaymentGateway gateway;
@@ -27,8 +30,10 @@ public class RequestOrderPaymentFacade {
         }
         var preparedPayment = transactions.prepare(userId, orderId, command.paymentAttemptKey());
         if (!preparedPayment.shouldSend()) {
+            PaymentRequestDecision.REUSE_EXISTING.record(orderId, command.paymentAttemptKey());
             return Result.from(preparedPayment.payment());
         }
+        PaymentRequestDecision.SEND_TO_PG.record(orderId, command.paymentAttemptKey());
         Payment paymentAfterRequest = requestPgAndRecordResult(preparedPayment.payment(), command);
         return Result.from(paymentAfterRequest);
     }
@@ -42,9 +47,22 @@ public class RequestOrderPaymentFacade {
         } catch (PaymentGateway.RejectedBeforeCreateException rejection) {
             return transactions.recordRejection(paymentBeforeRequest.orderId(), rejection);
         } catch (PaymentGateway.UnconfirmedException exception) {
+            logUnconfirmedPgCreate(paymentBeforeRequest, exception);
             return transactions.recordUnknown(paymentBeforeRequest.orderId());
         }
         return transactions.recordAcceptance(paymentBeforeRequest.orderId(), acceptedByPg);
+    }
+
+    private void logUnconfirmedPgCreate(Payment payment, PaymentGateway.UnconfirmedException exception) {
+        String errorType = NestedExceptionUtils.getMostSpecificCause(exception).getClass().getSimpleName();
+        log.atWarn().addKeyValue("step", "pg_create")
+                .addKeyValue("orderId", Long.toString(payment.orderId()))
+                .addKeyValue("paymentAttemptKey", payment.paymentAttemptKey().toString())
+                .addKeyValue("providerOrderId", payment.providerOrderId())
+                .addKeyValue("outcome", "unconfirmed")
+                .addKeyValue("errorType", errorType)
+                .log("step=pg_create orderId={} providerOrderId={} outcome=unconfirmed errorType={}",
+                        payment.orderId(), payment.providerOrderId(), errorType);
     }
 
     public record Command(UUID paymentAttemptKey, String cardType, String cardNo) {

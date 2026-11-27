@@ -9,6 +9,7 @@ import static org.mockito.Mockito.doThrow;
 
 import com.loopers.kafka.event.OrderConfirmed;
 import com.loopers.purchaseactivity.application.PurchaseActivityHandler;
+import com.loopers.purchaseactivity.application.PurchaseActivityTransactions.RecordOutcome;
 import com.loopers.purchaseactivity.domain.PurchaseActivity;
 import com.loopers.purchaseactivity.domain.PurchaseActivityRepository;
 import com.loopers.purchaseactivity.domain.ProcessedOrderConfirmationRepository;
@@ -184,8 +185,8 @@ class PurchaseActivityIntegrationTest {
             } finally {
                 startInsert.countDown();
             }
-            first.get(10, TimeUnit.SECONDS);
-            second.get(10, TimeUnit.SECONDS);
+            assertThat(List.of(first.get(10, TimeUnit.SECONDS), second.get(10, TimeUnit.SECONDS)))
+                    .containsExactlyInAnyOrder(RecordOutcome.RECORDED, RecordOutcome.DUPLICATE);
         }
 
         // Assert

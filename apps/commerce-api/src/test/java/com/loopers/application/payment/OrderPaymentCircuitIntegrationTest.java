@@ -18,9 +18,12 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
@@ -96,7 +99,8 @@ class OrderPaymentCircuitIntegrationTest {
     }
 
     @Test
-    void PG_조회가_차단되면_저장된_결제와_함께_조회_불가를_반환한다() {
+    @ExtendWith(OutputCaptureExtension.class)
+    void PG_조회가_차단되면_저장된_결제와_함께_조회_불가를_반환한다(CapturedOutput output) {
         // arrange
         var orderAwaitingPayment = createOrderAwaitingPayment();
         openCircuitWithFailedLookups();
@@ -107,6 +111,9 @@ class OrderPaymentCircuitIntegrationTest {
         // assert
         assertThat(lookupResult.lookupAvailable()).isFalse();
         assertThat(lookupResult.payment().status()).isEqualTo(PaymentStatus.PENDING);
+        assertThat(output.getAll().lines()).anyMatch(line ->
+                line.endsWith("step=pg_lookup orderId=" + orderAwaitingPayment.orderId()
+                        + " providerOrderId=" + lookupResult.payment().providerOrderId() + " outcome=unavailable reason=circuit_blocked"));
     }
 
     @Test

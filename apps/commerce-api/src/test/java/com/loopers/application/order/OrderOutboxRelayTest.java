@@ -3,6 +3,10 @@ package com.loopers.application.order;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -17,6 +21,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
+import org.slf4j.event.KeyValuePair;
 
 class OrderOutboxRelayTest {
     @Test
@@ -36,12 +42,24 @@ class OrderOutboxRelayTest {
         assertThat(store.totalAttempts).isZero();
         assertThat(sent).isEmpty();
 
-        for (int i = 0; i < 3; i++) {
+        var logger = (Logger) LoggerFactory.getLogger(OrderOutboxRelay.class);
+        var failures = new ListAppender<ILoggingEvent>();
+        failures.start();
+        logger.addAppender(failures);
+        try {
+            for (int i = 0; i < 3; i++) {
+                relay.runOnce();
+                clock.advance(Duration.ofMinutes(1));
+            }
             relay.runOnce();
-            clock.advance(Duration.ofMinutes(1));
+        } finally {
+            logger.detachAppender(failures);
+            failures.stop();
         }
-        relay.runOnce();
 
+        assertThat(failures.list).extracting(ILoggingEvent::getLevel).containsExactly(Level.WARN, Level.WARN, Level.ERROR);
+        assertThat(failures.list.getLast().getKeyValuePairs()).contains(
+                new KeyValuePair("eventId", "event-1"), new KeyValuePair("outcome", "blocked"), new KeyValuePair("autoRetry", false));
         assertThat(store.status).isEqualTo("BLOCKED");
         assertThat(store.totalAttempts).isEqualTo(3);
         assertThat(sent).hasSize(3);
@@ -167,7 +185,7 @@ class OrderOutboxRelayTest {
             cycleAttempts++;
             attemptedEventIds.add(eventId);
             nextAttemptAt = retryAt;
-            return Optional.of(new DeliveryEvent(eventId, "order-events", "42", "original", cycleAttempts));
+            return Optional.of(new DeliveryEvent(eventId, 42, "order-events", "42", "original", cycleAttempts));
         }
 
         @Override public void markPublished(String eventId, Instant now) { status = "PUBLISHED"; }

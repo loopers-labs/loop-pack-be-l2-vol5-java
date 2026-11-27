@@ -1,0 +1,113 @@
+{
+  "beforeReconcile" : {
+    "rankingApi" : {
+      "status" : "PUBLISHED",
+      "periodStart" : "2026-11-16",
+      "periodEnd" : "2026-11-23",
+      "snapshotId" : "weekly-20261116-r1",
+      "frozenAt" : "2026-11-24T06:54:33.219782Z",
+      "items" : [ {
+        "rank" : 1,
+        "productId" : 1,
+        "score" : 17,
+        "name" : "주문 상품",
+        "price" : 7000,
+        "brand" : {
+          "brandId" : 1,
+          "name" : "브랜드"
+        }
+      } ]
+    },
+    "orders" : [ {
+      "orderId" : 22,
+      "processedEvents" : [ ],
+      "purchaseQuantities" : [ ],
+      "rankingInputQuantities" : [ ]
+    }, {
+      "orderId" : 25,
+      "processedEvents" : [ ],
+      "purchaseQuantities" : [ ],
+      "rankingInputQuantities" : [ ]
+    }, {
+      "orderId" : 28,
+      "processedEvents" : [ ],
+      "purchaseQuantities" : [ ],
+      "rankingInputQuantities" : [ ]
+    } ]
+  },
+  "afterReconcile" : {
+    "rankingApi" : {
+      "status" : "PUBLISHED",
+      "periodStart" : "2026-11-16",
+      "periodEnd" : "2026-11-23",
+      "snapshotId" : "weekly-20261116-r2",
+      "frozenAt" : "2026-11-24T06:54:33.685862Z",
+      "items" : [ {
+        "rank" : 1,
+        "productId" : 1,
+        "score" : 20,
+        "name" : "주문 상품",
+        "price" : 7000,
+        "brand" : {
+          "brandId" : 1,
+          "name" : "브랜드"
+        }
+      } ]
+    },
+    "orders" : [ {
+      "orderId" : 22,
+      "processedEvents" : [ "order-confirmed:v1:22" ],
+      "purchaseQuantities" : [ 1 ],
+      "rankingInputQuantities" : [ 1 ]
+    }, {
+      "orderId" : 25,
+      "processedEvents" : [ "order-confirmed:v1:25" ],
+      "purchaseQuantities" : [ 1 ],
+      "rankingInputQuantities" : [ 1 ]
+    }, {
+      "orderId" : 28,
+      "processedEvents" : [ "order-confirmed:v1:28" ],
+      "purchaseQuantities" : [ 1 ],
+      "rankingInputQuantities" : [ 1 ]
+    } ]
+  },
+  "afterDuplicateDelivery" : {
+    "rankingApi" : {
+      "status" : "PUBLISHED",
+      "periodStart" : "2026-11-16",
+      "periodEnd" : "2026-11-23",
+      "snapshotId" : "weekly-20261116-r3",
+      "frozenAt" : "2026-11-24T06:54:33.970089Z",
+      "items" : [ {
+        "rank" : 1,
+        "productId" : 1,
+        "score" : 20,
+        "name" : "주문 상품",
+        "price" : 7000,
+        "brand" : {
+          "brandId" : 1,
+          "name" : "브랜드"
+        }
+      } ]
+    },
+    "orders" : [ {
+      "orderId" : 22,
+      "processedEvents" : [ "order-confirmed:v1:22" ],
+      "purchaseQuantities" : [ 1 ],
+      "rankingInputQuantities" : [ 1 ]
+    }, {
+      "orderId" : 25,
+      "processedEvents" : [ "order-confirmed:v1:25" ],
+      "purchaseQuantities" : [ 1 ],
+      "rankingInputQuantities" : [ 1 ]
+    }, {
+      "orderId" : 28,
+      "processedEvents" : [ "order-confirmed:v1:28" ],
+      "purchaseQuantities" : [ 1 ],
+      "rankingInputQuantities" : [ 1 ]
+    } ]
+  },
+  "week" : "2026-11-16",
+  "affectedOrderIds" : [ 22, 25, 28 ],
+  "productId" : 1
+}

@@ -3,6 +3,7 @@ package com.loopers.interfaces.api;
 import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.exc.InvalidFormatException;
 import com.fasterxml.jackson.databind.exc.MismatchedInputException;
+import com.loopers.application.payment.PaymentAttemptKeyConflictException;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import lombok.extern.slf4j.Slf4j;
@@ -24,6 +25,11 @@ import java.util.stream.Collectors;
 @RestControllerAdvice
 @Slf4j
 public class ApiControllerAdvice {
+    @ExceptionHandler
+    public ResponseEntity<ApiResponse<?>> handlePaymentAttemptKeyConflict(PaymentAttemptKeyConflictException e) {
+        return failureResponse(e.getErrorType(), e.getCustomMessage());
+    }
+
     @ExceptionHandler
     public ResponseEntity<ApiResponse<?>> handle(CoreException e) {
         log.warn("CoreException : {}", e.getCustomMessage() != null ? e.getCustomMessage() : e.getMessage(), e);

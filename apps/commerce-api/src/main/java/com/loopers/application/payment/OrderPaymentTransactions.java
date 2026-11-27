@@ -48,7 +48,11 @@ public class OrderPaymentTransactions {
         var existingPayment = payments.findByOrderId(orderId);
         if (existingPayment.isPresent()) {
             Payment payment = existingPayment.get();
-            if (!payment.paymentAttemptKey().equals(paymentAttemptKey) || payment.amount() != order.getTotalAmount()) {
+            if (!payment.paymentAttemptKey().equals(paymentAttemptKey)) {
+                PaymentRequestDecision.ATTEMPT_KEY_CONFLICT.record(orderId, paymentAttemptKey);
+                throw new PaymentAttemptKeyConflictException();
+            }
+            if (payment.amount() != order.getTotalAmount()) {
                 throw new CoreException(ErrorType.CONFLICT);
             }
             return new PreparedPayment(payment, false);
