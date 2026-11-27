@@ -1,0 +1,12 @@
+{
+  "runId" : "20261127T083426Z-099c30",
+  "startedAt" : "2026-11-27T08:34:26.860944Z",
+  "fixedClock" : "2026-11-25T03:00:00Z",
+  "periodStart" : "2026-11-23",
+  "baselineOrders" : [ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 ],
+  "faultOrders" : [ 11, 12, 13, 14, 15, 16, 17, 18, 19, 20 ],
+  "lostOrders" : [ 12, 15, 19 ],
+  "faultFileSha256" : "f90bbd80c9dc335709b25fef31abd2437cddcc1a9697b623e0d01eeadcf0cbac",
+  "result" : "PASSED",
+  "finishedAt" : "2026-11-27T08:34:42.021598Z"
+}

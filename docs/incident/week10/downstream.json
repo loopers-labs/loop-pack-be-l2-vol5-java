@@ -1,0 +1,260 @@
+{
+  "observedAt" : "2026-11-27T08:34:38.897734Z",
+  "outbox" : [ {
+    "event_id" : "order-confirmed:v1:1",
+    "order_id" : 1,
+    "status" : "PUBLISHED",
+    "attempt_count" : 1,
+    "trace_parent" : "00-81d1d34b02e1406bb66c5b1418990e40-7f48957e839bd0d8-01"
+  }, {
+    "event_id" : "order-confirmed:v1:2",
+    "order_id" : 2,
+    "status" : "PUBLISHED",
+    "attempt_count" : 1,
+    "trace_parent" : "00-3493e6b42e09d39158a7c67d6bf214c4-869c823259596ad3-01"
+  }, {
+    "event_id" : "order-confirmed:v1:3",
+    "order_id" : 3,
+    "status" : "PUBLISHED",
+    "attempt_count" : 1,
+    "trace_parent" : "00-b90f92151e5697d99bb39dcaa25dc2d8-505eb5b374b437ff-01"
+  }, {
+    "event_id" : "order-confirmed:v1:4",
+    "order_id" : 4,
+    "status" : "PUBLISHED",
+    "attempt_count" : 1,
+    "trace_parent" : "00-d00d84f35ea893814db18a68ac2101f1-ebd090c2257b43a2-01"
+  }, {
+    "event_id" : "order-confirmed:v1:5",
+    "order_id" : 5,
+    "status" : "PUBLISHED",
+    "attempt_count" : 1,
+    "trace_parent" : "00-b4b30f732907eccf84da5dc903dfc25b-0e0cc8a7d9683e1b-01"
+  }, {
+    "event_id" : "order-confirmed:v1:6",
+    "order_id" : 6,
+    "status" : "PUBLISHED",
+    "attempt_count" : 1,
+    "trace_parent" : "00-9e6ece141ddc5dccea4880767eae6a95-c1354b4a8127f4a3-01"
+  }, {
+    "event_id" : "order-confirmed:v1:7",
+    "order_id" : 7,
+    "status" : "PUBLISHED",
+    "attempt_count" : 1,
+    "trace_parent" : "00-6ce7a0950e474b11b21158c22c50c4d3-6227ad3e124cb0ed-01"
+  }, {
+    "event_id" : "order-confirmed:v1:8",
+    "order_id" : 8,
+    "status" : "PUBLISHED",
+    "attempt_count" : 1,
+    "trace_parent" : "00-a3008ea1636728ecede7780b312e8131-a6991ab8d0ff1090-01"
+  }, {
+    "event_id" : "order-confirmed:v1:9",
+    "order_id" : 9,
+    "status" : "PUBLISHED",
+    "attempt_count" : 1,
+    "trace_parent" : "00-c07cf0d6c4bc88bdaddd7f240e43a693-e6dfd7d50d8d078e-01"
+  }, {
+    "event_id" : "order-confirmed:v1:10",
+    "order_id" : 10,
+    "status" : "PUBLISHED",
+    "attempt_count" : 1,
+    "trace_parent" : "00-91d6b3bb0792db4353bbeb729c830a49-c87727157599afd9-01"
+  }, {
+    "event_id" : "order-confirmed:v1:11",
+    "order_id" : 11,
+    "status" : "PUBLISHED",
+    "attempt_count" : 1,
+    "trace_parent" : "00-acf101f9747219e051f3f11931eb0f3f-2e4facf4f4f5dc2a-01"
+  }, {
+    "event_id" : "order-confirmed:v1:12",
+    "order_id" : 12,
+    "status" : "PUBLISHED",
+    "attempt_count" : 1,
+    "trace_parent" : "00-0dd2cf2707cf97abe767a95b6b90b4db-07c3f21eb841009e-01"
+  }, {
+    "event_id" : "order-confirmed:v1:13",
+    "order_id" : 13,
+    "status" : "PUBLISHED",
+    "attempt_count" : 1,
+    "trace_parent" : "00-d0649614664381bb907cc2e62e436588-86707d338a0b1ad1-01"
+  }, {
+    "event_id" : "order-confirmed:v1:14",
+    "order_id" : 14,
+    "status" : "PUBLISHED",
+    "attempt_count" : 1,
+    "trace_parent" : "00-7b6e1f20aaf7428f9895f96a27c7a414-adc2dc2989241f65-01"
+  }, {
+    "event_id" : "order-confirmed:v1:15",
+    "order_id" : 15,
+    "status" : "PUBLISHED",
+    "attempt_count" : 1,
+    "trace_parent" : "00-e7aa646ada3b9ed3f2229e459695c752-270b90a660b9b223-01"
+  }, {
+    "event_id" : "order-confirmed:v1:16",
+    "order_id" : 16,
+    "status" : "PUBLISHED",
+    "attempt_count" : 1,
+    "trace_parent" : "00-0d684c83f4179d477c34804bb77494b0-441042af7cb4ad2c-01"
+  }, {
+    "event_id" : "order-confirmed:v1:17",
+    "order_id" : 17,
+    "status" : "PUBLISHED",
+    "attempt_count" : 1,
+    "trace_parent" : "00-4037b4c49eb3534173a53b6121711e9b-810878e427a8df44-01"
+  }, {
+    "event_id" : "order-confirmed:v1:18",
+    "order_id" : 18,
+    "status" : "PUBLISHED",
+    "attempt_count" : 1,
+    "trace_parent" : "00-ebf01723e70c28ca33732ec07c6cf26e-3c7cf169929e5bc6-01"
+  }, {
+    "event_id" : "order-confirmed:v1:19",
+    "order_id" : 19,
+    "status" : "PUBLISHED",
+    "attempt_count" : 1,
+    "trace_parent" : "00-10332ae65173c9b25847e6bc92824ea5-e28ecd716bcf7848-01"
+  }, {
+    "event_id" : "order-confirmed:v1:20",
+    "order_id" : 20,
+    "status" : "PUBLISHED",
+    "attempt_count" : 1,
+    "trace_parent" : "00-6e369096a24c218845394bd9cde25e43-d75376b5deac2e7d-01"
+  } ],
+  "purchaseActivities" : [ {
+    "order_id" : 1,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-25T03:00:00"
+  }, {
+    "order_id" : 2,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-25T03:00:00"
+  }, {
+    "order_id" : 3,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-25T03:00:00"
+  }, {
+    "order_id" : 4,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-25T03:00:00"
+  }, {
+    "order_id" : 5,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-25T03:00:00"
+  }, {
+    "order_id" : 6,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-25T03:00:00"
+  }, {
+    "order_id" : 7,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-25T03:00:00"
+  }, {
+    "order_id" : 8,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-25T03:00:00"
+  }, {
+    "order_id" : 9,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-25T03:00:00"
+  }, {
+    "order_id" : 10,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-25T03:00:00"
+  }, {
+    "order_id" : 11,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-25T03:00:00"
+  }, {
+    "order_id" : 12,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-25T03:00:00"
+  }, {
+    "order_id" : 13,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-25T03:00:00"
+  }, {
+    "order_id" : 14,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-25T03:00:00"
+  }, {
+    "order_id" : 15,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-25T03:00:00"
+  }, {
+    "order_id" : 16,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-25T03:00:00"
+  }, {
+    "order_id" : 17,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-25T03:00:00"
+  }, {
+    "order_id" : 18,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-25T03:00:00"
+  }, {
+    "order_id" : 19,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-25T03:00:00"
+  }, {
+    "order_id" : 20,
+    "product_id" : 1,
+    "quantity" : 1,
+    "confirmed_at" : "2026-11-25T03:00:00"
+  } ],
+  "traces" : [ {
+    "createTraceId" : "470f8d2123ed4b4f914373ad2fd28ee3",
+    "recoveryTraceId" : "0dd2cf2707cf97abe767a95b6b90b4db",
+    "kafkaTraceId" : "0dd2cf2707cf97abe767a95b6b90b4db",
+    "orderId" : 12
+  }, {
+    "createTraceId" : "5a4f371f0528290aa443f1a62cef08af",
+    "recoveryTraceId" : "e7aa646ada3b9ed3f2229e459695c752",
+    "kafkaTraceId" : "e7aa646ada3b9ed3f2229e459695c752",
+    "orderId" : 15
+  }, {
+    "createTraceId" : "1c5235f652b892e7bbb023791764d8f4",
+    "recoveryTraceId" : "10332ae65173c9b25847e6bc92824ea5",
+    "kafkaTraceId" : "10332ae65173c9b25847e6bc92824ea5",
+    "orderId" : 19
+  } ],
+  "ranking" : {
+    "status" : "PUBLISHED",
+    "periodStart" : "2026-11-23",
+    "periodEnd" : "2026-11-30",
+    "snapshotId" : "weekly-20261123-r1",
+    "revision" : 1,
+    "frozenAt" : "2026-11-27T08:34:38.673996Z",
+    "items" : [ {
+      "rank" : 1,
+      "productId" : 1,
+      "name" : "사고실험 상품",
+      "price" : 1000,
+      "brand" : {
+        "id" : 1,
+        "name" : "사고실험"
+      },
+      "score" : 20
+    } ]
+  }
+}

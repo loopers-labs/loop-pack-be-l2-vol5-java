@@ -1,0 +1,19 @@
+{
+  "observedAt" : "2026-11-27T08:34:34.296989Z",
+  "hypotheses" : [ {
+    "hypothesis" : "PG 처리 지연",
+    "expected" : "같은 거래 조회가 PENDING",
+    "actual" : "PG 거래 상태 [SUCCESS, SUCCESS, SUCCESS]",
+    "verdict" : "기각"
+  }, {
+    "hypothesis" : "PG 성공 응답 유실",
+    "expected" : "PG SUCCESS, 내부 UNKNOWN, create 경계 로그 UNKNOWN(IO·TIMEOUT), 적용 시도 없음",
+    "actual" : "create UNKNOWN 3건 [IO, IO, IO], PG SUCCESS true, 적용 commit 0건",
+    "verdict" : "지지"
+  }, {
+    "hypothesis" : "성공 결과의 내부 반영 실패",
+    "expected" : "적용 시도 후 rollback 로그, 예약·Outbox 불일치",
+    "actual" : "apply.rolled_back 0건, 적용 commit 0건",
+    "verdict" : "기각"
+  } ]
+}
