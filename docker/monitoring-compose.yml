@@ -26,7 +26,9 @@ services:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin
       # Slack 주소는 저장소에 두지 않는다. 환경 변수로 주지 않으면 아무 데도 보내지 않는다.
+      # critical 은 SLACK_WEBHOOK_URL 로, 그 밖(warning)은 SLACK_QUIET_WEBHOOK_URL 로 간다.
       - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL:-http://127.0.0.1:9/not-configured}
+      - SLACK_QUIET_WEBHOOK_URL=${SLACK_QUIET_WEBHOOK_URL:-http://127.0.0.1:9/not-configured}
 
 networks:
   default:

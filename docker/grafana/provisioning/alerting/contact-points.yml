@@ -14,3 +14,16 @@ contactPoints:
             <{{ .Annotations.runbook_url }}|runbook 열기>
             {{ end }}
         disableResolveMessage: false
+  - orgId: 1
+    name: payment-slack-quiet
+    receivers:
+      - uid: payment-slack-quiet
+        type: slack
+        settings:
+          url: ${SLACK_QUIET_WEBHOOK_URL}
+          title: '{{ if eq .Status "firing" }}[발생]{{ else }}[해결]{{ end }} {{ .CommonLabels.source_alert }} ({{ .CommonLabels.severity }})'
+          text: |-
+            {{ range .Alerts }}{{ if eq .Status "firing" }}Prometheus 알림 {{ .Labels.source_alert }} 이 울리고 있다. 조건과 건수는 Prometheus 의 /alerts 에서 본다{{ else }}Prometheus 알림 {{ .Labels.source_alert }} 이 꺼졌다{{ end }}
+            <{{ .Annotations.runbook_url }}|runbook 열기>
+            {{ end }}
+        disableResolveMessage: false

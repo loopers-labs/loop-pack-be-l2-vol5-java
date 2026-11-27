@@ -73,6 +73,7 @@ sweeper 는 요청된 지 10 초가 지난 미완료 결제를, 앞의 실행이
 - **뒤집을 조건**: 사고가 아닌데 울리면 올리고, 고객 문의가 알림보다 먼저 오면 내린다.
 - **판정 주기는 15 초다.** 알림은 조건이 채워진 뒤 최대 15 초 늦게 울리고 꺼진다. `PaymentResponsesLost` 는 5 분 창을 보므로 유실이 멈춘 뒤에도 최대 5 분 동안 울린다.
 - **전달은 Grafana 가 맡는다.** 조건은 Prometheus 규칙에만 있고, Grafana 에는 "울리고 있는 Prometheus 알림(`ALERTS{alertstate="firing"}`)을 Slack 으로 보낸다"는 규칙 하나만 있다(`docker/grafana/provisioning/alerting/`). 그래서 조건을 고칠 때는 Prometheus 규칙 파일만 고친다. Slack 메시지에는 알림 이름, 심각도, 이 문서의 링크가 들어가고 건수는 들어가지 않는다. 건수는 Prometheus 의 `/alerts` 나 대시보드에서 본다.
+- **심각도에 따라 보내는 곳이 다르다.** critical(`PaymentUnresolvedStuck`, `PaymentConflict`)만 사람을 부르는 채널로 간다. warning(`PaymentResponsesLost`, `PaymentDbExporterDown`, `PurchaseActivityLagStuck`)은 조용한 채널로 간다. 로컬에서 5 분 동안 응답 215 건을 조금씩 잃게 했을 때 모두 저절로 닫혔는데 `PaymentResponsesLost` 는 내내 울렸다. 스스로 회복되는 것으로 사람을 깨우지 않으려는 것이다. 조용한 채널의 주소를 주지 않으면 warning 은 아무 데도 가지 않고 Prometheus 의 `/alerts` 에서만 보인다.
 - **Grafana 가 죽으면 전달이 멈춘다.** 판정은 Prometheus 에서 계속되므로 `/alerts` 에서는 보인다.
 
 ## 2. 영향 범위를 고정한다
