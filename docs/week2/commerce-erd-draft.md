@@ -1,5 +1,20 @@
 # 커머스 설계 초안
 
+## W10 결제 사고 관측·복구 설계 준비
+
+2026-11-24 새 [W10 원문](../week10/assignment-original.md)을 적용했다. 11월 26일 단건 결제 사고의 PG·DB 로그와 미확인 건수 지표를 연결했다. 같은 DB와 테스트 PG에서 별도 장애 집합의 미확인 3건을 기존 거래 조회로 복구했다. 5단계에서 이 20건을 실제 구매 활동·주간 랭킹까지 추적해 반복 전송 뒤에도 상품 점수가 20점임을 확인했다. [작업 계획과 실행 결과](../week10/implementation-checklist.md) · [채점 기준](../week10/grading-criteria.md) · [사고 대응 절차](../runbook/week10.md)
+
+| 설계 요소 | W10에서 연결할 내용 |
+| --- | --- |
+| 버드뷰 | 기존 고객 → API → 테스트 PG → 주문/Outbox DB → relay/Kafka → streamer → 구매 활동 → Batch/랭킹 API 흐름에 실제 health·Prometheus·안전한 경계 로그의 관찰 위치를 추가한다. 쿠폰은 독립 기능으로 유지한다. |
+| 구조와 의존 | controller의 본인 주문 reconcile·application의 조율/TX·domain의 상태/저장 port·infrastructure의 PG/DB/지표 연결 책임을 유지한다. 앱 간 production 의존 추가 없이 소유 테스트 프로세스를 조율한다. |
+| 도메인 관계 | 주문·PaymentAttempt·OrderItem 예약·Outbox·구매 활동·주간 snapshot의 기존 ID를 연결한다. UNKNOWN은 결제 시도 상태이며 gauge/log가 업무 상태의 새 원장이 되지 않는다. |
+| 대표 흐름 | 정상 10 → 별도 사고 10 중 3건의 PG 성공 응답 유실 → fault 증거/진단 → 같은 주문 reconcile → 실제 후속 결과 확인. 사고 중 DB·PG를 유지하고 create 추가 0·예약 한 번 소비를 대조한다. |
+
+상세 사고 다이어그램·기대값·관측 제안은 [W10 체크리스트](../week10/implementation-checklist.md)에 둔다. W10은 기존 주문 성공 기준·TX/락·공개 API 계약을 변경하는 문서가 아니다.
+
+## W9 구현·검증 기록 안내
+
 **2026-11-19 · W9 6단계 최종 회귀·채점 대조** — A 방식의 구매 활동 DB에 입력·점수 stage·완성 순위·공개 pointer와 Batch 실행 기록을 연결했다. `weeklyRanking`은 입력 고정 → 상품별 점수 계산 → 완성본 공개의 세 Step이다. 공개 API와 별도 랭킹 읽기 연결의 구현·검사 범위는 [4단계 기록](../week9/publication-api-tdd-log.md)을 따른다. [입력 고정](../week9/snapshot-freeze-tdd-log.md)·[점수/checkpoint](../week9/score-checkpoint-tdd-log.md)·공개/API의 선행 증거는 보존한다. 5단계는 기존 생산 경로의 실제 주문부터 별도 Batch JVM과 고객 HTTP까지 연결하는 TDD 증분이며 [전체 흐름 기록](../week9/full-chain-ranking-tdd-log.md)에서 실행 결과를 구분한다. 전체 회귀·채점 대조의 현재 결과와 남은 범위는 [6단계 최종 검증 기록](../week9/final-verification.md)을 따른다. 검사 결과와 커밋·푸시·제출 완료는 구분한다.
 
 ## W9 주간 구매 랭킹 설계

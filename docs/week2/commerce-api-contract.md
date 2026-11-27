@@ -2,6 +2,20 @@
 
 [전체 설계](commerce-erd-draft.md) · [정책 선택과 설계 검토](commerce-policy-decisions.md) · [TDD 계획](commerce-tdd-plan.md)
 
+## W10 사고 관찰·복구의 기존 API 사용
+
+2026-11-24 [W10 요구](../week10/grading-criteria.md)를 반영해 기존 API의 사고 검증 범위를 연결했다. **이 문서 작업에서 고객 API·응답·관리 포트 설정은 변경하지 않았다.**
+
+| 용도 | 기존 경로와 적용 경계 |
+| --- | --- |
+| 결제 요청·상태 확인 | 기존 고객 주문 confirm/조회. `meta.result`와 `payment.status`를 구분하며 결제 UNKNOWN은 주문 PAYMENT_PENDING과 대조 |
+| 복구 | `POST /api/v1/orders/{orderId}/payment/reconcile`. 기존 본인 식별·빈 본문 계약과 제한된 단건 거래 조회를 유지. 조치 전 fault 증거 보존, PG create 금지 |
+| 알림 | `POST /api/v1/payments/callback`. 기존 권위 GET·금액/식별 확인·중복 적용 보호 유지 |
+| 관측 | 별도 관리 포트의 `/actuator/health`와 `/actuator/prometheus`. `commerce_payment_unknown`은 DB에서 UNKNOWN 상태인 결제 시도 수를 제공한다. 단건 테스트는 동적 loopback 포트에서 실행한다. |
+| 후속 결과 | 기존 `GET /api/v1/rankings/weekly`의 새 완성 snapshot 조회. 미공개/빈 결과·현재 공개 조건·저장 순위 계약 유지 |
+
+진단용 PG 조회는 거래를 읽는다. 고객 reconcile은 확인된 결과를 주문에 적용한다. 응답 유실 제어와 gauge 갱신 조건은 [W10 구현 체크리스트](../week10/implementation-checklist.md)에 기록했다.
+
 ## W9 주간 랭킹 계약
 
 2026-11-19 선택한 **미공개 404·공개된 빈 결과 200**, 기본 limit 10·최대 100을 고객 API에 연결했다. 공개 SQL·HTTP의 실제 검사 범위와 결과는 [4단계 기록](../week9/publication-api-tdd-log.md)을 따른다. 실제 PG부터 랭킹 HTTP까지 이어지는 5단계 검증은 [전체 흐름 기록](../week9/full-chain-ranking-tdd-log.md)에 보존한다. HTTP 계약을 유지하며 전체 회귀·채점 대조의 현재 결과는 [6단계 최종 검증 기록](../week9/final-verification.md)을 따른다. UTC 주간·구매 수량 합·동점 productId 오름차순·저장 순위 유지·공개 필터 후 limit은 [과제의 확정 조건](../week9/grading-criteria.md#원문이-정한-업무조회-계약)이다. 원문은 `NOT_PUBLISHED`와 빈 items를 예시로 제시하며 미공개 HTTP 상태는 명시하지 않는다. 이번 선택은 **404 오류 코드로 미공개를 표현**한다. [전체 설계](commerce-erd-draft.md#w9-주간-구매-랭킹-설계) · [선택 이유](commerce-policy-decisions.md#w9-주간-랭킹의-선택) · [TDD](commerce-tdd-plan.md#w9-주간-랭킹-테스트-계획)

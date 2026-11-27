@@ -2,6 +2,12 @@
 
 [전체 설계](commerce-erd-draft.md) · [API 계약](commerce-api-contract.md) · [TDD 계획](commerce-tdd-plan.md)
 
+## W10 사고 실험의 요구와 미정 선택
+
+2026-11-24의 [W10 기준](../week10/grading-criteria.md)은 같은 상태에서 정상 10·장애 10과 고정 3건의 응답 유실을 관찰하고, 기존 reconcile로 추가 create 없이 복구하도록 요구한다. 이는 새 결제/환불 정책이 아니다. 기존 소유권·HMAC·TX/락·예약·쿠폰·주간 공개 계약은 유지한다.
+
+11월 26일 결제 시도의 UNKNOWN 전용 지표를 연결했다. 기본 갱신 간격은 5초이며 조회 실패·오래된 표본은 `NaN`으로 표시한다. 로그에는 PG 호출 관찰과 실제 트랜잭션 종료 시점을 남긴다. 단건 사고의 테스트용 조회 제어와 구현 선택은 [W10 체크리스트](../week10/implementation-checklist.md)에 기록한다.
+
 ## W9 주간 랭킹의 선택
 
 2026-11-19의 입력 고정·점수 Job·재시작에 이어 4단계 완성본 공개와 고객 API를 연결했다. [W9 원문](../week9/assignment-original.md)의 업무 조건과 사용자의 **A 저장 배치·기간/revision 지정 실행·미공개 404** 선택을 유지한다. 아래 표는 전체 기술 선택이며 `weeklyRanking`은 입력 고정·점수 계산·공개의 세 Step이다. [입력 기록](../week9/snapshot-freeze-tdd-log.md)·[점수/checkpoint 기록](../week9/score-checkpoint-tdd-log.md)은 당시 증거로 보존하고 공개/API 증분의 구현·실행 범위는 [4단계 기록](../week9/publication-api-tdd-log.md)을 따른다. 5단계에서는 실제 PG부터의 전체 흐름을 [별도 TDD 기록](../week9/full-chain-ranking-tdd-log.md)으로 연결했다. 기존 정책을 유지하며 전체 회귀·채점 대조의 현재 결과와 남은 범위는 [6단계 최종 검증 기록](../week9/final-verification.md)을 따른다. 검사 결과와 제출 완료는 구분한다. [전체 설계](commerce-erd-draft.md#w9-주간-구매-랭킹-설계) · [API 계약](commerce-api-contract.md#w9-주간-랭킹-계약) · [TDD 계획](commerce-tdd-plan.md#w9-주간-랭킹-테스트-계획)
