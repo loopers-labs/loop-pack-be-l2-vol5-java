@@ -506,3 +506,18 @@ I 이후 운영 코드(`UnfinishedOrderPaymentGauge`, `PaymentAttemptJpaReposito
 - 실패한 테스트는 `BrandRrBulkValidationTest.orderFirstCommitsItsStockReservationBeforeDeletion`이다. 메시지는 `lock wait observation failed`, 원인은 `no database lock wait observed on product:1`이다. 두 트랜잭션 중 하나가 DB 잠금을 기다리는 장면을 정해진 시간 안에 관찰하는 테스트다. I의 실행에서는 통과했다.
 - 이 클래스만 다시 세 번 실행했고 세 번 모두 15건이 통과했다. 이번 변경은 결제 gauge와 결제 시도 조회 질의이고 브랜드 삭제·재고 예약 코드는 바꾸지 않았다. 실패 원인은 확인하지 않았다.
 - 실행 전 colima의 실행 중 컨테이너는 0개, 실행 직후 3개(종료 중), 결과를 집계한 시점에는 0개였다.
+
+## N. 커밋 뒤 전체 회귀 재실행
+
+M에서 실패한 테스트가 다른 테스트와 함께 실행될 때도 통과하는지 보려고, 커밋 `47a0147`(코드 쪽 미커밋 변경 0건)에서 같은 명령을 다시 실행했다. JDK 21, colima.
+
+`./gradlew :apps:commerce-api:check :apps:commerce-streamer:check :apps:commerce-batch:check --continue --rerun-tasks` → `BUILD SUCCESSFUL`, 15분 33초.
+
+| 모듈 | 테스트 클래스 | 테스트 | 실패·에러·skip | Checkstyle (main·test) | ArchUnit |
+| --- | ---: | ---: | --- | --- | --- |
+| commerce-api | 112 | 704 | 0 | 0·0 | `LayeredArchitectureTest` 통과 |
+| commerce-streamer | 23 | 91 | 0 | 0·0 | `LayeredArchitectureTest` 통과 |
+| commerce-batch | 10 | 35 | 0 | 0·0 | 해당 없음 |
+
+- M에서 실패한 `BrandRrBulkValidationTest`는 이번 실행에서 15건 모두 통과했다. M의 실패 원인은 여전히 확인하지 않았다.
+- 실행 전 colima의 실행 중 컨테이너는 0개, 실행 직후 3개(종료 중), 결과를 집계한 시점에는 0개였다.

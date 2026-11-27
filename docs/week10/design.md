@@ -222,7 +222,7 @@ H의 네 주문은 ‘성공 거래를 찾음’과 ‘조회했지만 거래가
 
 ### 기능별 회귀 범위
 
-주문 기준 gauge를 넣은 뒤 전체 회귀(`commerce-api`·`commerce-streamer`·`commerce-batch`의 `check`)에서 830건 중 829건이 통과했다. 실패 1건(`BrandRrBulkValidationTest.orderFirstCommitsItsStockReservationBeforeDeletion`, DB 잠금 대기를 관찰하지 못함)은 그 클래스만 다시 세 번 실행해 모두 통과했고, 원인은 확인하지 않았다. 에러·skip 0, Checkstyle 위반 0, ArchUnit 통과. [실행 기록](implementation-log.md#m-주문-기준-gauge를-넣은-뒤-전체-회귀) 아래는 기능별로 이 실행에 포함된 대표 테스트다. 각 테스트가 검증하는 범위는 테스트 이름과 이전 주차 문서 기준이며, 이번 주에 테스트 내용을 다시 대조하지 않았다.
+커밋한 코드로 실행한 최신 전체 회귀(`commerce-api`·`commerce-streamer`·`commerce-batch`의 `check`)에서 830건이 모두 통과했다(실패·에러·skip 0, Checkstyle 위반 0, ArchUnit 통과). [실행 기록](implementation-log.md#n-커밋-뒤-전체-회귀-재실행) 그 전 실행에서는 `BrandRrBulkValidationTest.orderFirstCommitsItsStockReservationBeforeDeletion` 1건이 DB 잠금 대기를 관찰하지 못해 실패했고, 원인은 확인하지 않았다. [이전 실행](implementation-log.md#m-주문-기준-gauge를-넣은-뒤-전체-회귀) 아래는 기능별로 이 실행에 포함된 대표 테스트다. 각 테스트가 검증하는 범위는 테스트 이름과 이전 주차 문서 기준이며, 이번 주에 테스트 내용을 다시 대조하지 않았다.
 
 | 기능 | 이 실행에서 통과한 대표 테스트 | 확인하지 않은 것 |
 | --- | --- | --- |
