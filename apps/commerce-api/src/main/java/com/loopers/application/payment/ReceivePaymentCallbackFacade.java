@@ -1,5 +1,6 @@
 package com.loopers.application.payment;
 
+import com.loopers.domain.payment.Payment;
 import com.loopers.domain.payment.PaymentRepository;
 import com.loopers.domain.payment.PaymentStatus;
 import com.loopers.support.error.CoreException;
@@ -26,11 +27,16 @@ public class ReceivePaymentCallbackFacade {
                 && !storedPayment.transactionKey().equals(notification.transactionKey())) {
             throw new CoreException(ErrorType.CONFLICT);
         }
+        return PaymentLogContext.withPayment(storedPayment, () -> lookupAndApply(storedPayment, notification));
+    }
+
+    private ReconcileOrderPaymentFacade.Result lookupAndApply(Payment storedPayment, Command notification) {
         PaymentGateway.ObservedPayment observed;
         try {
             // 콜백의 상태는 알림이다. 고정 PG의 거래 조회 결과만 주문에 반영한다.
             observed = gateway.findByTransactionKey(notification.transactionKey());
         } catch (PaymentGateway.LookupBlockedException | PaymentGateway.UnconfirmedException exception) {
+            PaymentLookupLog.unavailable(storedPayment, "transaction_key", exception);
             var currentPayment = payments.findByProviderOrderId(notification.providerOrderId()).orElseThrow();
             return new ReconcileOrderPaymentFacade.Result(currentPayment, false);
         }

@@ -3,6 +3,9 @@ package com.loopers.infrastructure.payment;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.loopers.application.payment.PaymentGateway;
 import com.loopers.support.payment.LocalPgServer;
 
@@ -14,6 +17,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.slf4j.LoggerFactory;
+import org.slf4j.event.KeyValuePair;
 import org.springframework.web.client.RestClient;
 
 import java.net.URI;
@@ -98,7 +103,10 @@ class PaymentLookupRetryTest {
         Throwable lookupFailure = catchThrowable(() -> paymentGateway.findByOrderId(PROVIDER_ORDER_ID));
 
         // assert
-        assertThat(lookupFailure).isInstanceOf(PaymentGateway.UnconfirmedException.class);
+        assertThat(lookupFailure).isInstanceOfSatisfying(PaymentGateway.UnconfirmedException.class, failure -> {
+            assertThat(failure.reason()).isEqualTo(PaymentGateway.FailureReason.HTTP_ERROR);
+            assertThat(failure.pgHttpStatus()).isEqualTo(status);
+        });
         assertThat(localPgServer.lookupRequestCount()).isEqualTo(1);
     }
 
@@ -111,7 +119,10 @@ class PaymentLookupRetryTest {
         Throwable invalidResponse = catchThrowable(() -> paymentGateway.findByOrderId(PROVIDER_ORDER_ID));
 
         // assert
-        assertThat(invalidResponse).isInstanceOf(PaymentGateway.UnconfirmedException.class);
+        assertThat(invalidResponse).isInstanceOfSatisfying(PaymentGateway.UnconfirmedException.class, failure -> {
+            assertThat(failure.reason()).isEqualTo(PaymentGateway.FailureReason.INVALID_RESPONSE);
+            assertThat(failure.pgHttpStatus()).isEqualTo(200);
+        });
         assertThat(localPgServer.lookupRequestCount()).isEqualTo(1);
     }
 
@@ -147,13 +158,31 @@ class PaymentLookupRetryTest {
                 1, 1, 50, Duration.ofSeconds(10), 1);
         paymentGateway = gatewayWithBudget(Duration.ofMillis(200), Duration.ofSeconds(5));
         localPgServer.failPaymentLookups();
+        var logger = (Logger) LoggerFactory.getLogger(RetryingPaymentGateway.class);
+        var attemptLogs = new ListAppender<ILoggingEvent>();
+        attemptLogs.start();
+        logger.addAppender(attemptLogs);
 
         // act
-        Throwable blockedRetry = catchThrowable(() -> paymentGateway.findByOrderId(PROVIDER_ORDER_ID));
+        Throwable blockedRetry;
+        try {
+            blockedRetry = catchThrowable(() -> paymentGateway.findByOrderId(PROVIDER_ORDER_ID));
+        } finally {
+            logger.detachAppender(attemptLogs);
+            attemptLogs.stop();
+        }
 
         // assert
         assertThat(blockedRetry).isInstanceOf(PaymentGateway.LookupBlockedException.class);
         assertThat(localPgServer.lookupRequestCount()).isEqualTo(1);
+        assertThat(attemptLogs.list).satisfiesExactly(
+                first -> assertThat(first.getKeyValuePairs()).contains(new KeyValuePair("pgLookupAttempt", 1),
+                        new KeyValuePair("outcome", "failed"), new KeyValuePair("reason", "http_error")),
+                second -> {
+                    assertThat(second.getKeyValuePairs()).contains(new KeyValuePair("pgLookupAttempt", 2),
+                            new KeyValuePair("outcome", "not_sent"), new KeyValuePair("reason", "circuit_blocked"));
+                    assertThat(second.getKeyValuePairs()).extracting(field -> field.key).doesNotContain("pgHttpStatus");
+                });
     }
 
     @Test
@@ -206,7 +235,10 @@ class PaymentLookupRetryTest {
         Throwable lookupFailure = catchThrowable(() -> paymentGateway.findByOrderId(PROVIDER_ORDER_ID));
 
         // assert
-        assertThat(lookupFailure).isInstanceOf(PaymentGateway.UnconfirmedException.class);
+        assertThat(lookupFailure).isInstanceOfSatisfying(PaymentGateway.UnconfirmedException.class, failure -> {
+            assertThat(failure.reason()).isEqualTo(PaymentGateway.FailureReason.TRANSPORT);
+            assertThat(failure.pgHttpStatus()).isNull();
+        });
         assertThat(localPgServer.lookupRequestCount()).isEqualTo(2);
     }
 

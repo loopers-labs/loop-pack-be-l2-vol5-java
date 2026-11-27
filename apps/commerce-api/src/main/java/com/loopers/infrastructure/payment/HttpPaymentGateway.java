@@ -11,6 +11,7 @@ import jakarta.annotation.PreDestroy;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.apache.hc.client5.http.impl.classic.HttpClients;
 import org.apache.hc.core5.io.CloseMode;
@@ -22,15 +23,20 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.client.ResourceAccessException;
+import org.springframework.web.util.UriBuilder;
 
 import java.io.IOException;
+import java.net.SocketTimeoutException;
 import java.net.URI;
 import java.net.http.HttpClient;
+import java.net.http.HttpTimeoutException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CancellationException;
+import java.util.concurrent.TimeoutException;
+import java.util.function.Function;
 
 @Component
 public class HttpPaymentGateway implements PaymentGateway {
@@ -127,13 +133,10 @@ public class HttpPaymentGateway implements PaymentGateway {
     }
 
     List<ObservedPayment> findByOrderId(String providerOrderId, Duration remainingBudget) {
-        try {
-            var response = lookupClient(remainingBudget).get()
-                    .uri(builder -> builder.path("/api/v1/payments").queryParam("orderId", "{orderId}").build(providerOrderId))
-                    .header("X-USER-ID", "135135")
-                    .retrieve().toEntity(String.class);
-            JsonNode body = readResponse(response.getBody());
-            if (response.getStatusCode().value() != 200 || !body.isArray()) {
+        Function<UriBuilder, URI> uri = builder -> builder.path("/api/v1/payments")
+                .queryParam("orderId", "{orderId}").build(providerOrderId);
+        return lookup(remainingBudget, uri, body -> {
+            if (!body.isArray()) {
                 throw new UnconfirmedException();
             }
             var payments = new ArrayList<ObservedPayment>();
@@ -145,9 +148,7 @@ public class HttpPaymentGateway implements PaymentGateway {
                 payments.add(payment);
             }
             return List.copyOf(payments);
-        } catch (RestClientException | CancellationException exception) {
-            throw unconfirmedLookupFailure(exception);
-        }
+        });
     }
 
     @Override
@@ -156,33 +157,64 @@ public class HttpPaymentGateway implements PaymentGateway {
     }
 
     ObservedPayment findByTransactionKey(String transactionKey, Duration remainingBudget) {
-        try {
-            var response = lookupClient(remainingBudget).get()
-                    .uri(builder -> builder.path("/api/v1/payments").pathSegment("{transactionKey}").build(transactionKey))
-                    .header("X-USER-ID", "135135")
-                    .retrieve().toEntity(String.class);
-            ObservedPayment body = readProviderPayment(readResponse(response.getBody()));
-            if (response.getStatusCode().value() != 200 || !transactionKey.equals(body.transactionKey())) {
+        Function<UriBuilder, URI> uri = builder -> builder.path("/api/v1/payments")
+                .pathSegment("{transactionKey}").build(transactionKey);
+        return lookup(remainingBudget, uri, body -> {
+            ObservedPayment payment = readProviderPayment(body);
+            if (!transactionKey.equals(payment.transactionKey())) {
                 throw new UnconfirmedException();
             }
-            return body;
+            return payment;
+        });
+    }
+
+    private <T> T lookup(Duration remainingBudget, Function<UriBuilder, URI> uri, Function<JsonNode, T> decode) {
+        ResponseEntity<String> response;
+        try {
+            response = lookupClient(remainingBudget).get().uri(uri)
+                    .header("X-USER-ID", "135135").retrieve().toEntity(String.class);
         } catch (RestClientException | CancellationException exception) {
             throw unconfirmedLookupFailure(exception);
+        }
+        int status = response.getStatusCode().value();
+        if (status != 200) {
+            throw new UnconfirmedException(FailureReason.INVALID_RESPONSE, status, null);
+        }
+        try {
+            return decode.apply(readResponse(response.getBody()));
+        } catch (UnconfirmedException invalid) {
+            throw new UnconfirmedException(FailureReason.INVALID_RESPONSE, status, invalid.getCause());
         }
     }
 
     private static UnconfirmedException unconfirmedLookupFailure(RuntimeException exception) {
+        if (exception instanceof RestClientResponseException response) {
+            return new UnconfirmedException(FailureReason.HTTP_ERROR, response.getStatusCode().value(), response);
+        }
+        if (exception instanceof CancellationException) {
+            return new UnconfirmedException(FailureReason.CANCELLED, null, exception);
+        }
+        if (exception instanceof ResourceAccessException transport) {
+            return transportFailure(transport);
+        }
         // Spring은 본문 수신 중 I/O 오류를 일반 RestClientException으로 감쌀 수 있다.
-        if (exception instanceof RestClientException && !(exception instanceof RestClientResponseException)
-                && !(exception instanceof ResourceAccessException)) {
-            for (Throwable cause = exception.getCause(); cause != null; cause = cause.getCause()) {
-                if (cause instanceof IOException communicationFailure) {
-                    return new UnconfirmedException(
-                            new ResourceAccessException("PG 조회 응답을 읽지 못했습니다.", communicationFailure));
-                }
+        for (Throwable cause = exception.getCause(); cause != null; cause = cause.getCause()) {
+            if (cause instanceof IOException communicationFailure) {
+                return transportFailure(new ResourceAccessException("PG 조회 응답을 읽지 못했습니다.", communicationFailure));
             }
         }
         return new UnconfirmedException(exception);
+    }
+
+    private static UnconfirmedException transportFailure(ResourceAccessException failure) {
+        FailureReason reason = FailureReason.TRANSPORT;
+        if (failure.contains(HttpTimeoutException.class) || failure.contains(SocketTimeoutException.class)
+                || failure.contains(TimeoutException.class)) {
+            reason = FailureReason.TIMEOUT;
+        } else if (failure.contains(InterruptedException.class) || failure.contains(CancellationException.class)) {
+            reason = FailureReason.CANCELLED;
+        }
+        return new UnconfirmedException(reason, null, failure);
     }
 
     private RestClient lookupClient(Duration remainingBudget) {

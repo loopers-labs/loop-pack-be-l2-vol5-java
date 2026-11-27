@@ -40,13 +40,34 @@ public interface PaymentGateway {
         }
     }
 
+    enum FailureReason {
+        HTTP_ERROR, INVALID_RESPONSE, TIMEOUT, TRANSPORT, CANCELLED, UNKNOWN
+    }
+
     final class UnconfirmedException extends RuntimeException {
+        private final FailureReason reason;
+        private final Integer pgHttpStatus;
+
         public UnconfirmedException() {
-            super("PG 결제 결과를 확인할 수 없습니다.");
+            this(null);
         }
 
         public UnconfirmedException(Throwable cause) {
+            this(FailureReason.UNKNOWN, null, cause);
+        }
+
+        public UnconfirmedException(FailureReason reason, Integer pgHttpStatus, Throwable cause) {
             super("PG 결제 결과를 확인할 수 없습니다.", cause);
+            this.reason = reason;
+            this.pgHttpStatus = pgHttpStatus;
+        }
+
+        public FailureReason reason() {
+            return reason;
+        }
+
+        public Integer pgHttpStatus() {
+            return pgHttpStatus;
         }
     }
 }
