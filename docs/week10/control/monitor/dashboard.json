@@ -1,0 +1,782 @@
+{
+  "uid": "w10-water-control",
+  "title": "물 주문 결제 · 무장애 대조",
+  "description": "상품 조회 1,000명과 물 주문 초당 1건의 대조 실험. 위에서부터 부하 현황, 서버 접수 시각 기준 구간별 30초 내 확정률, 조회 처리량과 오류율을 읽는다.",
+  "schemaVersion": 39,
+  "version": 2,
+  "timezone": "browser",
+  "refresh": "5s",
+  "time": {
+    "from": "now-30m",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": [
+      "5s",
+      "10s",
+      "30s",
+      "1m"
+    ]
+  },
+  "editable": false,
+  "tags": [
+    "week10",
+    "control",
+    "JMeter"
+  ],
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "상품 조회 사용자",
+      "description": "마지막으로 수집한 JMeter 조회 스레드 수. 120초에 걸쳐 1,000명까지 늘린다.",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "datasource": {
+        "type": "mysql",
+        "uid": "w10-mysql"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "mysql",
+            "uid": "w10-mysql"
+          },
+          "rawSql": "SELECT active_readers AS `조회 사용자` FROM w10_control_samples WHERE $__timeFilter(sampled_at) ORDER BY sampled_at DESC LIMIT 1",
+          "format": "table",
+          "editorMode": "code",
+          "rawQuery": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "min": 0,
+          "noValue": "대기",
+          "max": 1000,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "light-blue"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "last"
+          ],
+          "fields": ""
+        },
+        "orientation": "horizontal",
+        "textMode": "value",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "물 결제 요청 · 초당",
+      "description": "최근 최대 30초의 JMeter 송신 누계 차이를 실제 관측 시간으로 나눈 값. 물 주문 초안 생성 후 PG 결제를 요청한 횟수를 센다.",
+      "gridPos": {
+        "x": 6,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "datasource": {
+        "type": "mysql",
+        "uid": "w10-mysql"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "mysql",
+            "uid": "w10-mysql"
+          },
+          "rawSql": "WITH last_sample AS (SELECT MAX(sampled_at) AS t FROM w10_control_samples WHERE $__timeFilter(sampled_at)) SELECT (MAX(water_sent)-MIN(water_sent))/NULLIF(TIMESTAMPDIFF(MICROSECOND,MIN(sampled_at),MAX(sampled_at))/1000000.0,0) AS `송신/초` FROM w10_control_samples JOIN last_sample ON sampled_at BETWEEN t - INTERVAL 30 SECOND AND t",
+          "format": "table",
+          "editorMode": "code",
+          "rawQuery": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "decimals": 2,
+          "min": 0,
+          "noValue": "대기",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "light-blue"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "last"
+          ],
+          "fields": ""
+        },
+        "orientation": "horizontal",
+        "textMode": "value",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "미확인 주문",
+      "description": "PG 응답 기한을 넘긴 UNKNOWN 주문. DB 집계 실패·첫 집계 전·수집 실패 시 확인 불가.",
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "w10-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "w10-prom"
+          },
+          "expr": "commerce_payment_unknown{job=\"commerce-control\"} and on(job,instance) (up{job=\"commerce-control\"} == 1)",
+          "legendFormat": "미확인 주문",
+          "instant": true,
+          "range": false,
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "min": 0,
+          "noValue": "확인 불가",
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "nan",
+                "result": {
+                  "text": "확인 불가",
+                  "color": "orange"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "last"
+          ],
+          "fields": ""
+        },
+        "orientation": "horizontal",
+        "textMode": "value",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Prometheus 수집 상태",
+      "description": "Commerce 관리 엔드포인트를 5초마다 수집한 마지막 결과.",
+      "gridPos": {
+        "x": 18,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "w10-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "w10-prom"
+          },
+          "expr": "up{job=\"commerce-control\"}",
+          "legendFormat": "수집",
+          "instant": true,
+          "range": false,
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "min": 0,
+          "noValue": "대기",
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "수집 실패",
+                  "color": "red"
+                },
+                "1": {
+                  "text": "정상",
+                  "color": "green"
+                }
+              }
+            }
+          ],
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "last"
+          ],
+          "fields": ""
+        },
+        "orientation": "horizontal",
+        "textMode": "value",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "id": 5,
+      "type": "table",
+      "title": "구간별 물 주문 30초 내 결제 확정률",
+      "description": "접수는 해당 1분 동안 서버가 처음 수락한 물 주문 수다. ‘30초 경과분 확정률’은 이미 30초를 관찰한 주문만 계산한다. ‘최종 확정률’은 구간 종료 30초 뒤 전체 접수 중 30초 이내 확정된 비율이다. 아직 계산할 수 없거나 분모가 0이면 —. 다시보기에서는 선택한 종료 시각 기준으로 표시한다.",
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 24,
+        "h": 6
+      },
+      "datasource": {
+        "type": "mysql",
+        "uid": "w10-mysql"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "mysql",
+            "uid": "w10-mysql"
+          },
+          "rawSql": "WITH horizon AS (\n  SELECT LEAST(UTC_TIMESTAMP(6), FROM_UNIXTIME($__unixEpochTo())) AS as_of\n), amounts AS (\n  SELECT p.phase, p.starts_at, p.ends_at, h.as_of,\n         COUNT(w.order_id) AS accepted,\n         COUNT(CASE WHEN w.accepted_at <= h.as_of - INTERVAL 30 SECOND THEN 1 END) AS matured,\n         COUNT(CASE WHEN w.within_30s = 1 AND w.confirmed_at <= h.as_of THEN 1 END) AS on_time,\n         COUNT(CASE WHEN w.within_30s = 1 AND w.accepted_at <= h.as_of - INTERVAL 30 SECOND THEN 1 END) AS matured_on_time\n  FROM w10_control_phases p CROSS JOIN horizon h\n  LEFT JOIN w10_control_water_orders w ON w.accepted_at >= p.starts_at AND w.accepted_at < p.ends_at AND w.accepted_at <= h.as_of\n  GROUP BY p.phase, p.starts_at, p.ends_at, h.as_of\n)\nSELECT n.label AS `측정 구간`,\n       CASE WHEN a.starts_at IS NULL OR a.as_of < a.starts_at THEN '대기'\n            WHEN a.as_of < a.ends_at THEN '접수 중'\n            WHEN a.as_of < a.ends_at + INTERVAL 30 SECOND THEN '마지막 주문 판정 중'\n            WHEN a.accepted = 0 THEN '접수 없음' ELSE '집계 완료' END AS `상태`,\n       DATE_FORMAT(a.starts_at + INTERVAL 9 HOUR,'%H:%i:%s') AS `시작 (KST)`,\n       a.accepted AS `접수`, a.matured AS `30초 경과`, a.on_time AS `30초 내 확정`,\n       100.0 * a.matured_on_time / NULLIF(a.matured,0) AS `30초 경과분 확정률`,\n       CASE WHEN a.as_of >= a.ends_at + INTERVAL 30 SECOND\n            THEN 100.0 * a.on_time / NULLIF(a.accepted,0) END AS `최종 확정률`\nFROM (SELECT 'normal' AS phase, '정상' AS label, 1 AS seq\n      UNION ALL SELECT 'comparison','장애 대응 시간대 · 대조',2\n      UNION ALL SELECT 'recovery','복구 대응 시간대 · 대조',3) n\nLEFT JOIN amounts a ON a.phase = n.phase ORDER BY n.seq",
+          "format": "table",
+          "editorMode": "code",
+          "rawQuery": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "noValue": "—"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/확정률$/"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "측정 구간"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 180
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "상태"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 150
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "sortBy": []
+      }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "조회 사용자가 1,000명까지 늘었나?",
+      "description": "JMeter가 실제 관측한 조회 스레드 수. 결제 요청을 만드는 스레드는 제외한다.",
+      "gridPos": {
+        "x": 0,
+        "y": 10,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "mysql",
+        "uid": "w10-mysql"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "mysql",
+            "uid": "w10-mysql"
+          },
+          "rawSql": "SELECT sampled_at AS time, active_readers AS `조회 사용자` FROM w10_control_samples WHERE $__timeFilter(sampled_at) ORDER BY sampled_at",
+          "format": "time_series",
+          "editorMode": "code",
+          "rawQuery": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 1,
+          "min": 0,
+          "noValue": "대기",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "상품 목록 조회 처리량",
+      "description": "서버에서 끝난 GET 요청과 부하 발생기에서 완료된 조회를 초당 건수로 비교한다. Prometheus는 최근 30초 평균, JMeter는 직전 표본 대비 값이다.",
+      "gridPos": {
+        "x": 12,
+        "y": 10,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "datasource",
+        "uid": "-- Mixed --"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "w10-prom"
+          },
+          "expr": "sum(rate(http_server_requests_seconds_count{job=\"commerce-control\",method=\"GET\",uri=\"/api/v1/products\"}[30s]))",
+          "legendFormat": "서버 · GET/초",
+          "instant": false,
+          "range": true,
+          "editorMode": "code"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "mysql",
+            "uid": "w10-mysql"
+          },
+          "rawSql": "WITH d AS (SELECT sampled_at, product_requests, product_errors, LAG(sampled_at) OVER (ORDER BY sampled_at) AS prev_at, LAG(product_requests) OVER (ORDER BY sampled_at) AS prev_requests, LAG(product_errors) OVER (ORDER BY sampled_at) AS prev_errors FROM w10_control_samples WHERE $__timeFilter(sampled_at)) SELECT sampled_at AS time, (product_requests-prev_requests)/NULLIF(TIMESTAMPDIFF(MICROSECOND,prev_at,sampled_at)/1000000.0,0) AS `JMeter · 조회/초` FROM d WHERE prev_at IS NOT NULL ORDER BY time",
+          "format": "time_series",
+          "editorMode": "code",
+          "rawQuery": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "decimals": 1,
+          "min": 0,
+          "noValue": "대기"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "상품 조회 응답 시간 · p95",
+      "description": "최근 30초 서버 측 상품 목록 HTTP 응답의 95번째 백분위수.",
+      "gridPos": {
+        "x": 0,
+        "y": 17,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "w10-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "w10-prom"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_requests_seconds_bucket{job=\"commerce-control\",method=\"GET\",uri=\"/api/v1/products\"}[30s])))",
+          "legendFormat": "응답 시간 p95",
+          "instant": false,
+          "range": true,
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 1,
+          "min": 0,
+          "noValue": "대기",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "orange"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "상품 조회 오류율",
+      "description": "서버 5xx 비율과 JMeter가 실패로 기록한 응답 비율. 요청이 없는 구간은 제외한다.",
+      "gridPos": {
+        "x": 12,
+        "y": 17,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "datasource",
+        "uid": "-- Mixed --"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "w10-prom"
+          },
+          "expr": "100 * ((sum(rate(http_server_requests_seconds_count{job=\"commerce-control\",method=\"GET\",uri=\"/api/v1/products\",status=~\"5..\"}[30s]))) or (0 * sum(rate(http_server_requests_seconds_count{job=\"commerce-control\",method=\"GET\",uri=\"/api/v1/products\"}[30s])))) / (sum(rate(http_server_requests_seconds_count{job=\"commerce-control\",method=\"GET\",uri=\"/api/v1/products\"}[30s])) > 0)",
+          "legendFormat": "서버 5xx",
+          "instant": false,
+          "range": true,
+          "editorMode": "code"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "mysql",
+            "uid": "w10-mysql"
+          },
+          "rawSql": "WITH d AS (SELECT sampled_at, product_requests, product_errors, LAG(sampled_at) OVER (ORDER BY sampled_at) AS prev_at, LAG(product_requests) OVER (ORDER BY sampled_at) AS prev_requests, LAG(product_errors) OVER (ORDER BY sampled_at) AS prev_errors FROM w10_control_samples WHERE $__timeFilter(sampled_at)) SELECT sampled_at AS time, 100.0*(product_errors-prev_errors)/NULLIF(product_requests-prev_requests,0) AS `JMeter 오류` FROM d WHERE prev_at IS NOT NULL ORDER BY time",
+          "format": "time_series",
+          "editorMode": "code",
+          "rawQuery": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1,
+          "min": 0,
+          "noValue": "대기"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 10,
+      "type": "table",
+      "title": "물 주문 · 부하 시작 이후 누계",
+      "description": "물 전용 사용자·상품의 결제 요청, 서버 접수, 30초 내 확정 건수. 준비 구간과 측정 구간 사이의 주문도 포함한다.",
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 12,
+        "h": 5
+      },
+      "datasource": {
+        "type": "mysql",
+        "uid": "w10-mysql"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "mysql",
+            "uid": "w10-mysql"
+          },
+          "rawSql": "WITH horizon AS (SELECT LEAST(UTC_TIMESTAMP(6), FROM_UNIXTIME($__unixEpochTo())) AS t)\nSELECT (SELECT s.water_sent FROM w10_control_samples s WHERE s.sampled_at <= h.t ORDER BY s.sampled_at DESC LIMIT 1) AS `JMeter 결제 요청 누계`,\n       COUNT(w.order_id) AS `서버 접수`,\n       COUNT(CASE WHEN w.within_30s = 1 AND w.confirmed_at <= h.t THEN 1 END) AS `30초 내 확정`\nFROM horizon h LEFT JOIN w10_control_water_orders w ON w.accepted_at <= h.t\nGROUP BY h.t",
+          "format": "table",
+          "editorMode": "code",
+          "rawQuery": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "noValue": "—"
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      }
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "JMeter CPU 사용률",
+      "description": "부하 발생기 프로세스가 사용하는 CPU를 전체 논리 코어에 대한 백분율로 표시한다.",
+      "gridPos": {
+        "x": 12,
+        "y": 24,
+        "w": 12,
+        "h": 6
+      },
+      "datasource": {
+        "type": "mysql",
+        "uid": "w10-mysql"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "mysql",
+            "uid": "w10-mysql"
+          },
+          "rawSql": "SELECT sampled_at AS time, process_cpu_pct AS `JMeter CPU` FROM w10_control_samples WHERE $__timeFilter(sampled_at) ORDER BY sampled_at",
+          "format": "time_series",
+          "editorMode": "code",
+          "rawQuery": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1,
+          "min": 0,
+          "noValue": "대기",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "purple"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "미확인 주문 집계 신선도",
+      "description": "마지막 성공한 15초 주기 DB 집계로부터 지난 시간. 수집 실패 시 선이 끊긴다.",
+      "gridPos": {
+        "x": 0,
+        "y": 29,
+        "w": 12,
+        "h": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "w10-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "w10-prom"
+          },
+          "expr": "time() - commerce_payment_unknown_last_success_timestamp_seconds{job=\"commerce-control\"} and on(job,instance) (up{job=\"commerce-control\"} == 1)",
+          "legendFormat": "마지막 성공 후 경과",
+          "instant": false,
+          "range": true,
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 1,
+          "min": 0,
+          "noValue": "대기",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    }
+  ]
+}

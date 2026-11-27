@@ -2,15 +2,19 @@ package com.loopers.infrastructure.persistence.pay.repository;
 
 import com.loopers.domain.pay.model.PaymentAttempt;
 import com.loopers.domain.pay.repository.PaymentAttemptRepository;
+import com.loopers.domain.support.error.DomainErrorCode;
+import com.loopers.domain.support.error.DomainException;
 import com.loopers.infrastructure.persistence.pay.entity.PaymentAttemptEntityMapper;
 import com.loopers.infrastructure.persistence.pay.entity.PaymentAttemptJpaEntity;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import jakarta.persistence.OptimisticLockException;
+import java.time.Instant;
 import java.util.Optional;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 @Repository
 @RequiredArgsConstructor
@@ -35,6 +39,23 @@ public class PaymentAttemptRepositoryImpl implements PaymentAttemptRepository {
         mapper.apply(attempt, entity);
         entityManager.flush();
         return mapper.toDomain(entity);
+    }
+
+    @Override
+    @Transactional
+    public void recordResponseDeadline(String attemptKey, Instant deadline) {
+        int updated = entityManager.createQuery("""
+                update PaymentAttemptJpaEntity a
+                   set a.responseDeadline = :deadline, a.version = a.version + 1
+                 where a.attemptKey = :key and a.dispatchState = 'STARTED'
+                   and a.outcome = 'UNKNOWN' and a.responseDeadline is null
+                """)
+            .setParameter("key", PaymentAttempt.normalizeKey(attemptKey))
+            .setParameter("deadline", deadline)
+            .executeUpdate();
+        if (updated != 1) {
+            throw new DomainException(DomainErrorCode.PAYMENT_DISPATCH_NOT_ALLOWED);
+        }
     }
 
     @Override

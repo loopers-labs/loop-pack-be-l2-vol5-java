@@ -1,14 +1,17 @@
 import org.gradle.api.plugins.quality.CheckstyleExtension
+import org.springframework.boot.gradle.tasks.bundling.BootJar
 
 sourceSets.test {
     resources.srcDir(rootProject.file("docs/week6-7/r01-order-events-inbox/fixtures"))
 }
 
 tasks.processTestResources {
+    from(rootProject.file("docker/payment-lab/002-pg-transactions.sql")) { into("payment-timeout") }
     from(rootProject.file("docker/payment-lab")) {
         include("014-weekly-ranking-snapshots.sql", "015-weekly-ranking-scores.sql", "016-weekly-ranking-publication.sql")
         into("preservation/ranking")
     }
+    from(rootProject.file("docker/week9/001-batch-metadata-mysql.sql")) { into("preservation/ranking") }
 }
 
 dependencyManagement {
@@ -63,6 +66,18 @@ configure<CheckstyleExtension> {
 val runsFullCheck = gradle.startParameter.taskNames.any { it.substringAfterLast(':') in setOf("check", "build") }
 
 tasks.named<Test>("test") {
+    for ((app, property) in mapOf(
+        "test-pg" to "payment.test-pg.jar",
+        "commerce-streamer" to "purchase.streamer.jar",
+        "commerce-batch" to "weekly-ranking.batch.jar",
+    )) {
+        val bootJar = project(":apps:$app").tasks.named<BootJar>("bootJar")
+        val archive = bootJar.flatMap { it.archiveFile }
+        dependsOn(bootJar)
+        inputs.file(archive)
+        doFirst { systemProperty(property, archive.get().asFile.absolutePath) }
+    }
+
     useJUnitPlatform {
         if (!runsFullCheck) {
             excludeTags("slow", "example")

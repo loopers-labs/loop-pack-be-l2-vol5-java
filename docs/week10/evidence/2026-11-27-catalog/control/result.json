@@ -1,0 +1,202 @@
+{
+  "started_at": "2026-11-27T06:36:16.636+00:00",
+  "finished_at": "2026-11-27T06:45:00.465+00:00",
+  "dashboard": "http://127.0.0.1:33311/d/w10-catalog-control/2c97c7c5-7164-5661-99f4-054a86fc4d59?from=1795761366636&to=1795761900465&orgId=1",
+  "water_accepted_total": 481,
+  "water_confirm_sent_total": 481,
+  "fixture_counts": {
+    "1": [
+      9,
+      9
+    ],
+    "2": [
+      11,
+      11
+    ]
+  },
+  "phases": [
+    {
+      "phase": "normal",
+      "starts_at": "2026-11-27 06:38:52.752295",
+      "ends_at": "2026-11-27 06:39:52.752295",
+      "accepted": "60",
+      "matured": "60",
+      "within_30s": "60",
+      "final_pct": "100.00",
+      "sent_confirm": 60,
+      "sent_create": 60,
+      "generator": {
+        "min_readers": "1000",
+        "max_readers": "1000",
+        "samples": "50",
+        "avg_cpu_pct": "14.07",
+        "longest_gap_sec": "1.416000"
+      },
+      "verified_1000_readers": true,
+      "product_rps": 196.15580448065174,
+      "product_p95_seconds": 0.017843028802226008,
+      "product_5xx_fraction": 0.0
+    },
+    {
+      "phase": "comparison",
+      "starts_at": "2026-11-27 06:40:10.849540",
+      "ends_at": "2026-11-27 06:41:10.849540",
+      "accepted": "60",
+      "matured": "60",
+      "within_30s": "60",
+      "final_pct": "100.00",
+      "sent_confirm": 60,
+      "sent_create": 60,
+      "generator": {
+        "min_readers": "1000",
+        "max_readers": "1000",
+        "samples": "49",
+        "avg_cpu_pct": "13.91",
+        "longest_gap_sec": "1.589460"
+      },
+      "verified_1000_readers": true,
+      "product_rps": 193.34133391519384,
+      "product_p95_seconds": 0.02188336056524926,
+      "product_5xx_fraction": 0.0
+    },
+    {
+      "phase": "recovery",
+      "starts_at": "2026-11-27 06:41:24.375019",
+      "ends_at": "2026-11-27 06:42:24.375019",
+      "accepted": "60",
+      "matured": "60",
+      "within_30s": "60",
+      "final_pct": "100.00",
+      "sent_confirm": 60,
+      "sent_create": 60,
+      "generator": {
+        "min_readers": "1000",
+        "max_readers": "1000",
+        "samples": "54",
+        "avg_cpu_pct": "11.81",
+        "longest_gap_sec": "1.337000"
+      },
+      "verified_1000_readers": true,
+      "product_rps": 195.93009510993107,
+      "product_p95_seconds": 0.0344294779,
+      "product_5xx_fraction": 0.0
+    }
+  ],
+  "mixed_purchases": {
+    "confirmed_orders": "1985",
+    "distinct_products": "474",
+    "purchasing_accounts": "397",
+    "categories": "14",
+    "units": "3074"
+  },
+  "catalog_views": {
+    "products": "597",
+    "categories": "14",
+    "successful_views": "125507",
+    "errors": "0"
+  },
+  "top_viewed": [
+    {
+      "name": "바람짐 기내용 캐리어 20인치",
+      "category": "여행용품",
+      "views": "7949"
+    },
+    {
+      "name": "페이스핏 루프 밴드 5단계",
+      "category": "스포츠",
+      "views": "5656"
+    },
+    {
+      "name": "마당일기 분갈이 흙 5L",
+      "category": "원예",
+      "views": "3932"
+    },
+    {
+      "name": "마당일기 허브 씨앗 3종",
+      "category": "원예",
+      "views": "3782"
+    },
+    {
+      "name": "음료 유자 탄산수 330ml",
+      "category": "음료",
+      "views": "2329"
+    },
+    {
+      "name": "음료 딸기 우유 200ml",
+      "category": "음료",
+      "views": "2288"
+    },
+    {
+      "name": "마당일기 식물 지지대 5개",
+      "category": "원예",
+      "views": "2281"
+    },
+    {
+      "name": "음료 현미차 500ml",
+      "category": "음료",
+      "views": "2206"
+    },
+    {
+      "name": "한끼창고 토마토 파스타 소스 500g",
+      "category": "식품",
+      "views": "2094"
+    },
+    {
+      "name": "오늘식탁 사골 곰탕 3팩",
+      "category": "식품",
+      "views": "2029"
+    }
+  ],
+  "jmeter": {
+    "fixture-create": {
+      "requests": 20,
+      "errors": 0,
+      "p95_ms": 229
+    },
+    "water-create": {
+      "requests": 481,
+      "errors": 0,
+      "p95_ms": 122
+    },
+    "browse-list": {
+      "requests": 55905,
+      "errors": 0,
+      "p95_ms": 43
+    },
+    "browse-brand": {
+      "requests": 26359,
+      "errors": 0,
+      "p95_ms": 41
+    },
+    "browse-detail": {
+      "requests": 98278,
+      "errors": 0,
+      "p95_ms": 37
+    },
+    "water-confirm": {
+      "requests": 481,
+      "errors": 3,
+      "p95_ms": 371
+    },
+    "fixture-confirm": {
+      "requests": 20,
+      "errors": 0,
+      "p95_ms": 418
+    },
+    "browse-revisit": {
+      "requests": 27229,
+      "errors": 0,
+      "p95_ms": 36
+    },
+    "mixed-create": {
+      "requests": 1985,
+      "errors": 0,
+      "p95_ms": 110
+    },
+    "mixed-confirm": {
+      "requests": 1985,
+      "errors": 8,
+      "p95_ms": 342
+    }
+  }
+}

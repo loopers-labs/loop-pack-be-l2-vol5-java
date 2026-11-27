@@ -24,7 +24,7 @@ public final class PreservedMySql implements AutoCloseable {
                 "004-order-payment-method.sql", "005-payment-recovery-tasks.sql", "006-stock-adjustments.sql",
                 "007-order-pg-status.sql", "008-order-confirmation-event-id.sql", "009-purchase-activity.sql",
                 "010-order-event-failure.sql", "011-order-event-outbox.sql", "012-coupon-campaigns-slots.sql",
-                "013-coupons.sql")) {
+                "013-coupons.sql", "019-payment-response-deadline.sql")) {
                 ScriptUtils.executeSqlScript(connection, new ClassPathResource("preservation/commerce/" + script));
             }
         }

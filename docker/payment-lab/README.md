@@ -38,6 +38,14 @@ Get-Content -Raw -Encoding utf8 docker/payment-lab/002-pg-transactions.sql |
 
 commerce의 신규 결제 시도 테이블은 `003-payment-attempts.sql`이다. 기존 코드의 `order_records` 테이블에 결제수단을 추가할 때는 `004-order-payment-method.sql`을 한 번 적용한다. 기존 행의 금액·결과·시각은 유지하고 결제수단만 POINT로 채운다. 초기 스키마에 이미 해당 컬럼이 있다면 이 ALTER를 다시 실행하지 않는다.
 
+10주차 Commerce를 보존 모드로 기동하기 전에 `payment_attempts`가 있는 실험 DB에 [응답 기한 마이그레이션](019-payment-response-deadline.sql)을 한 번 적용한다.
+기존 행의 `response_deadline`은 NULL로 남는다. 주문 생성 시각만으로 당시 PG 호출 기한을 복원할 수 없으므로, 발송을 시작한 미확인 주문 중 기한이 없는 행은 별도로 식별한다.
+
+```powershell
+Get-Content -Raw -Encoding utf8 docker/payment-lab/019-payment-response-deadline.sql |
+    docker compose -f docker/infra-compose.yml exec -T mysql mysql -uroot -proot --default-character-set=utf8mb4
+```
+
 ## 실행
 
 각각 다른 터미널에서 실행한다.

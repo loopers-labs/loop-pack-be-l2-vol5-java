@@ -1,0 +1,106 @@
+{
+  "project": "week10-catalog-incident",
+  "stage": "comparison",
+  "observed_at": "2026-11-27T06:53:04.499+00:00",
+  "orders": [
+    {
+      "order_id": 935,
+      "attempt_key": "f807240b-7c27-4ff4-98f9-e7c2d1e08ec2",
+      "commerce": {
+        "order_id": "935",
+        "order_status": "PAYMENT_PENDING",
+        "user_id": "1002",
+        "total_amount": "1000",
+        "product_id": "2",
+        "quantity": "1",
+        "attempt_key": "f807240b-7c27-4ff4-98f9-e7c2d1e08ec2",
+        "provider_order_id": "LP-ORD-0000000935",
+        "dispatch_state": "STARTED",
+        "outcome": "UNKNOWN",
+        "transaction_key": "NULL",
+        "response_deadline": "2026-11-27 06:52:55.023487",
+        "overdue": "1",
+        "create_response_mode": "DROP",
+        "callback_mode": "DROP",
+        "record_status": "NULL",
+        "paid_amount": "NULL"
+      },
+      "pg": [
+        {
+          "transactionKey": "TEST-TX-18d712ce-c4ea-4e70-90bd-bb02c00ab4ae",
+          "orderId": "LP-ORD-0000000935",
+          "amount": 1000,
+          "status": "SUCCESS"
+        }
+      ],
+      "create_log": "2026-11-27T06:52:55.039Z  INFO 1 --- [commerce-api] [o-18180-exec-74] [6b0928c445c216689eb7b7e001ad7f3b-9eb7b7e001ad7f3b] c.l.a.pay.logging.PaymentAttemptLog      : runId=week10-catalog-incident operation=PG_CREATE result=TIMEOUT orderId=935 attemptKey=f807240b-7c27-4ff4-98f9-e7c2d1e08ec2 providerOrderId=LP-ORD-0000000935",
+      "unknown_log": "2026-11-27T06:52:55.041Z  INFO 1 --- [commerce-api] [o-18180-exec-74] [6b0928c445c216689eb7b7e001ad7f3b-9eb7b7e001ad7f3b] c.l.a.pay.logging.PaymentAttemptLog      : runId=week10-catalog-incident operation=DB_OBSERVATION result=COMMITTED outcome=UNKNOWN orderId=935 attemptKey=f807240b-7c27-4ff4-98f9-e7c2d1e08ec2 providerOrderId=LP-ORD-0000000935"
+    },
+    {
+      "order_id": 947,
+      "attempt_key": "8a6a094d-355f-4901-913d-0a9f262bcb46",
+      "commerce": {
+        "order_id": "947",
+        "order_status": "PAYMENT_PENDING",
+        "user_id": "1002",
+        "total_amount": "1000",
+        "product_id": "2",
+        "quantity": "1",
+        "attempt_key": "8a6a094d-355f-4901-913d-0a9f262bcb46",
+        "provider_order_id": "LP-ORD-0000000947",
+        "dispatch_state": "STARTED",
+        "outcome": "UNKNOWN",
+        "transaction_key": "NULL",
+        "response_deadline": "2026-11-27 06:52:57.087228",
+        "overdue": "1",
+        "create_response_mode": "DROP",
+        "callback_mode": "DROP",
+        "record_status": "NULL",
+        "paid_amount": "NULL"
+      },
+      "pg": [
+        {
+          "transactionKey": "TEST-TX-98aea405-13aa-4f5b-8379-a5c740e743b8",
+          "orderId": "LP-ORD-0000000947",
+          "amount": 1000,
+          "status": "SUCCESS"
+        }
+      ],
+      "create_log": "2026-11-27T06:52:57.096Z  INFO 1 --- [commerce-api] [o-18180-exec-57] [6b0928c7f4dfb556d243326dc0d623c9-d243326dc0d623c9] c.l.a.pay.logging.PaymentAttemptLog      : runId=week10-catalog-incident operation=PG_CREATE result=TIMEOUT orderId=947 attemptKey=8a6a094d-355f-4901-913d-0a9f262bcb46 providerOrderId=LP-ORD-0000000947",
+      "unknown_log": "2026-11-27T06:52:57.097Z  INFO 1 --- [commerce-api] [o-18180-exec-57] [6b0928c7f4dfb556d243326dc0d623c9-d243326dc0d623c9] c.l.a.pay.logging.PaymentAttemptLog      : runId=week10-catalog-incident operation=DB_OBSERVATION result=COMMITTED outcome=UNKNOWN orderId=947 attemptKey=8a6a094d-355f-4901-913d-0a9f262bcb46 providerOrderId=LP-ORD-0000000947"
+    },
+    {
+      "order_id": 960,
+      "attempt_key": "b2ba6d25-4c06-4968-81ef-aec73274f163",
+      "commerce": {
+        "order_id": "960",
+        "order_status": "PAYMENT_PENDING",
+        "user_id": "1002",
+        "total_amount": "1000",
+        "product_id": "2",
+        "quantity": "1",
+        "attempt_key": "b2ba6d25-4c06-4968-81ef-aec73274f163",
+        "provider_order_id": "LP-ORD-0000000960",
+        "dispatch_state": "STARTED",
+        "outcome": "UNKNOWN",
+        "transaction_key": "NULL",
+        "response_deadline": "2026-11-27 06:52:59.178925",
+        "overdue": "1",
+        "create_response_mode": "DROP",
+        "callback_mode": "DROP",
+        "record_status": "NULL",
+        "paid_amount": "NULL"
+      },
+      "pg": [
+        {
+          "transactionKey": "TEST-TX-1098a6d7-a126-4597-8919-a08c9ec230ce",
+          "orderId": "LP-ORD-0000000960",
+          "amount": 1000,
+          "status": "SUCCESS"
+        }
+      ],
+      "create_log": "2026-11-27T06:52:59.200Z  INFO 1 --- [commerce-api] [o-18180-exec-65] [6b0928c9b9d8533877d283671f055999-77d283671f055999] c.l.a.pay.logging.PaymentAttemptLog      : runId=week10-catalog-incident operation=PG_CREATE result=TIMEOUT orderId=960 attemptKey=b2ba6d25-4c06-4968-81ef-aec73274f163 providerOrderId=LP-ORD-0000000960",
+      "unknown_log": "2026-11-27T06:52:59.202Z  INFO 1 --- [commerce-api] [o-18180-exec-65] [6b0928c9b9d8533877d283671f055999-77d283671f055999] c.l.a.pay.logging.PaymentAttemptLog      : runId=week10-catalog-incident operation=DB_OBSERVATION result=COMMITTED outcome=UNKNOWN orderId=960 attemptKey=b2ba6d25-4c06-4968-81ef-aec73274f163 providerOrderId=LP-ORD-0000000960"
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+{
+  "dashboard": "상품 탐색과 구매 · 무장애 대조",
+  "uid": "w10-catalog-control",
+  "revision": 2,
+  "timezone": "Asia/Seoul",
+  "from": "2026-11-27T06:36:16.000Z",
+  "to": "2026-11-27T06:44:00.000Z",
+  "fromKst": "2026-11-27 15:36:16",
+  "toKst": "2026-11-27 15:44:00",
+  "captures": [
+    {
+      "file": "overview-20261127T064400Z.png",
+      "focus": "탐색 중인 사용자",
+      "capturedAt": "2026-11-27T06:46:33.142Z",
+      "url": "http://127.0.0.1:33311/d/w10-catalog-control/2c97c7c5-7164-5661-99f4-054a86fc4d59?from=1795761376000&to=1795761840000&timezone=Asia%2FSeoul&theme=dark&orgId=1",
+      "toolbarRange": "2026-11-27 15:36:16 to 2026-11-27 15:44:00",
+      "successfulQueries": 12,
+      "bytes": 190529
+    },
+    {
+      "file": "traffic-20261127T064400Z.png",
+      "focus": "서버 응답 시간 · p95",
+      "capturedAt": "2026-11-27T06:46:34.262Z",
+      "url": "http://127.0.0.1:33311/d/w10-catalog-control/2c97c7c5-7164-5661-99f4-054a86fc4d59?from=1795761376000&to=1795761840000&timezone=Asia%2FSeoul&theme=dark&orgId=1",
+      "toolbarRange": "2026-11-27 15:36:16 to 2026-11-27 15:44:00",
+      "successfulQueries": 21,
+      "bytes": 180722
+    },
+    {
+      "file": "payment-health-20261127T064400Z.png",
+      "focus": "미확인 주문",
+      "capturedAt": "2026-11-27T06:46:35.070Z",
+      "url": "http://127.0.0.1:33311/d/w10-catalog-control/2c97c7c5-7164-5661-99f4-054a86fc4d59?from=1795761376000&to=1795761840000&timezone=Asia%2FSeoul&theme=dark&orgId=1",
+      "toolbarRange": "2026-11-27 15:36:16 to 2026-11-27 15:44:00",
+      "successfulQueries": 23,
+      "bytes": 194657
+    }
+  ]
+}

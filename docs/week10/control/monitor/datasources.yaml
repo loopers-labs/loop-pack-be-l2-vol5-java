@@ -1,0 +1,23 @@
+apiVersion: 1
+datasources:
+  - name: Commerce Prometheus
+    uid: w10-prom
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      timeInterval: 5s
+  - name: Control experiment
+    uid: w10-mysql
+    type: mysql
+    url: mysql:3306
+    user: w10_grafana
+    editable: false
+    jsonData:
+      database: loopers
+      maxOpenConns: 3
+      timezone: "+00:00"
+    secureJsonData:
+      password: week10-local-readonly

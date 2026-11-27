@@ -96,6 +96,8 @@ order-events:
     enabled: false
 
 payment:
+  metrics:
+    refresh-enabled: false
   recovery:
     auto-start-enabled: false
 

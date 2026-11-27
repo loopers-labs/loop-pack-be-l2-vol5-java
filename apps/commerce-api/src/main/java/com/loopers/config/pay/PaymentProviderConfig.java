@@ -1,6 +1,8 @@
 package com.loopers.config.pay;
 
+import com.loopers.application.pay.gateway.PaymentProviderGateway;
 import java.net.URI;
+import java.time.Clock;
 import org.apache.hc.client5.http.config.ConnectionConfig;
 import org.apache.hc.client5.http.config.RequestConfig;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
@@ -15,13 +17,19 @@ import org.springframework.web.client.RestClient;
 
 @Configuration
 public class PaymentProviderConfig {
+    @Bean
+    public Clock paymentDispatchClock() {
+        return Clock.systemUTC();
+    }
+
     @Bean(destroyMethod = "close")
     public CloseableHttpClient paymentProviderHttpClient() {
+        Timeout responseTimeout = Timeout.ofMilliseconds(PaymentProviderGateway.RESPONSE_TIMEOUT.toMillis());
         var manager = PoolingHttpClientConnectionManagerBuilder.create().setDefaultConnectionConfig(
-                ConnectionConfig.custom().setConnectTimeout(Timeout.ofSeconds(1)).setSocketTimeout(Timeout.ofSeconds(2)).build())
+                ConnectionConfig.custom().setConnectTimeout(Timeout.ofSeconds(1)).setSocketTimeout(responseTimeout).build())
                 .build();
         var request = RequestConfig.custom().setConnectionRequestTimeout(Timeout.ofSeconds(1))
-                .setResponseTimeout(Timeout.ofSeconds(2)).build();
+                .setResponseTimeout(responseTimeout).build();
         return HttpClients.custom().setConnectionManager(manager).setDefaultRequestConfig(request)
                 .disableAutomaticRetries().disableRedirectHandling().build();
     }

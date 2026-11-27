@@ -1,0 +1,20 @@
+{
+  "commerce": [
+    {
+      "order_id": "2",
+      "user_id": "1001",
+      "provider_order_id": "LP-ORD-0000000002",
+      "status": "PAYMENT_PENDING",
+      "outcome": "UNKNOWN",
+      "created_at": "2026-11-27 06:36:28.028916",
+      "response_deadline": "2026-11-27 06:36:30.062352",
+      "create_response_mode": "NORMAL",
+      "callback_mode": "SEND"
+    }
+  ],
+  "pg_read_only": "",
+  "events": [
+    "2026-11-27T06:36:29.182Z  INFO 1 --- [commerce-api] [io-18180-exec-5] [6b0924eb9d5d838f5c7031b60a9a0c5e-5c7031b60a9a0c5e] c.l.a.pay.logging.PaymentAttemptLog      : runId=week10-catalog-control operation=PG_CREATE result=TRANSPORT_ERROR orderId=2 attemptKey=cd6cac8e-bb61-467f-85a5-52354b07e547 providerOrderId=LP-ORD-0000000002",
+    "2026-11-27T06:36:29.206Z  INFO 1 --- [commerce-api] [io-18180-exec-5] [6b0924eb9d5d838f5c7031b60a9a0c5e-5c7031b60a9a0c5e] c.l.a.pay.logging.PaymentAttemptLog      : runId=week10-catalog-control operation=DB_OBSERVATION result=COMMITTED outcome=UNKNOWN orderId=2 attemptKey=cd6cac8e-bb61-467f-85a5-52354b07e547 providerOrderId=LP-ORD-0000000002"
+  ]
+}

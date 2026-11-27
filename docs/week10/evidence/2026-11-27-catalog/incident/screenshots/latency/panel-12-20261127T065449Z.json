@@ -1,0 +1,21 @@
+{
+  "dashboard": "상품 탐색과 구매 · 차 주문 3건 결제 장애",
+  "uid": "w10-catalog-incident",
+  "revision": 1,
+  "timezone": "Asia/Seoul",
+  "from": "2026-11-27T06:52:45.000Z",
+  "to": "2026-11-27T06:54:49.000Z",
+  "fromKst": "2026-11-27 15:52:45",
+  "toKst": "2026-11-27 15:54:49",
+  "captures": [
+    {
+      "file": "panel-12-20261127T065449Z.png",
+      "focus": "서버 응답 시간 · p95",
+      "capturedAt": "2026-11-27T06:56:11.145Z",
+      "url": "http://127.0.0.1:33312/d/w10-catalog-incident/8d448b14-04b1-574f-84e0-bfa51dd7c14d?from=1795762365000&to=1795762489000&timezone=Asia%2FSeoul&theme=dark&viewPanel=12&orgId=1",
+      "toolbarRange": "2026-11-27 15:52:45 to 2026-11-27 15:54:49",
+      "successfulQueries": 2,
+      "bytes": 129044
+    }
+  ]
+}
