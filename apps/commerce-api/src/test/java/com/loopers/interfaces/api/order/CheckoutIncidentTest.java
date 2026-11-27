@@ -3,12 +3,19 @@ package com.loopers.interfaces.api.order;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.loopers.application.brand.BrandFacade;
+import com.loopers.application.coupon.CouponTransactions;
 import com.loopers.application.order.OrderEventRelay;
+import com.loopers.application.point.PointFacade;
 import com.loopers.application.product.ProductFacade;
 import com.loopers.domain.common.Quantity;
+import com.loopers.domain.coupon.CampaignName;
+import com.loopers.domain.coupon.CouponService;
+import com.loopers.domain.coupon.DiscountAmount;
+import com.loopers.domain.coupon.IssueQuota;
 import com.loopers.domain.payment.Payment;
 import com.loopers.domain.payment.PaymentRepository;
 import com.loopers.domain.payment.PaymentStatus;
+import com.loopers.domain.point.ChargeAmount;
 import com.loopers.domain.product.Price;
 import com.loopers.domain.product.ProductService;
 import com.loopers.interfaces.api.ApiResponse;
@@ -25,10 +32,10 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.actuate.observability.AutoConfigureObservability;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.web.server.LocalManagementPort;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.boot.test.web.server.LocalManagementPort;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -38,6 +45,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
@@ -75,6 +83,9 @@ class CheckoutIncidentTest {
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
     private final DatabaseCleanUp databaseCleanUp;
+    private final PointFacade pointFacade;
+    private final CouponService couponService;
+    private final CouponTransactions couponTransactions;
 
     @LocalManagementPort
     private int managementPort;
@@ -85,7 +96,9 @@ class CheckoutIncidentTest {
     CheckoutIncidentTest(TestRestTemplate testRestTemplate, OrderEventRelay relay,
                          BrandFacade brandFacade, ProductFacade productFacade,
                          ProductService productService, PaymentRepository paymentRepository,
-                         JdbcTemplate jdbcTemplate, ObjectMapper objectMapper, DatabaseCleanUp databaseCleanUp) {
+                         JdbcTemplate jdbcTemplate, ObjectMapper objectMapper, DatabaseCleanUp databaseCleanUp,
+                         PointFacade pointFacade, CouponService couponService,
+                         CouponTransactions couponTransactions) {
         this.testRestTemplate = testRestTemplate;
         this.relay = relay;
         this.brandFacade = brandFacade;
@@ -95,6 +108,9 @@ class CheckoutIncidentTest {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
         this.databaseCleanUp = databaseCleanUp;
+        this.pointFacade = pointFacade;
+        this.couponService = couponService;
+        this.couponTransactions = couponTransactions;
     }
 
     @BeforeEach
@@ -103,6 +119,10 @@ class CheckoutIncidentTest {
         Long brandId = brandFacade.register("무신사", "패션 플랫폼").getId();
         coat = productFacade.register(brandId, "코트", Price.of(3_000)).getId();
         productFacade.adjustStock(coat, Quantity.of(STOCK));
+        pointFacade.charge(USER, ChargeAmount.of(50_000), Instant.now());
+        Long campaign = couponService.open(
+            CampaignName.of("기존 쿠폰"), DiscountAmount.of(5_000), IssueQuota.of(5), true).getId();
+        couponTransactions.issue(campaign, USER, 1, Instant.now());
     }
 
     @AfterEach
@@ -144,6 +164,10 @@ class CheckoutIncidentTest {
         assertThat(unknownEntered() - enteredBefore).isZero();
         assertThat(unknownLeft() - leftBefore).isZero();
         assertThat(scrape()).doesNotContain("payment_unresolved");
+        Map<String, Object> pointsAndCoupons = pointsAndCoupons();
+        assertThat(pointsAndCoupons.get("pointBalance")).isEqualTo(50_000L);
+        assertThat((List<?>) pointsAndCoupons.get("pointTransactions")).hasSize(1);
+        assertThat((List<?>) pointsAndCoupons.get("coupons")).hasSize(1);
         evidence.record("baseline", facts(baseline, List.of(), output.getOut()));
         evidence.recordRaw("baseline-prometheus.txt", scrape());
 
@@ -184,6 +208,7 @@ class CheckoutIncidentTest {
         assertThat(health()).isEqualTo("UP");
         assertThat(unknownEntered() - enteredBefore).isEqualTo(3);
         assertThat(unknownLeft() - leftBefore).isZero();
+        assertThat(pointsAndCoupons()).isEqualTo(pointsAndCoupons);
         String faultLog = output.getOut().substring(faultStart);
         assertThat(timedOut).allSatisfy(orderId -> assertThat(linesWith(faultLog, providerOrderIdOf(orderId)))
             .singleElement().asString().contains("cause=timeout"));
@@ -217,11 +242,13 @@ class CheckoutIncidentTest {
         assertThat(health()).isEqualTo("UP");
         assertThat(unknownEntered() - enteredBefore).isEqualTo(3);
         assertThat(unknownLeft() - leftBefore).isEqualTo(3);
+        assertThat(pointsAndCoupons()).isEqualTo(pointsAndCoupons);
 
         fault.forEach(this::reconcile);
 
         assertThat(unknownEntered() - enteredBefore).isEqualTo(3);
         assertThat(unknownLeft() - leftBefore).isEqualTo(3);
+        assertThat(pointsAndCoupons()).isEqualTo(pointsAndCoupons);
 
         assertThat(confirmedOrders(fault)).containsExactlyElementsOf(fault);
         assertThat(fault).allSatisfy(orderId -> assertThat(outboxRows(orderId)).isEqualTo(1));
@@ -355,6 +382,7 @@ class CheckoutIncidentTest {
         facts.put("pgTransactionCount", PG.transactionCount());
         facts.put("stock", productService.getStock(coat).value());
         facts.put("health", healthBody());
+        facts.put("pointsAndCoupons", pointsAndCoupons());
         facts.put("unknownEntered", unknownEntered());
         facts.put("unknownLeft", unknownLeft());
         facts.put("observeMetricLines", scrape().lines()
@@ -420,6 +448,19 @@ class CheckoutIncidentTest {
     private String orderStatus(Long orderId) {
         return testRestTemplate.exchange(ORDERS + "/" + orderId, HttpMethod.GET, new HttpEntity<>(null, headers()), ORDER)
             .getBody().data().status();
+    }
+
+    private Map<String, Object> pointsAndCoupons() {
+        Map<String, Object> facts = new LinkedHashMap<>();
+        facts.put("pointBalance", jdbcTemplate.queryForObject(
+            "select balance from user_point where user_id = ?", Long.class, USER));
+        facts.put("pointTransactions", jdbcTemplate.queryForList(
+            "select type, amount, balance_after from point_transaction where user_id = ? order by id", USER));
+        facts.put("coupons", jdbcTemplate.queryForList(
+            "select campaign_id, issue_number, discount_amount from coupon where user_id = ? order by id", USER));
+        facts.put("campaigns", jdbcTemplate.queryForList(
+            "select issued_count, total_quota, active from coupon_campaign order by id"));
+        return facts;
     }
 
     private int unknownEntered() {
