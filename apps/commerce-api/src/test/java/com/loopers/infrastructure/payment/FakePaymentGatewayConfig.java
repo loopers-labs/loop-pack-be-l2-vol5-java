@@ -1,5 +1,6 @@
 package com.loopers.infrastructure.payment;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
@@ -13,6 +14,7 @@ public class FakePaymentGatewayConfig {
 
     @Primary
     @Bean
+    @ConditionalOnProperty(name = "test.fake-pg.enabled", havingValue = "true", matchIfMissing = true)
     public FakePaymentGateway fakePaymentGateway() {
         return new FakePaymentGateway();
     }
