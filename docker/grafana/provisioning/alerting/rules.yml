@@ -33,5 +33,5 @@ groups:
         execErrState: Error
         for: 0s
         annotations:
-          summary: 'Prometheus 알림 {{ $labels.source_alert }} 이 울리고 있다. 조건과 건수는 Prometheus 의 /alerts 에서 본다'
+          summary: 'Prometheus 알림 {{ $labels.source_alert }} 의 상태를 전달한다'
           runbook_url: 'https://github.com/loopers-labs/loop-pack-be-l2-vol5-java/blob/seeun0210/docs/runbook/week10.md'
