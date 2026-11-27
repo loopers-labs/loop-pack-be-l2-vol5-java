@@ -39,8 +39,6 @@ health 가 `UP` 인 것은 이 사고와 모순이 아니다. health 는 프로�
 
 - **빠른 감지는 앱의 counter 로 한다.** counter 는 커밋 직후 오르고 `payment_unresolved` 는 다음 수집 때 오른다. 로컬에서 초당 30 건을 걸었을 때 수집 주기가 30 초면 DB 에 49 건이 쌓인 동안 지표는 7 건이었고, 5 초로 줄이자 차이가 한 주기 안으로 들어왔다. 쿼리 한 번은 2~14 ms 였다.
 - **`payment_unresolved` 가 아예 보이지 않으면** 0 이 아니라 exporter 가 죽었거나 DB 에 닿지 못한 것이다. Prometheus 의 `up{job="payment-db"}` 를 본다. 그동안은 2 장의 조회로 직접 센다.
-- **exporter 는 읽기 전용 계정을 쓴다.** `payment` 테이블의 `id`, `status` 두 컬럼만 읽고 연결은 2 개로 묶여 있다. 계정은 `docker/sql-exporter/exporter-user.sql` 을 DB 관리자 계정으로 한 번 실행해 만든다. 저장소에 있는 비밀번호는 로컬용이고, 운영에서는 비밀 저장소에서 받는다.
-- **로컬에는 복제본이 없어 주 DB 를 센다.** 쿼리는 `status` 로 시작하는 인덱스만 읽는다. 복제본이 있으면 exporter 를 복제본에 붙인다.
 
 "얼마나 오래 묶여 있는가"는 `payment_unresolved_oldest_seconds` 가 답한다. 어느 주문인지는 지표에 없다. 2 장의 조회 결과에서 `requested_at` 이 가장 이른 행이 그것이다.
 
@@ -62,7 +60,6 @@ health 가 `UP` 인 것은 이 사고와 모순이 아니다. health 는 프로�
 - **뒤집을 조건**: 사고가 아닌데 울리면 올리고, 고객 문의가 알림보다 먼저 오면 내린다.
 - **판정 주기는 15 초다.** 알림은 조건이 채워진 뒤 최대 15 초 늦게 울리고 꺼진다. `PaymentResponsesLost` 는 5 분 창을 보므로 유실이 멈춘 뒤에도 최대 5 분 동안 울린다.
 - **전달은 Grafana 가 맡는다.** 조건은 Prometheus 규칙에만 있고, Grafana 에는 "울리고 있는 Prometheus 알림(`ALERTS{alertstate="firing"}`)을 Slack 으로 보낸다"는 규칙 하나만 있다(`docker/grafana/provisioning/alerting/`). 그래서 조건을 고칠 때는 Prometheus 규칙 파일만 고친다. Slack 메시지에는 알림 이름, 심각도, 이 문서의 링크가 들어가고 건수는 들어가지 않는다. 건수는 Prometheus 의 `/alerts` 나 대시보드에서 본다.
-- **Slack 주소는 저장소에 없다.** `SLACK_WEBHOOK_URL` 환경 변수로 받는다. 변수 없이 띄우면 아무 데도 보내지 않는다.
 - **Grafana 가 죽으면 전달이 멈춘다.** 판정은 Prometheus 에서 계속되므로 `/alerts` 에서는 보인다.
 
 ## 2. 영향 범위를 고정한다
