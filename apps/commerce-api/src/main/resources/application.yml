@@ -11,6 +11,11 @@ server:
     keep-alive-timeout: 60s # 60s
   max-http-request-header-size: 8KB
 
+# 별도 포트의 management 서버는 server.address 를 따르지 않아 따로 묶음. 보안 필터가 걸리지 않아 주소 제한이 보호 수단 (10주차 D-205)
+management:
+  server:
+    address: 127.0.0.1
+
 spring:
   main:
     web-application-type: servlet
