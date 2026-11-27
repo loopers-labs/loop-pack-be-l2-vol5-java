@@ -1,0 +1,9 @@
+run=w10-20261127-123517
+startedAt=2026-11-27T03:36:45Z
+gitCommit=ef6090fee912b10a53ca4153f70972fb98d28fc5
+pgSimSha256=9266b3f03c023c130c8dda515ebacb5ec30a7920357ae8fb399681c16d9c1136
+jars=commerce-api-ef6090fe.jar commerce-streamer-ef6090fe.jar commerce-batch-ef6090fe.jar
+pgSim=88105@2026-11-27T03:36:26+00:00
+mysqlContainer=2b3c9ad61bc91c8cea04d397921ce8e414a3fa0db0af791cbde58948f1101365
+ports: api=18080 management=18081 mysql=33329 tempo=33200 grafana=33000
+finishedAt=2026-11-27T03:37:11Z

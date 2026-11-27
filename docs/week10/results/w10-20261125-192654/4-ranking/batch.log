@@ -1,0 +1,55 @@
+
+  .   ____          _            __ _ _
+ /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
+( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
+ \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
+  '  |____| .__|_| |_|_| |_\__, | / / / /
+ =========|_|==============|___/=/_/_/_/
+
+ :: Spring Boot ::                (v3.4.4)
+
+2026-11-25T19:31:37.834+09:00  INFO 92584 --- [commerce-batch] [           main] [                                                 ] com.loopers.CommerceBatchApplication     : Starting CommerceBatchApplication vc421a264 using Java 21.0.13 with PID 92584 (/Users/tanonkim/Documents/loopers/loop-pack-be-l2-vol5-java-claude/apps/commerce-batch/build/libs/commerce-batch-c421a264.jar started by tanonkim in /Users/tanonkim/Documents/loopers/loop-pack-be-l2-vol5-java-claude)
+2026-11-25T19:31:37.836+09:00 DEBUG 92584 --- [commerce-batch] [           main] [                                                 ] com.loopers.CommerceBatchApplication     : Running with Spring Boot v3.4.4, Spring v6.2.5
+2026-11-25T19:31:37.836+09:00  INFO 92584 --- [commerce-batch] [           main] [                                                 ] com.loopers.CommerceBatchApplication     : The following 1 profile is active: "local"
+2026-11-25T19:31:38.245+09:00  INFO 92584 --- [commerce-batch] [           main] [                                                 ] .s.d.r.c.RepositoryConfigurationDelegate : Multiple Spring Data modules found, entering strict repository configuration mode
+2026-11-25T19:31:38.245+09:00  INFO 92584 --- [commerce-batch] [           main] [                                                 ] .s.d.r.c.RepositoryConfigurationDelegate : Bootstrapping Spring Data JPA repositories in DEFAULT mode.
+2026-11-25T19:31:38.254+09:00  INFO 92584 --- [commerce-batch] [           main] [                                                 ] .s.d.r.c.RepositoryConfigurationDelegate : Finished Spring Data repository scanning in 3 ms. Found 0 JPA repository interfaces.
+2026-11-25T19:31:38.820+09:00  INFO 92584 --- [commerce-batch] [           main] [                                                 ] com.zaxxer.hikari.HikariDataSource       : mysql-main-pool - Starting...
+2026-11-25T19:31:39.066+09:00  INFO 92584 --- [commerce-batch] [           main] [                                                 ] com.zaxxer.hikari.pool.HikariPool        : mysql-main-pool - Added connection com.mysql.cj.jdbc.ConnectionImpl@6ba6557e
+2026-11-25T19:31:39.067+09:00  INFO 92584 --- [commerce-batch] [           main] [                                                 ] com.zaxxer.hikari.HikariDataSource       : mysql-main-pool - Start completed.
+2026-11-25T19:31:39.300+09:00  INFO 92584 --- [commerce-batch] [           main] [                                                 ] o.hibernate.jpa.internal.util.LogHelper  : HHH000204: Processing PersistenceUnitInfo [name: default]
+2026-11-25T19:31:39.342+09:00  INFO 92584 --- [commerce-batch] [           main] [                                                 ] org.hibernate.Version                    : HHH000412: Hibernate ORM core version 6.6.11.Final
+2026-11-25T19:31:39.365+09:00  INFO 92584 --- [commerce-batch] [           main] [                                                 ] o.h.c.internal.RegionFactoryInitiator    : HHH000026: Second-level cache disabled
+2026-11-25T19:31:39.571+09:00  INFO 92584 --- [commerce-batch] [           main] [                                                 ] o.s.o.j.p.SpringPersistenceUnitInfo      : No LoadTimeWeaver setup: ignoring JPA class transformer
+2026-11-25T19:31:39.635+09:00  INFO 92584 --- [commerce-batch] [           main] [                                                 ] org.hibernate.orm.connections.pooling    : HHH10001005: Database info:
+	Database JDBC URL [Connecting through datasource 'HikariDataSource (mysql-main-pool)']
+	Database driver: undefined/unknown
+	Database version: 8.0.46
+	Autocommit mode: undefined/unknown
+	Isolation level: undefined/unknown
+	Minimum pool size: undefined/unknown
+	Maximum pool size: undefined/unknown
+2026-11-25T19:31:40.219+09:00  INFO 92584 --- [commerce-batch] [           main] [                                                 ] o.h.e.t.j.p.i.JtaPlatformInitiator       : HHH000489: No JTA platform available (set 'hibernate.transaction.jta.platform' to enable JTA platform integration)
+2026-11-25T19:31:40.220+09:00  INFO 92584 --- [commerce-batch] [           main] [                                                 ] j.LocalContainerEntityManagerFactoryBean : Initialized JPA EntityManagerFactory for persistence unit 'default'
+2026-11-25T19:31:41.344+09:00  INFO 92584 --- [commerce-batch] [           main] [                                                 ] com.loopers.CommerceBatchApplication     : Started CommerceBatchApplication in 3.866 seconds (process running for 4.218)
+2026-11-25T19:31:41.346+09:00  INFO 92584 --- [commerce-batch] [           main] [                                                 ] o.s.b.a.b.JobLauncherApplicationRunner   : Running default command line with: [periodStart=2026-11-23]
+2026-11-25T19:31:41.362+09:00  INFO 92584 --- [commerce-batch] [           main] [                                                 ] c.l.batch.runner.WeeklyRankingJobRunner  : [주간 랭킹] periodStart = 2026-11-23, 재계산 = false → revision = 1
+2026-11-25T19:31:41.430+09:00  INFO 92584 --- [commerce-batch] [           main] [                                                 ] o.s.b.c.l.s.TaskExecutorJobLauncher      : Job: [SimpleJob: [name=weeklyRankingJob]] launched with the following parameters: [{'periodStart':'{value=2026-11-23, type=class java.time.LocalDate, identifying=true}','revision':'{value=1, type=class java.lang.Long, identifying=true}'}]
+2026-11-25T19:31:41.443+09:00  WARN 92584 --- [commerce-batch] [           main] [                                                 ] i.m.p.PrometheusMeterRegistry            : The meter (MeterId{name='spring.batch.job.active', tags=[tag(application=commerce-batch),tag(spring.batch.job.name=weeklyRankingJob),tag(spring.batch.job.status=UNKNOWN)]}) registration has failed: Prometheus requires that all meters with the same name have the same set of tag keys. There is already an existing meter named 'spring.batch.job.active' containing tag keys [application, spring.batch.job.active.name]. The meter you are attempting to register has keys [application, spring.batch.job.name, spring.batch.job.status]. Note that subsequent logs will be logged at debug level.
+2026-11-25T19:31:41.453+09:00  INFO 92584 --- [commerce-batch] [           main] [3a5f6027250f91fe203be62300d4377b-2de3bbe4e08c483e] com.loopers.batch.listener.JobListener   : Job '${jobExecution.jobInstance.jobName}' 시작
+2026-11-25T19:31:41.468+09:00  INFO 92584 --- [commerce-batch] [           main] [3a5f6027250f91fe203be62300d4377b-2de3bbe4e08c483e] o.s.batch.core.job.SimpleStepHandler     : Executing step: [inputFreezeStep]
+2026-11-25T19:31:41.514+09:00  INFO 92584 --- [commerce-batch] [           main] [3a5f6027250f91fe203be62300d4377b-a6c4cbeb28bae348] c.l.b.j.w.InputFreezeTasklet             : [입력 고정] snapshot을 고정했습니다. [snapshotId = weekly-20261123-r1, 복사 = 20행, 건수 = 20, 수량 합 = 20, checksum = 23001a9bf6f0ff5cfc8f2da9379e4c8873251e2f2c14ea8e896b5108ee734901]
+2026-11-25T19:31:41.520+09:00  INFO 92584 --- [commerce-batch] [           main] [3a5f6027250f91fe203be62300d4377b-2de3bbe4e08c483e] o.s.batch.core.step.AbstractStep         : Step: [inputFreezeStep] executed in 52ms
+2026-11-25T19:31:41.544+09:00  INFO 92584 --- [commerce-batch] [           main] [3a5f6027250f91fe203be62300d4377b-2de3bbe4e08c483e] o.s.batch.core.job.SimpleStepHandler     : Executing step: [weeklyScoreStep]
+2026-11-25T19:31:41.580+09:00  INFO 92584 --- [commerce-batch] [           main] [3a5f6027250f91fe203be62300d4377b-2de3bbe4e08c483e] o.s.batch.core.step.AbstractStep         : Step: [weeklyScoreStep] executed in 35ms
+2026-11-25T19:31:41.603+09:00  INFO 92584 --- [commerce-batch] [           main] [3a5f6027250f91fe203be62300d4377b-2de3bbe4e08c483e] o.s.batch.core.job.SimpleStepHandler     : Executing step: [publishStep]
+2026-11-25T19:31:41.619+09:00  INFO 92584 --- [commerce-batch] [           main] [3a5f6027250f91fe203be62300d4377b-fa45477d99033692] c.l.b.job.weeklyranking.PublishTasklet   : [공개] 그 주 첫 공개입니다. [periodStart = 2026-11-23, snapshotId = weekly-20261123-r1]
+2026-11-25T19:31:41.625+09:00  INFO 92584 --- [commerce-batch] [           main] [3a5f6027250f91fe203be62300d4377b-2de3bbe4e08c483e] o.s.batch.core.step.AbstractStep         : Step: [publishStep] executed in 21ms
+2026-11-25T19:31:41.634+09:00  INFO 92584 --- [commerce-batch] [           main] [                                                 ] c.l.b.listener.JobResultAlertListener    : 'weeklyRankingJob' 실행이 끝났습니다. [jobExecutionId = 1, status = COMPLETED, exitStatus = exitCode=COMPLETED;exitDescription=]
+2026-11-25T19:31:41.635+09:00  INFO 92584 --- [commerce-batch] [           main] [                                                 ] com.loopers.batch.listener.JobListener   : *Start Time:* 2026-11-25T19:31:41.453
+    *End Time:* 2026-11-25T19:31:41.635
+    *Total Time:* 0시간 0분 0초
+2026-11-25T19:31:41.640+09:00  INFO 92584 --- [commerce-batch] [           main] [                                                 ] o.s.b.c.l.s.TaskExecutorJobLauncher      : Job: [SimpleJob: [name=weeklyRankingJob]] completed with the following parameters: [{'periodStart':'{value=2026-11-23, type=class java.time.LocalDate, identifying=true}','revision':'{value=1, type=class java.lang.Long, identifying=true}'}] and the following status: [COMPLETED] in 189ms
+2026-11-25T19:31:41.656+09:00  INFO 92584 --- [commerce-batch] [           main] [                                                 ] j.LocalContainerEntityManagerFactoryBean : Closing JPA EntityManagerFactory for persistence unit 'default'
+2026-11-25T19:31:41.657+09:00  INFO 92584 --- [commerce-batch] [           main] [                                                 ] com.zaxxer.hikari.HikariDataSource       : mysql-main-pool - Shutdown initiated...
+2026-11-25T19:31:41.673+09:00  INFO 92584 --- [commerce-batch] [           main] [                                                 ] com.zaxxer.hikari.HikariDataSource       : mysql-main-pool - Shutdown completed.

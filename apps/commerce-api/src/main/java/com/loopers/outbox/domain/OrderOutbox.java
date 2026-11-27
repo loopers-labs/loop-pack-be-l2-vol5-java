@@ -94,15 +94,20 @@ public class OrderOutbox extends BaseEntity {
     @Comment("broker가 알려 준 offset — 재발행되면 마지막 값")
     private Long publishedOffset;
 
+    @Column(name = "trace_parent", length = 64)
+    @Comment("결과를 반영한 요청의 trace 문맥(W3C traceparent). relay가 이 문맥을 부모로 발행한다. trace가 없었으면 NULL (W10 D-12)")
+    private String traceParent;
+
     protected OrderOutbox() {}
 
-    private OrderOutbox(String eventId, Long orderId, String eventType, int schemaVersion, String payload, ZonedDateTime now) {
+    private OrderOutbox(String eventId, Long orderId, String eventType, int schemaVersion, String payload, String traceParent, ZonedDateTime now) {
         this.eventId = eventId;
         this.orderId = orderId;
         this.messageKey = String.valueOf(orderId);
         this.eventType = eventType;
         this.schemaVersion = schemaVersion;
         this.payload = payload;
+        this.traceParent = traceParent;
         this.status = OrderOutboxStatus.PENDING;
         this.attemptCount = 0;
         this.nextAttemptAt = now;
@@ -112,7 +117,16 @@ public class OrderOutbox extends BaseEntity {
      * 확정 TX 안에서 만든다. 바로 보낼 차례다(next_attempt_at = now).
      */
     public static OrderOutbox pending(String eventId, Long orderId, String eventType, int schemaVersion, String payload, ZonedDateTime now) {
-        return new OrderOutbox(eventId, orderId, eventType, schemaVersion, payload, now);
+        return pending(eventId, orderId, eventType, schemaVersion, payload, null, now);
+    }
+
+    /**
+     * trace 문맥과 함께 만든다 (W10 D-12 (나)). traceParent는 relay가 발행할 때 부모로 쓴다.
+     */
+    public static OrderOutbox pending(
+        String eventId, Long orderId, String eventType, int schemaVersion, String payload, String traceParent, ZonedDateTime now
+    ) {
+        return new OrderOutbox(eventId, orderId, eventType, schemaVersion, payload, traceParent, now);
     }
 
     /**
@@ -213,6 +227,10 @@ public class OrderOutbox extends BaseEntity {
 
     public OrderOutboxStatus getStatus() {
         return status;
+    }
+
+    public String getTraceParent() {
+        return traceParent;
     }
 
     public int getAttemptCount() {

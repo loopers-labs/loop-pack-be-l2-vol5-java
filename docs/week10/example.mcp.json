@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "grafana-w10": {
+      "command": "docker",
+      "args": ["run", "--rm", "-i", "-e", "GRAFANA_URL", "grafana/mcp-grafana:2.3.0", "-t", "stdio", "--disable-write"],
+      "env": {
+        "GRAFANA_URL": "http://host.docker.internal:33000"
+      }
+    }
+  }
+}

@@ -70,6 +70,22 @@ class OrderOutboxPersistenceAdapterIntegrationTest {
         assertThat(reloaded.getPublishedOffset()).isNull();
     }
 
+    @DisplayName("W10 D-12 append는 결과를 반영한 요청의 trace 문맥(traceparent)을 함께 저장하고, 문맥이 없으면 비워 둔다.")
+    @Test
+    void appendKeepsTraceParent() {
+        // given
+        String traceParent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
+
+        // when
+        orderOutboxPort.append("e-1", 1L, "OrderConfirmed", 1, java.util.Map.of("orderId", 1), traceParent, NOW);
+        orderOutboxPort.append("e-2", 2L, "OrderConfirmed", 1, java.util.Map.of("orderId", 2), null, NOW);
+        entityManager.clear();
+
+        // then
+        assertThat(orderOutboxPort.findByEventId("e-1").orElseThrow().getTraceParent()).isEqualTo(traceParent);
+        assertThat(orderOutboxPort.findByEventId("e-2").orElseThrow().getTraceParent()).isNull();
+    }
+
     @DisplayName("ADR-W6-01 같은 eventId는 두 번 저장되지 않는다 (event_id unique).")
     @Test
     void eventIdIsUnique() {

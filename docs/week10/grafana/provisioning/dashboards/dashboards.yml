@@ -1,0 +1,9 @@
+# W10 run.sh의 Grafana 대시보드 — docs/week10/grafana/dashboards/*.json을 읽어 "W10" 폴더에 넣는다 (plan.md D-13 ①)
+apiVersion: 1
+providers:
+  - name: w10
+    folder: W10
+    type: file
+    allowUiUpdates: false
+    options:
+      path: /var/lib/grafana/dashboards

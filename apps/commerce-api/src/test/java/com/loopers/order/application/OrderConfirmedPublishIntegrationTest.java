@@ -15,6 +15,7 @@ import com.loopers.outbox.application.port.in.OutboxAppendUseCase;
 import com.loopers.outbox.application.port.in.OutboxAppendUseCase.OrderOutboxEntry;
 import com.loopers.outbox.domain.OrderOutbox;
 import com.loopers.outbox.domain.OrderOutboxStatus;
+import com.loopers.payment.application.PaymentResultSource;
 import com.loopers.payment.application.PaymentResultApplier;
 import com.loopers.payment.application.port.in.PaymentDispatchUseCase;
 import com.loopers.payment.application.port.in.PaymentInfo;
@@ -215,7 +216,7 @@ class OrderConfirmedPublishIntegrationTest {
         void recordsOneOutboxRowInTheConfirmingTransaction() {
             PG.complete(transactionKey, "SUCCESS", null);
 
-            PaymentApplyOutcome outcome = paymentResultApplier.reconcile(info.paymentId());
+            PaymentApplyOutcome outcome = paymentResultApplier.reconcile(info.paymentId(), PaymentResultSource.RECONCILE_API);
 
             assertThat(outcome).isEqualTo(PaymentApplyOutcome.APPLIED);
             assertThat(order().getStatus()).isEqualTo(OrderStatus.CONFIRMED);
@@ -235,7 +236,7 @@ class OrderConfirmedPublishIntegrationTest {
         void payloadMatchesStoredFacts() throws Exception {
             PG.complete(transactionKey, "SUCCESS", null);
 
-            paymentResultApplier.reconcile(info.paymentId());
+            paymentResultApplier.reconcile(info.paymentId(), PaymentResultSource.RECONCILE_API);
 
             OrderOutbox row = outboxRows().get(0);
             JsonNode payload = objectMapper.readTree(row.getPayload());
@@ -258,7 +259,7 @@ class OrderConfirmedPublishIntegrationTest {
         void payloadHasTheSameShapeAsTheSharedFixture() throws Exception {
             PG.complete(transactionKey, "SUCCESS", null);
 
-            paymentResultApplier.reconcile(info.paymentId());
+            paymentResultApplier.reconcile(info.paymentId(), PaymentResultSource.RECONCILE_API);
 
             JsonNode payload = objectMapper.readTree(outboxRows().get(0).getPayload());
             JsonNode fixture = objectMapper.readTree(KafkaTopicReader.orderConfirmedFixture());
@@ -271,7 +272,7 @@ class OrderConfirmedPublishIntegrationTest {
         @Test
         void sendsTheStoredPayloadOnlyThroughRelayAndMarksPublished() {
             PG.complete(transactionKey, "SUCCESS", null);
-            paymentResultApplier.reconcile(info.paymentId());
+            paymentResultApplier.reconcile(info.paymentId(), PaymentResultSource.RECONCILE_API);
             OrderOutbox row = outboxRows().get(0);
 
             // commit 뒤 relay 전: after-commit 직접 발행이 없으므로 broker에 아무것도 없다
@@ -300,7 +301,7 @@ class OrderConfirmedPublishIntegrationTest {
         @DisplayName("C-2 PG가 아직 PENDING이면 주문은 PAYMENT_PENDING이고 발행 기록·record가 없다.")
         @Test
         void pendingPublishesNothing() {
-            paymentResultApplier.reconcile(info.paymentId());
+            paymentResultApplier.reconcile(info.paymentId(), PaymentResultSource.RECONCILE_API);
 
             assertThat(order().getStatus()).isEqualTo(OrderStatus.PAYMENT_PENDING);
             assertThat(outboxRows()).isEmpty();
@@ -311,7 +312,7 @@ class OrderConfirmedPublishIntegrationTest {
         void failurePublishesNothing() {
             PG.complete(transactionKey, "FAILED", "한도 초과");
 
-            paymentResultApplier.reconcile(info.paymentId());
+            paymentResultApplier.reconcile(info.paymentId(), PaymentResultSource.RECONCILE_API);
 
             assertThat(order().getStatus()).isEqualTo(OrderStatus.PAYMENT_FAILED);
             assertThat(outboxRows()).isEmpty();
@@ -325,7 +326,7 @@ class OrderConfirmedPublishIntegrationTest {
             StockReservationUseCase spy = AopTestUtils.getUltimateTargetObject(stockReservationUseCase);
             doThrow(new IllegalStateException("예약 소비 실패 주입")).when(spy).consume(anyLong());
 
-            assertThatThrownBy(() -> paymentResultApplier.reconcile(info.paymentId())).isInstanceOf(IllegalStateException.class);
+            assertThatThrownBy(() -> paymentResultApplier.reconcile(info.paymentId(), PaymentResultSource.RECONCILE_API)).isInstanceOf(IllegalStateException.class);
 
             assertThat(order().getStatus()).isEqualTo(OrderStatus.PAYMENT_PENDING);
             assertThat(outboxRows()).isEmpty();
@@ -336,10 +337,10 @@ class OrderConfirmedPublishIntegrationTest {
         @Test
         void repeatedApplyPublishesOnce() {
             PG.complete(transactionKey, "SUCCESS", null);
-            paymentResultApplier.reconcile(info.paymentId());
+            paymentResultApplier.reconcile(info.paymentId(), PaymentResultSource.RECONCILE_API);
             int createCallsAfterFirst = PG.createCalls();
 
-            PaymentApplyOutcome second = paymentResultApplier.reconcile(info.paymentId());
+            PaymentApplyOutcome second = paymentResultApplier.reconcile(info.paymentId(), PaymentResultSource.RECONCILE_API);
 
             assertThat(second).isEqualTo(PaymentApplyOutcome.ALREADY_APPLIED);
             assertThat(outboxRows()).hasSize(1);
@@ -355,7 +356,7 @@ class OrderConfirmedPublishIntegrationTest {
             jdbcTemplate.update("UPDATE orders SET status = 'CONFIRMED', confirmed_at = NOW(6) WHERE id = ?", info.orderId());
             PG.complete(transactionKey, "SUCCESS", null);
 
-            PaymentApplyOutcome outcome = paymentResultApplier.reconcile(info.paymentId());
+            PaymentApplyOutcome outcome = paymentResultApplier.reconcile(info.paymentId(), PaymentResultSource.RECONCILE_API);
 
             assertThat(outcome).isEqualTo(PaymentApplyOutcome.APPLIED);
             assertThat(outboxRows()).isEmpty();
@@ -391,7 +392,7 @@ class OrderConfirmedPublishIntegrationTest {
                 locked.markSending(ZonedDateTime.now());
                 paymentPort.save(locked);
             });
-            paymentResultApplier.recordUnknown(unknown.paymentId());
+            paymentResultApplier.recordUnknown(unknown.paymentId(), PaymentResultSource.DISPATCH);
             createCallsBefore = PG.createCalls();
             return key;
         }
@@ -422,7 +423,7 @@ class OrderConfirmedPublishIntegrationTest {
             arrangeUnknown(true);
             PG.failNextLookups(10);
 
-            PaymentApplyOutcome outcome = paymentResultApplier.reconcile(unknown.paymentId());
+            PaymentApplyOutcome outcome = paymentResultApplier.reconcile(unknown.paymentId(), PaymentResultSource.RECONCILE_API);
 
             assertThat(outcome).isEqualTo(PaymentApplyOutcome.NOT_FINAL);
             assertThat(unknownOrder().getStatus()).isEqualTo(OrderStatus.PAYMENT_PENDING);
@@ -435,7 +436,7 @@ class OrderConfirmedPublishIntegrationTest {
         void notFoundRecordsNothingAndDoesNotCreateAgain() {
             arrangeUnknown(false);
 
-            PaymentApplyOutcome outcome = paymentResultApplier.reconcile(unknown.paymentId());
+            PaymentApplyOutcome outcome = paymentResultApplier.reconcile(unknown.paymentId(), PaymentResultSource.RECONCILE_API);
 
             assertThat(outcome).isEqualTo(PaymentApplyOutcome.NOT_FINAL);
             assertThat(paymentPort.findById(unknown.paymentId()).orElseThrow().getStatus()).isEqualTo(PaymentStatus.UNKNOWN);
@@ -450,8 +451,8 @@ class OrderConfirmedPublishIntegrationTest {
             String key = arrangeUnknown(true);
             PG.complete(key, "SUCCESS", null);
 
-            PaymentApplyOutcome first = paymentResultApplier.reconcile(unknown.paymentId());
-            PaymentApplyOutcome second = paymentResultApplier.reconcile(unknown.paymentId());
+            PaymentApplyOutcome first = paymentResultApplier.reconcile(unknown.paymentId(), PaymentResultSource.RECONCILE_API);
+            PaymentApplyOutcome second = paymentResultApplier.reconcile(unknown.paymentId(), PaymentResultSource.RECONCILE_API);
 
             assertThat(first).isEqualTo(PaymentApplyOutcome.APPLIED);
             assertThat(second).isEqualTo(PaymentApplyOutcome.ALREADY_APPLIED);

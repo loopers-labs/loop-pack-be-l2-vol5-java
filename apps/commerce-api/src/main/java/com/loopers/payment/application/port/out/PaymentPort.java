@@ -1,6 +1,7 @@
 package com.loopers.payment.application.port.out;
 
 import com.loopers.payment.domain.Payment;
+import com.loopers.payment.domain.PaymentStatus;
 
 import java.time.ZonedDateTime;
 import java.util.List;
@@ -32,4 +33,9 @@ public interface PaymentPort {
      * 만료 대상 (P-14): PENDING·UNKNOWN 중 발송 시각(sent_at)이 sentBefore보다 이른 결제의 식별자, 발송이 이른 순.
      */
     List<Long> findExpirable(ZonedDateTime sentBefore, int limit);
+
+    /**
+     * 업무 지표 (W10 D-4): 지금 이 상태인 결제 수. (status, next_check_at) 인덱스로 센다.
+     */
+    long countByStatus(PaymentStatus status);
 }

@@ -12,6 +12,7 @@ import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import io.github.resilience4j.retry.Retry;
 import io.github.resilience4j.retry.RetryRegistry;
+import io.micrometer.observation.ObservationRegistry;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -24,8 +25,10 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
 import java.net.ConnectException;
+import java.net.SocketTimeoutException;
 import java.net.http.HttpClient;
 import java.net.http.HttpConnectTimeoutException;
+import java.net.http.HttpTimeoutException;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.List;
@@ -65,9 +68,16 @@ public class LocalPgPaymentGatewayAdapter implements PaymentGatewayPort {
     private final CircuitBreaker createCircuit;
     private final CircuitBreaker lookupCircuit;
     private final Retry lookupRetry;
+    private final ObservationRegistry observationRegistry;
 
-    public LocalPgPaymentGatewayAdapter(PgProperties properties, CircuitBreakerRegistry circuitBreakerRegistry, RetryRegistry retryRegistry) {
+    public LocalPgPaymentGatewayAdapter(
+        PgProperties properties,
+        CircuitBreakerRegistry circuitBreakerRegistry,
+        RetryRegistry retryRegistry,
+        ObservationRegistry observationRegistry
+    ) {
         this.properties = properties;
+        this.observationRegistry = observationRegistry;
         HttpClient httpClient = HttpClient.newBuilder()
             .version(HttpClient.Version.HTTP_1_1)
             .connectTimeout(properties.connectTimeout())
@@ -83,8 +93,10 @@ public class LocalPgPaymentGatewayAdapter implements PaymentGatewayPort {
     private RestClient restClient(HttpClient httpClient, Duration readTimeout) {
         JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(httpClient);
         factory.setReadTimeout(readTimeout);
+        // observationRegistry: PG 호출을 span으로 남기고 traceparent 헤더를 싣는다 (W10 D-12)
         return RestClient.builder()
             .requestFactory(factory)
+            .observationRegistry(observationRegistry)
             .baseUrl(properties.baseUrl())
             .defaultHeader(USER_HEADER, properties.userId())
             .build();
@@ -118,17 +130,18 @@ public class LocalPgPaymentGatewayAdapter implements PaymentGatewayPort {
             throw new PgRejectedException("PG가 생성을 거절했습니다: " + e.getStatusCode().value(), e);
         } catch (HttpServerErrorException e) {
             log.warn("PG 생성 결과를 모릅니다 (5xx {}): {}", e.getStatusCode().value(), request.providerOrderId());
-            throw new PgUnknownResultException("PG 생성 응답이 5xx입니다: " + e.getStatusCode().value(), e);
+            throw new PgUnknownResultException(PgUnknownResultException.Reason.SERVER_ERROR, "PG 생성 응답이 5xx입니다: " + e.getStatusCode().value(), e);
         } catch (ResourceAccessException e) {
             if (isNotSent(e)) {
                 log.warn("PG에 연결하지 못해 보내지 않았습니다: {}", request.providerOrderId());
                 throw new PgNotSentException("PG에 연결하지 못했습니다", e);
             }
-            log.warn("PG 생성 결과를 모릅니다 (읽기 실패): {}", request.providerOrderId());
-            throw new PgUnknownResultException("PG 생성 응답을 받지 못했습니다", e);
+            PgUnknownResultException.Reason reason = isReadTimeout(e) ? PgUnknownResultException.Reason.READ_TIMEOUT : PgUnknownResultException.Reason.READ_FAILED;
+            log.warn("PG 생성 결과를 모릅니다 ({}): {}", reason, request.providerOrderId());
+            throw new PgUnknownResultException(reason, "PG 생성 응답을 받지 못했습니다", e);
         } catch (RestClientException | IllegalStateException e) {
             log.warn("PG 생성 결과를 모릅니다 (해석 불가): {}", request.providerOrderId());
-            throw new PgUnknownResultException("PG 생성 응답을 해석하지 못했습니다", e);
+            throw new PgUnknownResultException(PgUnknownResultException.Reason.UNREADABLE, "PG 생성 응답을 해석하지 못했습니다", e);
         }
     }
 
@@ -196,6 +209,18 @@ public class LocalPgPaymentGatewayAdapter implements PaymentGatewayPort {
             log.warn("PG 조회 실패: {}", e.getMessage());
             throw new PgLookupUnavailableException(e.getMessage(), e);
         }
+    }
+
+    /**
+     * 요청은 나갔고 응답을 기다리다 읽기 timeout이 끝났다 (W10 D-5 ② cause=READ_TIMEOUT). 연결 timeout은 isNotSent가 먼저 가른다.
+     */
+    private static boolean isReadTimeout(Throwable e) {
+        for (Throwable cause = e; cause != null; cause = cause.getCause()) {
+            if (cause instanceof HttpTimeoutException || cause instanceof SocketTimeoutException) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

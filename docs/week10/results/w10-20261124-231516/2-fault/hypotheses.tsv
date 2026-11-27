@@ -1,0 +1,4 @@
+가설	예상	실제	판정
+1. PG가 아직 처리 중	PG 조회 PENDING	PG 조회 SUCCESS 3/3	기각
+2. PG 성공 응답을 잃음	② UNKNOWN cause=READ_TIMEOUT · ⑤ 없음 · PG 호출 span ≥ 3초	② READ_TIMEOUT 3/3 · ⑤ 0줄 · 느린 PG span 3/3	지지
+3. 성공 조회 뒤 내부 반영 실패	② ACCEPTED · ⑤ 있음	② ACCEPTED 0/3 · ⑤ 0줄	기각

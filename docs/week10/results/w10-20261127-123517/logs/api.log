@@ -1,0 +1,449 @@
+
+  .   ____          _            __ _ _
+ /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
+( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
+ \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
+  '  |____| .__|_| |_|_| |_\__, | / / / /
+ =========|_|==============|___/=/_/_/_/
+
+ :: Spring Boot ::                (v3.4.4)
+
+2026-11-27T12:36:27.960+09:00  INFO 88119 --- [commerce-api] [           main] [                                                 ] com.loopers.CommerceApiApplication       : Starting CommerceApiApplication vef6090fe using Java 21.0.13 with PID 88119 (/Users/tanonkim/Documents/loopers/loop-pack-be-l2-vol5-java-claude/apps/commerce-api/build/libs/commerce-api-ef6090fe.jar started by tanonkim in /Users/tanonkim/Documents/loopers/loop-pack-be-l2-vol5-java-claude)
+2026-11-27T12:36:27.962+09:00 DEBUG 88119 --- [commerce-api] [           main] [                                                 ] com.loopers.CommerceApiApplication       : Running with Spring Boot v3.4.4, Spring v6.2.5
+2026-11-27T12:36:27.962+09:00  INFO 88119 --- [commerce-api] [           main] [                                                 ] com.loopers.CommerceApiApplication       : The following 1 profile is active: "local"
+2026-11-27T12:36:28.506+09:00  INFO 88119 --- [commerce-api] [           main] [                                                 ] .s.d.r.c.RepositoryConfigurationDelegate : Multiple Spring Data modules found, entering strict repository configuration mode
+2026-11-27T12:36:28.506+09:00  INFO 88119 --- [commerce-api] [           main] [                                                 ] .s.d.r.c.RepositoryConfigurationDelegate : Bootstrapping Spring Data JPA repositories in DEFAULT mode.
+2026-11-27T12:36:28.624+09:00  INFO 88119 --- [commerce-api] [           main] [                                                 ] .s.d.r.c.RepositoryConfigurationDelegate : Finished Spring Data repository scanning in 113 ms. Found 16 JPA repository interfaces.
+2026-11-27T12:36:29.691+09:00  INFO 88119 --- [commerce-api] [           main] [                                                 ] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat initialized with port 18080 (http)
+2026-11-27T12:36:29.701+09:00  INFO 88119 --- [commerce-api] [           main] [                                                 ] o.apache.catalina.core.StandardService   : Starting service [Tomcat]
+2026-11-27T12:36:29.701+09:00  INFO 88119 --- [commerce-api] [           main] [                                                 ] o.apache.catalina.core.StandardEngine    : Starting Servlet engine: [Apache Tomcat/10.1.39]
+2026-11-27T12:36:29.722+09:00  INFO 88119 --- [commerce-api] [           main] [                                                 ] o.a.c.c.C.[Tomcat].[localhost].[/]       : Initializing Spring embedded WebApplicationContext
+2026-11-27T12:36:29.723+09:00  INFO 88119 --- [commerce-api] [           main] [                                                 ] w.s.c.ServletWebServerApplicationContext : Root WebApplicationContext: initialization completed in 1736 ms
+2026-11-27T12:36:30.172+09:00  INFO 88119 --- [commerce-api] [           main] [                                                 ] com.zaxxer.hikari.HikariDataSource       : mysql-main-pool - Starting...
+2026-11-27T12:36:30.444+09:00  INFO 88119 --- [commerce-api] [           main] [                                                 ] com.zaxxer.hikari.pool.HikariPool        : mysql-main-pool - Added connection com.mysql.cj.jdbc.ConnectionImpl@978475b
+2026-11-27T12:36:30.445+09:00  INFO 88119 --- [commerce-api] [           main] [                                                 ] com.zaxxer.hikari.HikariDataSource       : mysql-main-pool - Start completed.
+2026-11-27T12:36:30.541+09:00  INFO 88119 --- [commerce-api] [           main] [                                                 ] o.hibernate.jpa.internal.util.LogHelper  : HHH000204: Processing PersistenceUnitInfo [name: default]
+2026-11-27T12:36:30.596+09:00  INFO 88119 --- [commerce-api] [           main] [                                                 ] org.hibernate.Version                    : HHH000412: Hibernate ORM core version 6.6.11.Final
+2026-11-27T12:36:30.622+09:00  INFO 88119 --- [commerce-api] [           main] [                                                 ] o.h.c.internal.RegionFactoryInitiator    : HHH000026: Second-level cache disabled
+2026-11-27T12:36:30.832+09:00  INFO 88119 --- [commerce-api] [           main] [                                                 ] o.s.o.j.p.SpringPersistenceUnitInfo      : No LoadTimeWeaver setup: ignoring JPA class transformer
+2026-11-27T12:36:30.909+09:00  INFO 88119 --- [commerce-api] [           main] [                                                 ] org.hibernate.orm.connections.pooling    : HHH10001005: Database info:
+	Database JDBC URL [Connecting through datasource 'HikariDataSource (mysql-main-pool)']
+	Database driver: undefined/unknown
+	Database version: 8.0.46
+	Autocommit mode: undefined/unknown
+	Isolation level: undefined/unknown
+	Minimum pool size: undefined/unknown
+	Maximum pool size: undefined/unknown
+2026-11-27T12:36:31.744+09:00  INFO 88119 --- [commerce-api] [           main] [                                                 ] o.h.e.t.j.p.i.JtaPlatformInitiator       : HHH000489: No JTA platform available (set 'hibernate.transaction.jta.platform' to enable JTA platform integration)
+2026-11-27T12:36:32.316+09:00  INFO 88119 --- [commerce-api] [           main] [                                                 ] j.LocalContainerEntityManagerFactoryBean : Initialized JPA EntityManagerFactory for persistence unit 'default'
+2026-11-27T12:36:32.768+09:00  INFO 88119 --- [commerce-api] [           main] [                                                 ] o.s.d.j.r.query.QueryEnhancerFactory     : Hibernate is in classpath; If applicable, HQL parser will be used.
+2026-11-27T12:36:34.822+09:00  WARN 88119 --- [commerce-api] [           main] [                                                 ] .s.s.UserDetailsServiceAutoConfiguration : 
+
+Using generated security password: [가림]
+
+This generated password is for development use only. Your security configuration must be updated before running your application in production.
+
+2026-11-27T12:36:34.835+09:00  INFO 88119 --- [commerce-api] [           main] [                                                 ] r$InitializeUserDetailsManagerConfigurer : Global AuthenticationManager configured with UserDetailsService bean with name inMemoryUserDetailsManager
+2026-11-27T12:36:36.170+09:00  INFO 88119 --- [commerce-api] [           main] [                                                 ] o.a.k.clients.admin.AdminClientConfig    : AdminClientConfig values: 
+	auto.include.jmx.reporter = true
+	bootstrap.controllers = []
+	bootstrap.servers = [localhost:39292, localhost:39293, localhost:39294]
+	client.dns.lookup = use_all_dns_ips
+	client.id = commerce-api
+	connections.max.idle.ms = 300000
+	default.api.timeout.ms = 60000
+	enable.metrics.push = true
+	metadata.max.age.ms = 300000
+	metadata.recovery.strategy = none
+	metric.reporters = []
+	metrics.num.samples = 2
+	metrics.recording.level = INFO
+	metrics.sample.window.ms = 30000
+	receive.buffer.bytes = 65536
+	reconnect.backoff.max.ms = 1000
+	reconnect.backoff.ms = 50
+	request.timeout.ms = 20000
+	retries = 2147483647
+	retry.backoff.max.ms = 1000
+	retry.backoff.ms = 500
+	sasl.client.callback.handler.class = null
+	sasl.jaas.config = null
+	sasl.kerberos.kinit.cmd = /usr/bin/kinit
+	sasl.kerberos.min.time.before.relogin = 60000
+	sasl.kerberos.service.name = null
+	sasl.kerberos.ticket.renew.jitter = 0.05
+	sasl.kerberos.ticket.renew.window.factor = 0.8
+	sasl.login.callback.handler.class = null
+	sasl.login.class = null
+	sasl.login.connect.timeout.ms = null
+	sasl.login.read.timeout.ms = null
+	sasl.login.refresh.buffer.seconds = 300
+	sasl.login.refresh.min.period.seconds = 60
+	sasl.login.refresh.window.factor = 0.8
+	sasl.login.refresh.window.jitter = 0.05
+	sasl.login.retry.backoff.max.ms = 10000
+	sasl.login.retry.backoff.ms = 100
+	sasl.mechanism = GSSAPI
+	sasl.oauthbearer.clock.skew.seconds = 30
+	sasl.oauthbearer.expected.audience = null
+	sasl.oauthbearer.expected.issuer = null
+	sasl.oauthbearer.jwks.endpoint.refresh.ms = 3600000
+	sasl.oauthbearer.jwks.endpoint.retry.backoff.max.ms = 10000
+	sasl.oauthbearer.jwks.endpoint.retry.backoff.ms = 100
+	sasl.oauthbearer.jwks.endpoint.url = null
+	sasl.oauthbearer.scope.claim.name = scope
+	sasl.oauthbearer.sub.claim.name = sub
+	sasl.oauthbearer.token.endpoint.url = null
+	security.protocol = PLAINTEXT
+	security.providers = null
+	send.buffer.bytes = 131072
+	socket.connection.setup.timeout.max.ms = 30000
+	socket.connection.setup.timeout.ms = 10000
+	ssl.cipher.suites = null
+	ssl.enabled.protocols = [TLSv1.2, TLSv1.3]
+	ssl.endpoint.identification.algorithm = https
+	ssl.engine.factory.class = null
+	ssl.key.password = null
+	ssl.keymanager.algorithm = SunX509
+	ssl.keystore.certificate.chain = null
+	ssl.keystore.key = null
+	ssl.keystore.location = null
+	ssl.keystore.password = null
+	ssl.keystore.type = JKS
+	ssl.protocol = TLSv1.3
+	ssl.provider = null
+	ssl.secure.random.implementation = null
+	ssl.trustmanager.algorithm = PKIX
+	ssl.truststore.certificates = null
+	ssl.truststore.location = null
+	ssl.truststore.password = null
+	ssl.truststore.type = JKS
+
+2026-11-27T12:36:36.250+09:00  INFO 88119 --- [commerce-api] [           main] [                                                 ] o.a.k.clients.admin.AdminClientConfig    : These configurations '[auto.create.topics.enable, auto.register.schemas, use.latest.version, spring.json.add.type.headers, auto.offset.reset]' were supplied but are not used yet.
+2026-11-27T12:36:36.251+09:00  INFO 88119 --- [commerce-api] [           main] [                                                 ] o.a.kafka.common.utils.AppInfoParser     : Kafka version: 3.8.1
+2026-11-27T12:36:36.251+09:00  INFO 88119 --- [commerce-api] [           main] [                                                 ] o.a.kafka.common.utils.AppInfoParser     : Kafka commitId: 70d6ff42debf7e17
+2026-11-27T12:36:36.251+09:00  INFO 88119 --- [commerce-api] [           main] [                                                 ] o.a.kafka.common.utils.AppInfoParser     : Kafka startTimeMs: 1795750596250
+2026-11-27T12:36:36.471+09:00  INFO 88119 --- [commerce-api] [ | commerce-api] [                                                 ] o.a.kafka.common.utils.AppInfoParser     : App info kafka.admin.client for commerce-api unregistered
+2026-11-27T12:36:36.474+09:00  INFO 88119 --- [commerce-api] [ | commerce-api] [                                                 ] o.apache.kafka.common.metrics.Metrics    : Metrics scheduler closed
+2026-11-27T12:36:36.474+09:00  INFO 88119 --- [commerce-api] [ | commerce-api] [                                                 ] o.apache.kafka.common.metrics.Metrics    : Closing reporter org.apache.kafka.common.metrics.JmxReporter
+2026-11-27T12:36:36.474+09:00  INFO 88119 --- [commerce-api] [ | commerce-api] [                                                 ] o.apache.kafka.common.metrics.Metrics    : Metrics reporters closed
+2026-11-27T12:36:36.483+09:00  INFO 88119 --- [commerce-api] [           main] [                                                 ] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat started on port 18080 (http) with context path '/'
+2026-11-27T12:36:36.533+09:00  INFO 88119 --- [commerce-api] [           main] [                                                 ] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat initialized with port 18081 (http)
+2026-11-27T12:36:36.533+09:00  INFO 88119 --- [commerce-api] [           main] [                                                 ] o.apache.catalina.core.StandardService   : Starting service [Tomcat]
+2026-11-27T12:36:36.534+09:00  INFO 88119 --- [commerce-api] [           main] [                                                 ] o.apache.catalina.core.StandardEngine    : Starting Servlet engine: [Apache Tomcat/10.1.39]
+2026-11-27T12:36:36.536+09:00  INFO 88119 --- [commerce-api] [           main] [                                                 ] o.a.c.c.C.[Tomcat-1].[localhost].[/]     : Initializing Spring embedded WebApplicationContext
+2026-11-27T12:36:36.536+09:00  INFO 88119 --- [commerce-api] [           main] [                                                 ] w.s.c.ServletWebServerApplicationContext : Root WebApplicationContext: initialization completed in 50 ms
+2026-11-27T12:36:36.543+09:00  INFO 88119 --- [commerce-api] [           main] [                                                 ] o.s.b.a.e.web.EndpointLinksResolver      : Exposing 3 endpoints beneath base path '/actuator'
+2026-11-27T12:36:36.564+09:00  INFO 88119 --- [commerce-api] [           main] [                                                 ] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat started on port 18081 (http) with context path '/'
+2026-11-27T12:36:36.584+09:00  INFO 88119 --- [commerce-api] [           main] [                                                 ] com.loopers.CommerceApiApplication       : Started CommerceApiApplication in 9.013 seconds (process running for 9.315)
+2026-11-27T12:36:37.558+09:00  INFO 88119 --- [commerce-api] [.1-18081-exec-1] [                                                 ] o.a.c.c.C.[Tomcat-1].[localhost].[/]     : Initializing Spring DispatcherServlet 'dispatcherServletRegistration'
+2026-11-27T12:36:37.558+09:00  INFO 88119 --- [commerce-api] [.1-18081-exec-1] [                                                 ] o.s.web.servlet.DispatcherServlet        : Initializing Servlet 'dispatcherServletRegistration'
+2026-11-27T12:36:37.559+09:00  INFO 88119 --- [commerce-api] [.1-18081-exec-1] [                                                 ] o.s.web.servlet.DispatcherServlet        : Completed initialization in 0 ms
+2026-11-27T12:36:45.495+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-1] [                                                 ] o.a.c.c.C.[Tomcat].[localhost].[/]       : Initializing Spring DispatcherServlet 'dispatcherServlet'
+2026-11-27T12:36:45.495+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-1] [                                                 ] o.s.web.servlet.DispatcherServlet        : Initializing Servlet 'dispatcherServlet'
+2026-11-27T12:36:45.497+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-1] [                                                 ] o.s.web.servlet.DispatcherServlet        : Completed initialization in 2 ms
+2026-11-27T12:36:45.987+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-1] [d80e1bf543f31e32880fb0f6bba841a2-46ce7521e07b131e] c.l.p.application.PaymentRequestService  : payment.requested orderId=1 paymentId=1 attemptKey=w10-w10-20261127-123517-1 providerOrderId=LP-ORD-0000000001 amount=10000
+2026-11-27T12:36:46.053+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-3] [3c7f82c9040d7442a1f6040463c9f5d0-de9b72c36f091847] c.l.p.application.PaymentRequestService  : payment.requested orderId=2 paymentId=2 attemptKey=w10-w10-20261127-123517-2 providerOrderId=LP-ORD-0000000002 amount=10000
+2026-11-27T12:36:46.067+09:00  INFO 88119 --- [commerce-api] [ment-dispatch-1] [d80e1bf543f31e32880fb0f6bba841a2-46ce7521e07b131e] c.l.payment.application.PaymentSender    : payment.create.result orderId=1 paymentId=1 providerOrderId=LP-ORD-0000000001 result=ACCEPTED cause=- elapsedMs=56 transactionKey=20261127:TR:8ff8d58
+2026-11-27T12:36:46.068+09:00  INFO 88119 --- [commerce-api] [ment-dispatch-2] [3c7f82c9040d7442a1f6040463c9f5d0-de9b72c36f091847] c.l.payment.application.PaymentSender    : payment.create.result orderId=2 paymentId=2 providerOrderId=LP-ORD-0000000002 result=ACCEPTED cause=- elapsedMs=2 transactionKey=20261127:TR:24b24e1
+2026-11-27T12:36:46.078+09:00  INFO 88119 --- [commerce-api] [ment-dispatch-2] [3c7f82c9040d7442a1f6040463c9f5d0-de9b72c36f091847] c.l.p.application.PaymentResultApplier   : payment.apply orderId=2 paymentId=2 providerOrderId=LP-ORD-0000000002 from=SENDING to=PENDING outcome=NOT_FINAL source=DISPATCH
+2026-11-27T12:36:46.078+09:00  INFO 88119 --- [commerce-api] [ment-dispatch-1] [d80e1bf543f31e32880fb0f6bba841a2-46ce7521e07b131e] c.l.p.application.PaymentResultApplier   : payment.apply orderId=1 paymentId=1 providerOrderId=LP-ORD-0000000001 from=SENDING to=PENDING outcome=NOT_FINAL source=DISPATCH
+2026-11-27T12:36:46.093+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-5] [5a060cdd4c8a37c04ae364ccbd192989-78ea10ab238454df] c.l.p.application.PaymentRequestService  : payment.requested orderId=3 paymentId=3 attemptKey=w10-w10-20261127-123517-3 providerOrderId=LP-ORD-0000000003 amount=10000
+2026-11-27T12:36:46.105+09:00  INFO 88119 --- [commerce-api] [ment-dispatch-3] [5a060cdd4c8a37c04ae364ccbd192989-78ea10ab238454df] c.l.payment.application.PaymentSender    : payment.create.result orderId=3 paymentId=3 providerOrderId=LP-ORD-0000000003 result=ACCEPTED cause=- elapsedMs=2 transactionKey=20261127:TR:3deeda3
+2026-11-27T12:36:46.111+09:00  INFO 88119 --- [commerce-api] [ment-dispatch-3] [5a060cdd4c8a37c04ae364ccbd192989-78ea10ab238454df] c.l.p.application.PaymentResultApplier   : payment.apply orderId=3 paymentId=3 providerOrderId=LP-ORD-0000000003 from=SENDING to=PENDING outcome=NOT_FINAL source=DISPATCH
+2026-11-27T12:36:46.128+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-7] [cbb97ae5c3e38c872812d67df77a473a-25253b902556edf1] c.l.p.application.PaymentRequestService  : payment.requested orderId=4 paymentId=4 attemptKey=w10-w10-20261127-123517-4 providerOrderId=LP-ORD-0000000004 amount=10000
+2026-11-27T12:36:46.138+09:00  INFO 88119 --- [commerce-api] [ment-dispatch-4] [cbb97ae5c3e38c872812d67df77a473a-25253b902556edf1] c.l.payment.application.PaymentSender    : payment.create.result orderId=4 paymentId=4 providerOrderId=LP-ORD-0000000004 result=ACCEPTED cause=- elapsedMs=1 transactionKey=20261127:TR:fc0f565
+2026-11-27T12:36:46.145+09:00  INFO 88119 --- [commerce-api] [ment-dispatch-4] [cbb97ae5c3e38c872812d67df77a473a-25253b902556edf1] c.l.p.application.PaymentResultApplier   : payment.apply orderId=4 paymentId=4 providerOrderId=LP-ORD-0000000004 from=SENDING to=PENDING outcome=NOT_FINAL source=DISPATCH
+2026-11-27T12:36:46.164+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-9] [68849afae18c9120f85c0a84f8556438-d9769de27a254790] c.l.p.application.PaymentRequestService  : payment.requested orderId=5 paymentId=5 attemptKey=w10-w10-20261127-123517-5 providerOrderId=LP-ORD-0000000005 amount=10000
+2026-11-27T12:36:46.176+09:00  INFO 88119 --- [commerce-api] [ment-dispatch-5] [68849afae18c9120f85c0a84f8556438-d9769de27a254790] c.l.payment.application.PaymentSender    : payment.create.result orderId=5 paymentId=5 providerOrderId=LP-ORD-0000000005 result=ACCEPTED cause=- elapsedMs=2 transactionKey=20261127:TR:ffc79c4
+2026-11-27T12:36:46.184+09:00  INFO 88119 --- [commerce-api] [ment-dispatch-5] [68849afae18c9120f85c0a84f8556438-d9769de27a254790] c.l.p.application.PaymentResultApplier   : payment.apply orderId=5 paymentId=5 providerOrderId=LP-ORD-0000000005 from=SENDING to=PENDING outcome=NOT_FINAL source=DISPATCH
+2026-11-27T12:36:46.204+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-1] [e75146410378b6e1603d32a392a107d2-eac5d300de4f28b9] c.l.p.application.PaymentRequestService  : payment.requested orderId=6 paymentId=6 attemptKey=w10-w10-20261127-123517-6 providerOrderId=LP-ORD-0000000006 amount=10000
+2026-11-27T12:36:46.214+09:00  INFO 88119 --- [commerce-api] [ment-dispatch-6] [e75146410378b6e1603d32a392a107d2-eac5d300de4f28b9] c.l.payment.application.PaymentSender    : payment.create.result orderId=6 paymentId=6 providerOrderId=LP-ORD-0000000006 result=ACCEPTED cause=- elapsedMs=2 transactionKey=20261127:TR:a899684
+2026-11-27T12:36:46.221+09:00  INFO 88119 --- [commerce-api] [ment-dispatch-6] [e75146410378b6e1603d32a392a107d2-eac5d300de4f28b9] c.l.p.application.PaymentResultApplier   : payment.apply orderId=6 paymentId=6 providerOrderId=LP-ORD-0000000006 from=SENDING to=PENDING outcome=NOT_FINAL source=DISPATCH
+2026-11-27T12:36:46.240+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-3] [ede54f329012bd7ec52aa1bf9f36fc96-fd24c5e3ea7d8965] c.l.p.application.PaymentRequestService  : payment.requested orderId=7 paymentId=7 attemptKey=w10-w10-20261127-123517-7 providerOrderId=LP-ORD-0000000007 amount=10000
+2026-11-27T12:36:46.250+09:00  INFO 88119 --- [commerce-api] [ment-dispatch-7] [ede54f329012bd7ec52aa1bf9f36fc96-fd24c5e3ea7d8965] c.l.payment.application.PaymentSender    : payment.create.result orderId=7 paymentId=7 providerOrderId=LP-ORD-0000000007 result=ACCEPTED cause=- elapsedMs=2 transactionKey=20261127:TR:38bc1c1
+2026-11-27T12:36:46.256+09:00  INFO 88119 --- [commerce-api] [ment-dispatch-7] [ede54f329012bd7ec52aa1bf9f36fc96-fd24c5e3ea7d8965] c.l.p.application.PaymentResultApplier   : payment.apply orderId=7 paymentId=7 providerOrderId=LP-ORD-0000000007 from=SENDING to=PENDING outcome=NOT_FINAL source=DISPATCH
+2026-11-27T12:36:46.276+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-5] [ba9e91c1a88054b03172c149aa3504c2-e906f27070f95535] c.l.p.application.PaymentRequestService  : payment.requested orderId=8 paymentId=8 attemptKey=w10-w10-20261127-123517-8 providerOrderId=LP-ORD-0000000008 amount=10000
+2026-11-27T12:36:46.289+09:00  INFO 88119 --- [commerce-api] [ment-dispatch-8] [ba9e91c1a88054b03172c149aa3504c2-e906f27070f95535] c.l.payment.application.PaymentSender    : payment.create.result orderId=8 paymentId=8 providerOrderId=LP-ORD-0000000008 result=ACCEPTED cause=- elapsedMs=2 transactionKey=20261127:TR:b76a926
+2026-11-27T12:36:46.295+09:00  INFO 88119 --- [commerce-api] [ment-dispatch-8] [ba9e91c1a88054b03172c149aa3504c2-e906f27070f95535] c.l.p.application.PaymentResultApplier   : payment.apply orderId=8 paymentId=8 providerOrderId=LP-ORD-0000000008 from=SENDING to=PENDING outcome=NOT_FINAL source=DISPATCH
+2026-11-27T12:36:46.316+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-7] [97cfc20b0169b545a645617f173e1382-a162a0d594083c1f] c.l.p.application.PaymentRequestService  : payment.requested orderId=9 paymentId=9 attemptKey=w10-w10-20261127-123517-9 providerOrderId=LP-ORD-0000000009 amount=10000
+2026-11-27T12:36:46.327+09:00  INFO 88119 --- [commerce-api] [ment-dispatch-9] [97cfc20b0169b545a645617f173e1382-a162a0d594083c1f] c.l.payment.application.PaymentSender    : payment.create.result orderId=9 paymentId=9 providerOrderId=LP-ORD-0000000009 result=ACCEPTED cause=- elapsedMs=2 transactionKey=20261127:TR:9e561c3
+2026-11-27T12:36:46.336+09:00  INFO 88119 --- [commerce-api] [ment-dispatch-9] [97cfc20b0169b545a645617f173e1382-a162a0d594083c1f] c.l.p.application.PaymentResultApplier   : payment.apply orderId=9 paymentId=9 providerOrderId=LP-ORD-0000000009 from=SENDING to=PENDING outcome=NOT_FINAL source=DISPATCH
+2026-11-27T12:36:46.355+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-9] [3cf3df056dbde5e8d0e4be4c5844b3b2-80c856b81dec1d56] c.l.p.application.PaymentRequestService  : payment.requested orderId=10 paymentId=10 attemptKey=w10-w10-20261127-123517-10 providerOrderId=LP-ORD-0000000010 amount=10000
+2026-11-27T12:36:46.366+09:00  INFO 88119 --- [commerce-api] [ent-dispatch-10] [3cf3df056dbde5e8d0e4be4c5844b3b2-80c856b81dec1d56] c.l.payment.application.PaymentSender    : payment.create.result orderId=10 paymentId=10 providerOrderId=LP-ORD-0000000010 result=ACCEPTED cause=- elapsedMs=2 transactionKey=20261127:TR:16559a8
+2026-11-27T12:36:46.374+09:00  INFO 88119 --- [commerce-api] [ent-dispatch-10] [3cf3df056dbde5e8d0e4be4c5844b3b2-80c856b81dec1d56] c.l.p.application.PaymentResultApplier   : payment.apply orderId=10 paymentId=10 providerOrderId=LP-ORD-0000000010 from=SENDING to=PENDING outcome=NOT_FINAL source=DISPATCH
+2026-11-27T12:36:47.118+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-2] [381e7a48d3a413f09b01ab0a507323e2-72d776be7d0eb002] c.l.p.application.PaymentResultApplier   : payment.lookup.result orderId=2 paymentId=2 providerOrderId=LP-ORD-0000000002 by=TRANSACTION_KEY found=1 pgStatus=SUCCESS transactionKey=20261127:TR:24b24e1 source=CALLBACK
+2026-11-27T12:36:47.118+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-1] [7312d6c4375a44b4feb4fe05dff6171f-0ee5db8439e5f71f] c.l.p.application.PaymentResultApplier   : payment.lookup.result orderId=1 paymentId=1 providerOrderId=LP-ORD-0000000001 by=TRANSACTION_KEY found=1 pgStatus=SUCCESS transactionKey=20261127:TR:8ff8d58 source=CALLBACK
+2026-11-27T12:36:47.124+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-3] [1a17628e764d41671e5a5f630f2b188c-4ac0d7ba9c5232a7] c.l.p.application.PaymentResultApplier   : payment.lookup.result orderId=3 paymentId=3 providerOrderId=LP-ORD-0000000003 by=TRANSACTION_KEY found=1 pgStatus=SUCCESS transactionKey=20261127:TR:3deeda3 source=CALLBACK
+2026-11-27T12:36:47.152+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-1] [7312d6c4375a44b4feb4fe05dff6171f-0ee5db8439e5f71f] c.l.p.application.PaymentResultApplier   : payment.apply orderId=1 paymentId=1 providerOrderId=LP-ORD-0000000001 from=PENDING to=SUCCESS outcome=APPLIED source=CALLBACK
+2026-11-27T12:36:47.153+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-3] [1a17628e764d41671e5a5f630f2b188c-4ac0d7ba9c5232a7] c.l.p.application.PaymentResultApplier   : payment.apply orderId=3 paymentId=3 providerOrderId=LP-ORD-0000000003 from=PENDING to=SUCCESS outcome=APPLIED source=CALLBACK
+2026-11-27T12:36:47.153+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-2] [381e7a48d3a413f09b01ab0a507323e2-72d776be7d0eb002] c.l.p.application.PaymentResultApplier   : payment.apply orderId=2 paymentId=2 providerOrderId=LP-ORD-0000000002 from=PENDING to=SUCCESS outcome=APPLIED source=CALLBACK
+2026-11-27T12:36:47.154+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-4] [97fc1c917d943ea6e48aa44e32fcfa5d-d45644c20144c93c] c.l.p.application.PaymentResultApplier   : payment.lookup.result orderId=4 paymentId=4 providerOrderId=LP-ORD-0000000004 by=TRANSACTION_KEY found=1 pgStatus=SUCCESS transactionKey=20261127:TR:fc0f565 source=CALLBACK
+2026-11-27T12:36:47.165+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-4] [97fc1c917d943ea6e48aa44e32fcfa5d-d45644c20144c93c] c.l.p.application.PaymentResultApplier   : payment.apply orderId=4 paymentId=4 providerOrderId=LP-ORD-0000000004 from=PENDING to=SUCCESS outcome=APPLIED source=CALLBACK
+2026-11-27T12:36:47.187+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-5] [fd85ab4d7e4d0a1d2553f942dc655d5e-04c35786ff51d767] c.l.p.application.PaymentResultApplier   : payment.lookup.result orderId=5 paymentId=5 providerOrderId=LP-ORD-0000000005 by=TRANSACTION_KEY found=1 pgStatus=SUCCESS transactionKey=20261127:TR:ffc79c4 source=CALLBACK
+2026-11-27T12:36:47.200+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-5] [fd85ab4d7e4d0a1d2553f942dc655d5e-04c35786ff51d767] c.l.p.application.PaymentResultApplier   : payment.apply orderId=5 paymentId=5 providerOrderId=LP-ORD-0000000005 from=PENDING to=SUCCESS outcome=APPLIED source=CALLBACK
+2026-11-27T12:36:47.225+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-6] [dcd15a1c47e2a8f8a7f31933d05f8d5c-1105c8e1624a75b6] c.l.p.application.PaymentResultApplier   : payment.lookup.result orderId=6 paymentId=6 providerOrderId=LP-ORD-0000000006 by=TRANSACTION_KEY found=1 pgStatus=SUCCESS transactionKey=20261127:TR:a899684 source=CALLBACK
+2026-11-27T12:36:47.237+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-6] [dcd15a1c47e2a8f8a7f31933d05f8d5c-1105c8e1624a75b6] c.l.p.application.PaymentResultApplier   : payment.apply orderId=6 paymentId=6 providerOrderId=LP-ORD-0000000006 from=PENDING to=SUCCESS outcome=APPLIED source=CALLBACK
+2026-11-27T12:36:47.260+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-7] [32c80286412468848b44c97d12ce4578-b31f7638d569565d] c.l.p.application.PaymentResultApplier   : payment.lookup.result orderId=7 paymentId=7 providerOrderId=LP-ORD-0000000007 by=TRANSACTION_KEY found=1 pgStatus=SUCCESS transactionKey=20261127:TR:38bc1c1 source=CALLBACK
+2026-11-27T12:36:47.276+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-7] [32c80286412468848b44c97d12ce4578-b31f7638d569565d] c.l.p.application.PaymentResultApplier   : payment.apply orderId=7 paymentId=7 providerOrderId=LP-ORD-0000000007 from=PENDING to=SUCCESS outcome=APPLIED source=CALLBACK
+2026-11-27T12:36:47.302+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-8] [f57290a1c1f509770f80a27f7c253d00-264d610387d76dc6] c.l.p.application.PaymentResultApplier   : payment.lookup.result orderId=8 paymentId=8 providerOrderId=LP-ORD-0000000008 by=TRANSACTION_KEY found=1 pgStatus=SUCCESS transactionKey=20261127:TR:b76a926 source=CALLBACK
+2026-11-27T12:36:47.315+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-8] [f57290a1c1f509770f80a27f7c253d00-264d610387d76dc6] c.l.p.application.PaymentResultApplier   : payment.apply orderId=8 paymentId=8 providerOrderId=LP-ORD-0000000008 from=PENDING to=SUCCESS outcome=APPLIED source=CALLBACK
+2026-11-27T12:36:47.339+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-9] [fa0552ef04f5cd077de06b877a246220-5bed799faa08b91b] c.l.p.application.PaymentResultApplier   : payment.lookup.result orderId=9 paymentId=9 providerOrderId=LP-ORD-0000000009 by=TRANSACTION_KEY found=1 pgStatus=SUCCESS transactionKey=20261127:TR:9e561c3 source=CALLBACK
+2026-11-27T12:36:47.351+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-9] [fa0552ef04f5cd077de06b877a246220-5bed799faa08b91b] c.l.p.application.PaymentResultApplier   : payment.apply orderId=9 paymentId=9 providerOrderId=LP-ORD-0000000009 from=PENDING to=SUCCESS outcome=APPLIED source=CALLBACK
+2026-11-27T12:36:47.380+09:00  INFO 88119 --- [commerce-api] [1-18080-exec-10] [aff19772b902e3b56c38f48ce8f401b3-9c93d84dbe4f4981] c.l.p.application.PaymentResultApplier   : payment.lookup.result orderId=10 paymentId=10 providerOrderId=LP-ORD-0000000010 by=TRANSACTION_KEY found=1 pgStatus=SUCCESS transactionKey=20261127:TR:16559a8 source=CALLBACK
+2026-11-27T12:36:47.391+09:00  INFO 88119 --- [commerce-api] [1-18080-exec-10] [aff19772b902e3b56c38f48ce8f401b3-9c93d84dbe4f4981] c.l.p.application.PaymentResultApplier   : payment.apply orderId=10 paymentId=10 providerOrderId=LP-ORD-0000000010 from=PENDING to=SUCCESS outcome=APPLIED source=CALLBACK
+2026-11-27T12:36:47.872+09:00  INFO 88119 --- [commerce-api] [   scheduling-1] [381e7a48d3a413f09b01ab0a507323e2-fde66e540bbaee84] o.a.k.clients.admin.AdminClientConfig    : AdminClientConfig values: 
+	auto.include.jmx.reporter = true
+	bootstrap.controllers = []
+	bootstrap.servers = [localhost:39292, localhost:39293, localhost:39294]
+	client.dns.lookup = use_all_dns_ips
+	client.id = commerce-api
+	connections.max.idle.ms = 300000
+	default.api.timeout.ms = 60000
+	enable.metrics.push = true
+	metadata.max.age.ms = 300000
+	metadata.recovery.strategy = none
+	metric.reporters = []
+	metrics.num.samples = 2
+	metrics.recording.level = INFO
+	metrics.sample.window.ms = 30000
+	receive.buffer.bytes = 65536
+	reconnect.backoff.max.ms = 1000
+	reconnect.backoff.ms = 50
+	request.timeout.ms = 20000
+	retries = 2147483647
+	retry.backoff.max.ms = 1000
+	retry.backoff.ms = 500
+	sasl.client.callback.handler.class = null
+	sasl.jaas.config = null
+	sasl.kerberos.kinit.cmd = /usr/bin/kinit
+	sasl.kerberos.min.time.before.relogin = 60000
+	sasl.kerberos.service.name = null
+	sasl.kerberos.ticket.renew.jitter = 0.05
+	sasl.kerberos.ticket.renew.window.factor = 0.8
+	sasl.login.callback.handler.class = null
+	sasl.login.class = null
+	sasl.login.connect.timeout.ms = null
+	sasl.login.read.timeout.ms = null
+	sasl.login.refresh.buffer.seconds = 300
+	sasl.login.refresh.min.period.seconds = 60
+	sasl.login.refresh.window.factor = 0.8
+	sasl.login.refresh.window.jitter = 0.05
+	sasl.login.retry.backoff.max.ms = 10000
+	sasl.login.retry.backoff.ms = 100
+	sasl.mechanism = GSSAPI
+	sasl.oauthbearer.clock.skew.seconds = 30
+	sasl.oauthbearer.expected.audience = null
+	sasl.oauthbearer.expected.issuer = null
+	sasl.oauthbearer.jwks.endpoint.refresh.ms = 3600000
+	sasl.oauthbearer.jwks.endpoint.retry.backoff.max.ms = 10000
+	sasl.oauthbearer.jwks.endpoint.retry.backoff.ms = 100
+	sasl.oauthbearer.jwks.endpoint.url = null
+	sasl.oauthbearer.scope.claim.name = scope
+	sasl.oauthbearer.sub.claim.name = sub
+	sasl.oauthbearer.token.endpoint.url = null
+	security.protocol = PLAINTEXT
+	security.providers = null
+	send.buffer.bytes = 131072
+	socket.connection.setup.timeout.max.ms = 30000
+	socket.connection.setup.timeout.ms = 10000
+	ssl.cipher.suites = null
+	ssl.enabled.protocols = [TLSv1.2, TLSv1.3]
+	ssl.endpoint.identification.algorithm = https
+	ssl.engine.factory.class = null
+	ssl.key.password = null
+	ssl.keymanager.algorithm = SunX509
+	ssl.keystore.certificate.chain = null
+	ssl.keystore.key = null
+	ssl.keystore.location = null
+	ssl.keystore.password = null
+	ssl.keystore.type = JKS
+	ssl.protocol = TLSv1.3
+	ssl.provider = null
+	ssl.secure.random.implementation = null
+	ssl.trustmanager.algorithm = PKIX
+	ssl.truststore.certificates = null
+	ssl.truststore.location = null
+	ssl.truststore.password = null
+	ssl.truststore.type = JKS
+
+2026-11-27T12:36:47.874+09:00  INFO 88119 --- [commerce-api] [   scheduling-1] [381e7a48d3a413f09b01ab0a507323e2-fde66e540bbaee84] o.a.k.clients.admin.AdminClientConfig    : These configurations '[auto.create.topics.enable, auto.register.schemas, use.latest.version, spring.json.add.type.headers, auto.offset.reset]' were supplied but are not used yet.
+2026-11-27T12:36:47.874+09:00  INFO 88119 --- [commerce-api] [   scheduling-1] [381e7a48d3a413f09b01ab0a507323e2-fde66e540bbaee84] o.a.kafka.common.utils.AppInfoParser     : Kafka version: 3.8.1
+2026-11-27T12:36:47.874+09:00  INFO 88119 --- [commerce-api] [   scheduling-1] [381e7a48d3a413f09b01ab0a507323e2-fde66e540bbaee84] o.a.kafka.common.utils.AppInfoParser     : Kafka commitId: 70d6ff42debf7e17
+2026-11-27T12:36:47.874+09:00  INFO 88119 --- [commerce-api] [   scheduling-1] [381e7a48d3a413f09b01ab0a507323e2-fde66e540bbaee84] o.a.kafka.common.utils.AppInfoParser     : Kafka startTimeMs: 1795750607874
+2026-11-27T12:36:47.882+09:00  INFO 88119 --- [commerce-api] [ | commerce-api] [                                                 ] o.a.kafka.common.utils.AppInfoParser     : App info kafka.admin.client for commerce-api unregistered
+2026-11-27T12:36:47.883+09:00  INFO 88119 --- [commerce-api] [ | commerce-api] [                                                 ] o.apache.kafka.common.metrics.Metrics    : Metrics scheduler closed
+2026-11-27T12:36:47.883+09:00  INFO 88119 --- [commerce-api] [ | commerce-api] [                                                 ] o.apache.kafka.common.metrics.Metrics    : Closing reporter org.apache.kafka.common.metrics.JmxReporter
+2026-11-27T12:36:47.884+09:00  INFO 88119 --- [commerce-api] [ | commerce-api] [                                                 ] o.apache.kafka.common.metrics.Metrics    : Metrics reporters closed
+2026-11-27T12:36:47.892+09:00  INFO 88119 --- [commerce-api] [   scheduling-1] [381e7a48d3a413f09b01ab0a507323e2-46d6df6f495afe6d] o.a.k.clients.producer.ProducerConfig    : ProducerConfig values: 
+	acks = -1
+	auto.include.jmx.reporter = true
+	batch.size = 16384
+	bootstrap.servers = [localhost:39292, localhost:39293, localhost:39294]
+	buffer.memory = 33554432
+	client.dns.lookup = use_all_dns_ips
+	client.id = commerce-api-1
+	compression.gzip.level = -1
+	compression.lz4.level = 9
+	compression.type = none
+	compression.zstd.level = 3
+	connections.max.idle.ms = 540000
+	delivery.timeout.ms = 30000
+	enable.idempotence = true
+	enable.metrics.push = true
+	interceptor.classes = []
+	key.serializer = class org.apache.kafka.common.serialization.StringSerializer
+	linger.ms = 0
+	max.block.ms = 1000
+	max.in.flight.requests.per.connection = 5
+	max.request.size = 1048576
+	metadata.max.age.ms = 300000
+	metadata.max.idle.ms = 300000
+	metadata.recovery.strategy = none
+	metric.reporters = []
+	metrics.num.samples = 2
+	metrics.recording.level = INFO
+	metrics.sample.window.ms = 30000
+	partitioner.adaptive.partitioning.enable = true
+	partitioner.availability.timeout.ms = 0
+	partitioner.class = null
+	partitioner.ignore.keys = false
+	receive.buffer.bytes = 32768
+	reconnect.backoff.max.ms = 1000
+	reconnect.backoff.ms = 50
+	request.timeout.ms = 20000
+	retries = 3
+	retry.backoff.max.ms = 1000
+	retry.backoff.ms = 500
+	sasl.client.callback.handler.class = null
+	sasl.jaas.config = null
+	sasl.kerberos.kinit.cmd = /usr/bin/kinit
+	sasl.kerberos.min.time.before.relogin = 60000
+	sasl.kerberos.service.name = null
+	sasl.kerberos.ticket.renew.jitter = 0.05
+	sasl.kerberos.ticket.renew.window.factor = 0.8
+	sasl.login.callback.handler.class = null
+	sasl.login.class = null
+	sasl.login.connect.timeout.ms = null
+	sasl.login.read.timeout.ms = null
+	sasl.login.refresh.buffer.seconds = 300
+	sasl.login.refresh.min.period.seconds = 60
+	sasl.login.refresh.window.factor = 0.8
+	sasl.login.refresh.window.jitter = 0.05
+	sasl.login.retry.backoff.max.ms = 10000
+	sasl.login.retry.backoff.ms = 100
+	sasl.mechanism = GSSAPI
+	sasl.oauthbearer.clock.skew.seconds = 30
+	sasl.oauthbearer.expected.audience = null
+	sasl.oauthbearer.expected.issuer = null
+	sasl.oauthbearer.jwks.endpoint.refresh.ms = 3600000
+	sasl.oauthbearer.jwks.endpoint.retry.backoff.max.ms = 10000
+	sasl.oauthbearer.jwks.endpoint.retry.backoff.ms = 100
+	sasl.oauthbearer.jwks.endpoint.url = null
+	sasl.oauthbearer.scope.claim.name = scope
+	sasl.oauthbearer.sub.claim.name = sub
+	sasl.oauthbearer.token.endpoint.url = null
+	security.protocol = PLAINTEXT
+	security.providers = null
+	send.buffer.bytes = 131072
+	socket.connection.setup.timeout.max.ms = 30000
+	socket.connection.setup.timeout.ms = 10000
+	ssl.cipher.suites = null
+	ssl.enabled.protocols = [TLSv1.2, TLSv1.3]
+	ssl.endpoint.identification.algorithm = https
+	ssl.engine.factory.class = null
+	ssl.key.password = null
+	ssl.keymanager.algorithm = SunX509
+	ssl.keystore.certificate.chain = null
+	ssl.keystore.key = null
+	ssl.keystore.location = null
+	ssl.keystore.password = null
+	ssl.keystore.type = JKS
+	ssl.protocol = TLSv1.3
+	ssl.provider = null
+	ssl.secure.random.implementation = null
+	ssl.trustmanager.algorithm = PKIX
+	ssl.truststore.certificates = null
+	ssl.truststore.location = null
+	ssl.truststore.password = null
+	ssl.truststore.type = JKS
+	transaction.timeout.ms = 60000
+	transactional.id = null
+	value.serializer = class org.apache.kafka.common.serialization.StringSerializer
+
+2026-11-27T12:36:47.913+09:00  INFO 88119 --- [commerce-api] [   scheduling-1] [381e7a48d3a413f09b01ab0a507323e2-46d6df6f495afe6d] o.a.k.c.t.i.KafkaMetricsCollector        : initializing Kafka metrics collector
+2026-11-27T12:36:47.920+09:00  INFO 88119 --- [commerce-api] [   scheduling-1] [381e7a48d3a413f09b01ab0a507323e2-46d6df6f495afe6d] o.a.k.clients.producer.KafkaProducer     : [Producer clientId=commerce-api-1] Instantiated an idempotent producer.
+2026-11-27T12:36:47.931+09:00  INFO 88119 --- [commerce-api] [   scheduling-1] [381e7a48d3a413f09b01ab0a507323e2-46d6df6f495afe6d] o.a.k.clients.producer.ProducerConfig    : These configurations '[auto.create.topics.enable, auto.register.schemas, use.latest.version, spring.json.add.type.headers, auto.offset.reset]' were supplied but are not used yet.
+2026-11-27T12:36:47.931+09:00  INFO 88119 --- [commerce-api] [   scheduling-1] [381e7a48d3a413f09b01ab0a507323e2-46d6df6f495afe6d] o.a.kafka.common.utils.AppInfoParser     : Kafka version: 3.8.1
+2026-11-27T12:36:47.931+09:00  INFO 88119 --- [commerce-api] [   scheduling-1] [381e7a48d3a413f09b01ab0a507323e2-46d6df6f495afe6d] o.a.kafka.common.utils.AppInfoParser     : Kafka commitId: 70d6ff42debf7e17
+2026-11-27T12:36:47.931+09:00  INFO 88119 --- [commerce-api] [   scheduling-1] [381e7a48d3a413f09b01ab0a507323e2-46d6df6f495afe6d] o.a.kafka.common.utils.AppInfoParser     : Kafka startTimeMs: 1795750607931
+2026-11-27T12:36:47.939+09:00  INFO 88119 --- [commerce-api] [ commerce-api-1] [                                                 ] org.apache.kafka.clients.Metadata        : [Producer clientId=commerce-api-1] Cluster ID: bG9vcGVyc3cxMGthZrYaAA
+2026-11-27T12:36:48.150+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-1] [046d5461bb0341437bde6d3068072d8a-de78e7e673ecf0ff] c.l.p.application.PaymentRequestService  : payment.requested orderId=11 paymentId=11 attemptKey=w10-w10-20261127-123517-11 providerOrderId=LP-ORD-0000000011 amount=10000
+2026-11-27T12:36:48.163+09:00  INFO 88119 --- [commerce-api] [ent-dispatch-11] [046d5461bb0341437bde6d3068072d8a-de78e7e673ecf0ff] c.l.payment.application.PaymentSender    : payment.create.result orderId=11 paymentId=11 providerOrderId=LP-ORD-0000000011 result=ACCEPTED cause=- elapsedMs=2 transactionKey=20261127:TR:2ad1fb7
+2026-11-27T12:36:48.170+09:00  INFO 88119 --- [commerce-api] [ent-dispatch-11] [046d5461bb0341437bde6d3068072d8a-de78e7e673ecf0ff] c.l.p.application.PaymentResultApplier   : payment.apply orderId=11 paymentId=11 providerOrderId=LP-ORD-0000000011 from=SENDING to=PENDING outcome=NOT_FINAL source=DISPATCH
+2026-11-27T12:36:48.188+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-2] [12c5acdde85df896ae3fcc4cf18647e0-049352b47c129c86] c.l.p.application.PaymentRequestService  : payment.requested orderId=12 paymentId=12 attemptKey=w10-w10-20261127-123517-12 providerOrderId=LP-ORD-0000000012 amount=10000
+2026-11-27T12:36:48.225+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-5] [10454765ba4d8994fcbdd38226269dcc-af9b90fa7cff3c47] c.l.p.application.PaymentRequestService  : payment.requested orderId=13 paymentId=13 attemptKey=w10-w10-20261127-123517-13 providerOrderId=LP-ORD-0000000013 amount=10000
+2026-11-27T12:36:48.235+09:00  INFO 88119 --- [commerce-api] [ent-dispatch-13] [10454765ba4d8994fcbdd38226269dcc-af9b90fa7cff3c47] c.l.payment.application.PaymentSender    : payment.create.result orderId=13 paymentId=13 providerOrderId=LP-ORD-0000000013 result=ACCEPTED cause=- elapsedMs=1 transactionKey=20261127:TR:a85c1aa
+2026-11-27T12:36:48.244+09:00  INFO 88119 --- [commerce-api] [ent-dispatch-13] [10454765ba4d8994fcbdd38226269dcc-af9b90fa7cff3c47] c.l.p.application.PaymentResultApplier   : payment.apply orderId=13 paymentId=13 providerOrderId=LP-ORD-0000000013 from=SENDING to=PENDING outcome=NOT_FINAL source=DISPATCH
+2026-11-27T12:36:48.259+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-7] [1bd8f100ea85ffc309661bdc146cc4d1-40a4aed83d4db623] c.l.p.application.PaymentRequestService  : payment.requested orderId=14 paymentId=14 attemptKey=w10-w10-20261127-123517-14 providerOrderId=LP-ORD-0000000014 amount=10000
+2026-11-27T12:36:48.268+09:00  INFO 88119 --- [commerce-api] [ent-dispatch-14] [1bd8f100ea85ffc309661bdc146cc4d1-40a4aed83d4db623] c.l.payment.application.PaymentSender    : payment.create.result orderId=14 paymentId=14 providerOrderId=LP-ORD-0000000014 result=ACCEPTED cause=- elapsedMs=2 transactionKey=20261127:TR:abc54cd
+2026-11-27T12:36:48.275+09:00  INFO 88119 --- [commerce-api] [ent-dispatch-14] [1bd8f100ea85ffc309661bdc146cc4d1-40a4aed83d4db623] c.l.p.application.PaymentResultApplier   : payment.apply orderId=14 paymentId=14 providerOrderId=LP-ORD-0000000014 from=SENDING to=PENDING outcome=NOT_FINAL source=DISPATCH
+2026-11-27T12:36:48.292+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-9] [b88cdbd55d1574d32f7ee4b25ee5912e-a2ab46823d4101b1] c.l.p.application.PaymentRequestService  : payment.requested orderId=15 paymentId=15 attemptKey=w10-w10-20261127-123517-15 providerOrderId=LP-ORD-0000000015 amount=10000
+2026-11-27T12:36:48.330+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-1] [16dcefb9c9bc227a2160b625b46fe333-bd2a3c16c065dda2] c.l.p.application.PaymentRequestService  : payment.requested orderId=16 paymentId=16 attemptKey=w10-w10-20261127-123517-16 providerOrderId=LP-ORD-0000000016 amount=10000
+2026-11-27T12:36:48.343+09:00  INFO 88119 --- [commerce-api] [ent-dispatch-16] [16dcefb9c9bc227a2160b625b46fe333-bd2a3c16c065dda2] c.l.payment.application.PaymentSender    : payment.create.result orderId=16 paymentId=16 providerOrderId=LP-ORD-0000000016 result=ACCEPTED cause=- elapsedMs=2 transactionKey=20261127:TR:1a8c8e0
+2026-11-27T12:36:48.352+09:00  INFO 88119 --- [commerce-api] [ent-dispatch-16] [16dcefb9c9bc227a2160b625b46fe333-bd2a3c16c065dda2] c.l.p.application.PaymentResultApplier   : payment.apply orderId=16 paymentId=16 providerOrderId=LP-ORD-0000000016 from=SENDING to=PENDING outcome=NOT_FINAL source=DISPATCH
+2026-11-27T12:36:48.368+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-2] [61311ca5c94775e9b99148c1ef283366-08d3739bff5b53a3] c.l.p.application.PaymentRequestService  : payment.requested orderId=17 paymentId=17 attemptKey=w10-w10-20261127-123517-17 providerOrderId=LP-ORD-0000000017 amount=10000
+2026-11-27T12:36:48.378+09:00  INFO 88119 --- [commerce-api] [ent-dispatch-17] [61311ca5c94775e9b99148c1ef283366-08d3739bff5b53a3] c.l.payment.application.PaymentSender    : payment.create.result orderId=17 paymentId=17 providerOrderId=LP-ORD-0000000017 result=ACCEPTED cause=- elapsedMs=1 transactionKey=20261127:TR:ca3009c
+2026-11-27T12:36:48.384+09:00  INFO 88119 --- [commerce-api] [ent-dispatch-17] [61311ca5c94775e9b99148c1ef283366-08d3739bff5b53a3] c.l.p.application.PaymentResultApplier   : payment.apply orderId=17 paymentId=17 providerOrderId=LP-ORD-0000000017 from=SENDING to=PENDING outcome=NOT_FINAL source=DISPATCH
+2026-11-27T12:36:48.402+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-5] [2f960802061a90cb94f1dd769a0ca7ba-768bcfff18506f7f] c.l.p.application.PaymentRequestService  : payment.requested orderId=18 paymentId=18 attemptKey=w10-w10-20261127-123517-18 providerOrderId=LP-ORD-0000000018 amount=10000
+2026-11-27T12:36:48.439+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-7] [3827eb590ae3aac08a9026c6d29584a8-d1d8ce24c5cffd4b] c.l.p.application.PaymentRequestService  : payment.requested orderId=19 paymentId=19 attemptKey=w10-w10-20261127-123517-19 providerOrderId=LP-ORD-0000000019 amount=10000
+2026-11-27T12:36:48.451+09:00  INFO 88119 --- [commerce-api] [ent-dispatch-19] [3827eb590ae3aac08a9026c6d29584a8-d1d8ce24c5cffd4b] c.l.payment.application.PaymentSender    : payment.create.result orderId=19 paymentId=19 providerOrderId=LP-ORD-0000000019 result=ACCEPTED cause=- elapsedMs=2 transactionKey=20261127:TR:b3e70a8
+2026-11-27T12:36:48.459+09:00  INFO 88119 --- [commerce-api] [ent-dispatch-19] [3827eb590ae3aac08a9026c6d29584a8-d1d8ce24c5cffd4b] c.l.p.application.PaymentResultApplier   : payment.apply orderId=19 paymentId=19 providerOrderId=LP-ORD-0000000019 from=SENDING to=PENDING outcome=NOT_FINAL source=DISPATCH
+2026-11-27T12:36:48.477+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-9] [2ecd0ac500ecd1b6a47c310e7ac997ad-216b2eb262dbf478] c.l.p.application.PaymentRequestService  : payment.requested orderId=20 paymentId=20 attemptKey=w10-w10-20261127-123517-20 providerOrderId=LP-ORD-0000000020 amount=10000
+2026-11-27T12:36:48.488+09:00  INFO 88119 --- [commerce-api] [ent-dispatch-20] [2ecd0ac500ecd1b6a47c310e7ac997ad-216b2eb262dbf478] c.l.payment.application.PaymentSender    : payment.create.result orderId=20 paymentId=20 providerOrderId=LP-ORD-0000000020 result=ACCEPTED cause=- elapsedMs=2 transactionKey=20261127:TR:f4175b4
+2026-11-27T12:36:48.494+09:00  INFO 88119 --- [commerce-api] [ent-dispatch-20] [2ecd0ac500ecd1b6a47c310e7ac997ad-216b2eb262dbf478] c.l.p.application.PaymentResultApplier   : payment.apply orderId=20 paymentId=20 providerOrderId=LP-ORD-0000000020 from=SENDING to=PENDING outcome=NOT_FINAL source=DISPATCH
+2026-11-27T12:36:48.960+09:00  INFO 88119 --- [commerce-api] [ commerce-api-1] [                                                 ] o.a.k.c.p.internals.TransactionManager   : [Producer clientId=commerce-api-1] ProducerId set to 1000 with epoch 0
+2026-11-27T12:36:49.088+09:00  INFO 88119 --- [commerce-api] [   scheduling-1] [be71592a4679fe87f8bfda5079040723-ef53665ecb4823db] c.l.o.a.i.s.OrderOutboxRelayScheduler    : relay 회차: 고름 10 · PUBLISHED 10 · 멈춘 행 null
+2026-11-27T12:36:49.174+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-1] [89ae3ae2a822323cba54acc6d1978932-9abb85051c0cbeef] c.l.p.application.PaymentResultApplier   : payment.lookup.result orderId=11 paymentId=11 providerOrderId=LP-ORD-0000000011 by=TRANSACTION_KEY found=1 pgStatus=SUCCESS transactionKey=20261127:TR:2ad1fb7 source=CALLBACK
+2026-11-27T12:36:49.188+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-1] [89ae3ae2a822323cba54acc6d1978932-9abb85051c0cbeef] c.l.p.application.PaymentResultApplier   : payment.apply orderId=11 paymentId=11 providerOrderId=LP-ORD-0000000011 from=PENDING to=SUCCESS outcome=APPLIED source=CALLBACK
+2026-11-27T12:36:49.247+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-3] [7395440867cceee43021eda49d52e410-022a1bb4939f82f8] c.l.p.application.PaymentResultApplier   : payment.lookup.result orderId=13 paymentId=13 providerOrderId=LP-ORD-0000000013 by=TRANSACTION_KEY found=1 pgStatus=SUCCESS transactionKey=20261127:TR:a85c1aa source=CALLBACK
+2026-11-27T12:36:49.265+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-3] [7395440867cceee43021eda49d52e410-022a1bb4939f82f8] c.l.p.application.PaymentResultApplier   : payment.apply orderId=13 paymentId=13 providerOrderId=LP-ORD-0000000013 from=PENDING to=SUCCESS outcome=APPLIED source=CALLBACK
+2026-11-27T12:36:49.279+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-2] [2384fbbe9b7aed09d21ec6cf3a12d06e-4ca0e546ccc16993] c.l.p.application.PaymentResultApplier   : payment.lookup.result orderId=14 paymentId=14 providerOrderId=LP-ORD-0000000014 by=TRANSACTION_KEY found=1 pgStatus=SUCCESS transactionKey=20261127:TR:abc54cd source=CALLBACK
+2026-11-27T12:36:49.293+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-2] [2384fbbe9b7aed09d21ec6cf3a12d06e-4ca0e546ccc16993] c.l.p.application.PaymentResultApplier   : payment.apply orderId=14 paymentId=14 providerOrderId=LP-ORD-0000000014 from=PENDING to=SUCCESS outcome=APPLIED source=CALLBACK
+2026-11-27T12:36:49.358+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-4] [e6f9b5474be080cbe7495e361ebf539d-6244f49448a6c886] c.l.p.application.PaymentResultApplier   : payment.lookup.result orderId=16 paymentId=16 providerOrderId=LP-ORD-0000000016 by=TRANSACTION_KEY found=1 pgStatus=SUCCESS transactionKey=20261127:TR:1a8c8e0 source=CALLBACK
+2026-11-27T12:36:49.369+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-4] [e6f9b5474be080cbe7495e361ebf539d-6244f49448a6c886] c.l.p.application.PaymentResultApplier   : payment.apply orderId=16 paymentId=16 providerOrderId=LP-ORD-0000000016 from=PENDING to=SUCCESS outcome=APPLIED source=CALLBACK
+2026-11-27T12:36:49.392+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-5] [f7050e5a7ee9a8017aa1c7e4ba17037c-d5cce41407e7d2b6] c.l.p.application.PaymentResultApplier   : payment.lookup.result orderId=17 paymentId=17 providerOrderId=LP-ORD-0000000017 by=TRANSACTION_KEY found=1 pgStatus=SUCCESS transactionKey=20261127:TR:ca3009c source=CALLBACK
+2026-11-27T12:36:49.403+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-5] [f7050e5a7ee9a8017aa1c7e4ba17037c-d5cce41407e7d2b6] c.l.p.application.PaymentResultApplier   : payment.apply orderId=17 paymentId=17 providerOrderId=LP-ORD-0000000017 from=PENDING to=SUCCESS outcome=APPLIED source=CALLBACK
+2026-11-27T12:36:49.459+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-6] [77ba78d2f9ebcfb1705322e520ee676b-bc2e8bc9bbd11e38] c.l.p.application.PaymentResultApplier   : payment.lookup.result orderId=19 paymentId=19 providerOrderId=LP-ORD-0000000019 by=TRANSACTION_KEY found=1 pgStatus=SUCCESS transactionKey=20261127:TR:b3e70a8 source=CALLBACK
+2026-11-27T12:36:49.469+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-6] [77ba78d2f9ebcfb1705322e520ee676b-bc2e8bc9bbd11e38] c.l.p.application.PaymentResultApplier   : payment.apply orderId=19 paymentId=19 providerOrderId=LP-ORD-0000000019 from=PENDING to=SUCCESS outcome=APPLIED source=CALLBACK
+2026-11-27T12:36:49.500+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-7] [21af57b6b5c8f17e29578fbc012c8f1c-ab48995e9a8e9640] c.l.p.application.PaymentResultApplier   : payment.lookup.result orderId=20 paymentId=20 providerOrderId=LP-ORD-0000000020 by=TRANSACTION_KEY found=1 pgStatus=SUCCESS transactionKey=20261127:TR:f4175b4 source=CALLBACK
+2026-11-27T12:36:49.512+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-7] [21af57b6b5c8f17e29578fbc012c8f1c-ab48995e9a8e9640] c.l.p.application.PaymentResultApplier   : payment.apply orderId=20 paymentId=20 providerOrderId=LP-ORD-0000000020 from=PENDING to=SUCCESS outcome=APPLIED source=CALLBACK
+2026-11-27T12:36:50.216+09:00  INFO 88119 --- [commerce-api] [   scheduling-1] [ac9e4da578cf8197102207bef0df8663-b3c0db9c1f22a067] c.l.o.a.i.s.OrderOutboxRelayScheduler    : relay 회차: 고름 7 · PUBLISHED 7 · 멈춘 행 null
+2026-11-27T12:36:51.211+09:00  WARN 88119 --- [commerce-api] [ent-dispatch-12] [12c5acdde85df896ae3fcc4cf18647e0-049352b47c129c86] c.l.p.a.o.p.LocalPgPaymentGatewayAdapter : PG 생성 결과를 모릅니다 (READ_TIMEOUT): LP-ORD-0000000012
+2026-11-27T12:36:51.213+09:00  WARN 88119 --- [commerce-api] [ent-dispatch-12] [12c5acdde85df896ae3fcc4cf18647e0-049352b47c129c86] c.l.payment.application.PaymentSender    : payment.create.result orderId=12 paymentId=12 providerOrderId=LP-ORD-0000000012 result=UNKNOWN cause=READ_TIMEOUT elapsedMs=3016 transactionKey=-
+2026-11-27T12:36:51.241+09:00  INFO 88119 --- [commerce-api] [ent-dispatch-12] [12c5acdde85df896ae3fcc4cf18647e0-049352b47c129c86] c.l.p.application.PaymentResultApplier   : payment.apply orderId=12 paymentId=12 providerOrderId=LP-ORD-0000000012 from=SENDING to=UNKNOWN outcome=NOT_FINAL source=DISPATCH
+2026-11-27T12:36:51.308+09:00  WARN 88119 --- [commerce-api] [ent-dispatch-15] [b88cdbd55d1574d32f7ee4b25ee5912e-a2ab46823d4101b1] c.l.p.a.o.p.LocalPgPaymentGatewayAdapter : PG 생성 결과를 모릅니다 (READ_TIMEOUT): LP-ORD-0000000015
+2026-11-27T12:36:51.309+09:00  WARN 88119 --- [commerce-api] [ent-dispatch-15] [b88cdbd55d1574d32f7ee4b25ee5912e-a2ab46823d4101b1] c.l.payment.application.PaymentSender    : payment.create.result orderId=15 paymentId=15 providerOrderId=LP-ORD-0000000015 result=UNKNOWN cause=READ_TIMEOUT elapsedMs=3007 transactionKey=-
+2026-11-27T12:36:51.325+09:00  INFO 88119 --- [commerce-api] [ent-dispatch-15] [b88cdbd55d1574d32f7ee4b25ee5912e-a2ab46823d4101b1] c.l.p.application.PaymentResultApplier   : payment.apply orderId=15 paymentId=15 providerOrderId=LP-ORD-0000000015 from=SENDING to=UNKNOWN outcome=NOT_FINAL source=DISPATCH
+2026-11-27T12:36:51.416+09:00  WARN 88119 --- [commerce-api] [ent-dispatch-18] [2f960802061a90cb94f1dd769a0ca7ba-768bcfff18506f7f] c.l.p.a.o.p.LocalPgPaymentGatewayAdapter : PG 생성 결과를 모릅니다 (READ_TIMEOUT): LP-ORD-0000000018
+2026-11-27T12:36:51.417+09:00  WARN 88119 --- [commerce-api] [ent-dispatch-18] [2f960802061a90cb94f1dd769a0ca7ba-768bcfff18506f7f] c.l.payment.application.PaymentSender    : payment.create.result orderId=18 paymentId=18 providerOrderId=LP-ORD-0000000018 result=UNKNOWN cause=READ_TIMEOUT elapsedMs=3006 transactionKey=-
+2026-11-27T12:36:51.432+09:00  INFO 88119 --- [commerce-api] [ent-dispatch-18] [2f960802061a90cb94f1dd769a0ca7ba-768bcfff18506f7f] c.l.p.application.PaymentResultApplier   : payment.apply orderId=18 paymentId=18 providerOrderId=LP-ORD-0000000018 from=SENDING to=UNKNOWN outcome=NOT_FINAL source=DISPATCH
+2026-11-27T12:36:57.651+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-8] [8a0d8aba705fe152d3802ba96072e20f-dc37f7ac0a366323] c.l.p.application.PaymentResultApplier   : payment.lookup.result orderId=12 paymentId=12 providerOrderId=LP-ORD-0000000012 by=PROVIDER_ORDER_ID found=1 pgStatus=SUCCESS transactionKey=20261127:TR:cffeef4 source=RECONCILE_API
+2026-11-27T12:36:57.677+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-8] [8a0d8aba705fe152d3802ba96072e20f-dc37f7ac0a366323] c.l.p.application.PaymentResultApplier   : payment.apply orderId=12 paymentId=12 providerOrderId=LP-ORD-0000000012 from=UNKNOWN to=SUCCESS outcome=APPLIED source=RECONCILE_API
+2026-11-27T12:36:57.747+09:00  INFO 88119 --- [commerce-api] [1-18080-exec-10] [6446465fcd8a3ebfea2ceb0fdd79a124-303f94b8a67bc900] c.l.p.application.PaymentResultApplier   : payment.lookup.result orderId=15 paymentId=15 providerOrderId=LP-ORD-0000000015 by=PROVIDER_ORDER_ID found=1 pgStatus=SUCCESS transactionKey=20261127:TR:a285047 source=RECONCILE_API
+2026-11-27T12:36:57.768+09:00  INFO 88119 --- [commerce-api] [1-18080-exec-10] [6446465fcd8a3ebfea2ceb0fdd79a124-303f94b8a67bc900] c.l.p.application.PaymentResultApplier   : payment.apply orderId=15 paymentId=15 providerOrderId=LP-ORD-0000000015 from=UNKNOWN to=SUCCESS outcome=APPLIED source=RECONCILE_API
+2026-11-27T12:36:57.859+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-3] [80d064ddcd6acb24c5ca7506521e7818-f207b424f21ead98] c.l.p.application.PaymentResultApplier   : payment.lookup.result orderId=18 paymentId=18 providerOrderId=LP-ORD-0000000018 by=PROVIDER_ORDER_ID found=1 pgStatus=SUCCESS transactionKey=20261127:TR:e265e59 source=RECONCILE_API
+2026-11-27T12:36:57.885+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-3] [80d064ddcd6acb24c5ca7506521e7818-f207b424f21ead98] c.l.p.application.PaymentResultApplier   : payment.apply orderId=18 paymentId=18 providerOrderId=LP-ORD-0000000018 from=UNKNOWN to=SUCCESS outcome=APPLIED source=RECONCILE_API
+2026-11-27T12:36:58.491+09:00  INFO 88119 --- [commerce-api] [   scheduling-1] [082151dd51c714bea2787bc8e0126af2-ad8a6ffdc7ca3933] c.l.o.a.i.s.OrderOutboxRelayScheduler    : relay 회차: 고름 3 · PUBLISHED 3 · 멈춘 행 null
+2026-11-27T12:36:59.248+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-4] [f3b57e8f7c7d04ae90e0e815e522285d-c96eb04529fc40b5] c.l.p.application.PaymentResultApplier   : payment.lookup.result orderId=12 paymentId=12 providerOrderId=LP-ORD-0000000012 by=TRANSACTION_KEY found=1 pgStatus=SUCCESS transactionKey=20261127:TR:cffeef4 source=RECONCILE_API
+2026-11-27T12:36:59.253+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-4] [f3b57e8f7c7d04ae90e0e815e522285d-c96eb04529fc40b5] c.l.p.application.PaymentResultApplier   : payment.apply orderId=12 paymentId=12 providerOrderId=LP-ORD-0000000012 from=SUCCESS to=SUCCESS outcome=ALREADY_APPLIED source=RECONCILE_API
+2026-11-27T12:36:59.293+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-6] [496fbb733f02cf0f0791a815f5cd6945-7159437a3934e07d] c.l.p.application.PaymentResultApplier   : payment.lookup.result orderId=15 paymentId=15 providerOrderId=LP-ORD-0000000015 by=TRANSACTION_KEY found=1 pgStatus=SUCCESS transactionKey=20261127:TR:a285047 source=RECONCILE_API
+2026-11-27T12:36:59.298+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-6] [496fbb733f02cf0f0791a815f5cd6945-7159437a3934e07d] c.l.p.application.PaymentResultApplier   : payment.apply orderId=15 paymentId=15 providerOrderId=LP-ORD-0000000015 from=SUCCESS to=SUCCESS outcome=ALREADY_APPLIED source=RECONCILE_API
+2026-11-27T12:36:59.335+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-8] [cca63cced765b1a79ff0fddbee188252-94f658264c8ea74e] c.l.p.application.PaymentResultApplier   : payment.lookup.result orderId=18 paymentId=18 providerOrderId=LP-ORD-0000000018 by=TRANSACTION_KEY found=1 pgStatus=SUCCESS transactionKey=20261127:TR:e265e59 source=RECONCILE_API
+2026-11-27T12:36:59.342+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-8] [cca63cced765b1a79ff0fddbee188252-94f658264c8ea74e] c.l.p.application.PaymentResultApplier   : payment.apply orderId=18 paymentId=18 providerOrderId=LP-ORD-0000000018 from=SUCCESS to=SUCCESS outcome=ALREADY_APPLIED source=RECONCILE_API
+2026-11-27T12:36:59.372+09:00  INFO 88119 --- [commerce-api] [1-18080-exec-10] [1d52de2884703ceeebe63d1d5b9794e4-cab8288218fec84b] c.l.p.application.PaymentResultApplier   : payment.lookup.result orderId=12 paymentId=12 providerOrderId=LP-ORD-0000000012 by=TRANSACTION_KEY found=1 pgStatus=SUCCESS transactionKey=20261127:TR:cffeef4 source=CALLBACK
+2026-11-27T12:36:59.378+09:00  INFO 88119 --- [commerce-api] [1-18080-exec-10] [1d52de2884703ceeebe63d1d5b9794e4-cab8288218fec84b] c.l.p.application.PaymentResultApplier   : payment.apply orderId=12 paymentId=12 providerOrderId=LP-ORD-0000000012 from=SUCCESS to=SUCCESS outcome=ALREADY_APPLIED source=CALLBACK
+2026-11-27T12:36:59.386+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-1] [3a59cdf6f755b71db4bdaddd4984351e-e05b3171468d08e7] c.l.p.application.PaymentResultApplier   : payment.lookup.result orderId=15 paymentId=15 providerOrderId=LP-ORD-0000000015 by=TRANSACTION_KEY found=1 pgStatus=SUCCESS transactionKey=20261127:TR:a285047 source=CALLBACK
+2026-11-27T12:36:59.390+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-1] [3a59cdf6f755b71db4bdaddd4984351e-e05b3171468d08e7] c.l.p.application.PaymentResultApplier   : payment.apply orderId=15 paymentId=15 providerOrderId=LP-ORD-0000000015 from=SUCCESS to=SUCCESS outcome=ALREADY_APPLIED source=CALLBACK
+2026-11-27T12:36:59.399+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-3] [a2cece5e4ce1a980cc8dd672feb01aa9-502e7818436f1727] c.l.p.application.PaymentResultApplier   : payment.lookup.result orderId=18 paymentId=18 providerOrderId=LP-ORD-0000000018 by=TRANSACTION_KEY found=1 pgStatus=SUCCESS transactionKey=20261127:TR:e265e59 source=CALLBACK
+2026-11-27T12:36:59.404+09:00  INFO 88119 --- [commerce-api] [.1-18080-exec-3] [a2cece5e4ce1a980cc8dd672feb01aa9-502e7818436f1727] c.l.p.application.PaymentResultApplier   : payment.apply orderId=18 paymentId=18 providerOrderId=LP-ORD-0000000018 from=SUCCESS to=SUCCESS outcome=ALREADY_APPLIED source=CALLBACK

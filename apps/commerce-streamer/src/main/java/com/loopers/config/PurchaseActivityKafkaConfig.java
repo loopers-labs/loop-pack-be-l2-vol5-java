@@ -63,6 +63,7 @@ public class PurchaseActivityKafkaConfig {
         ConcurrentKafkaListenerContainerFactory<String, String> factory = new ConcurrentKafkaListenerContainerFactory<>();
         factory.setConsumerFactory(new DefaultKafkaConsumerFactory<>(consumerConfig));
         factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.MANUAL_IMMEDIATE);
+        factory.getContainerProperties().setObservationEnabled(true); // 발행 쪽 traceparent를 이어 같은 trace에서 소비한다 (W10 D-12)
         factory.setConcurrency(CONCURRENCY);
         factory.setCommonErrorHandler(errorHandler(stringKafkaTemplate));
         return factory;

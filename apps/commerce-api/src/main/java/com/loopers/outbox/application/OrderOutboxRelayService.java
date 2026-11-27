@@ -4,6 +4,7 @@ import com.loopers.outbox.application.port.in.OrderOutboxRelayUseCase;
 import com.loopers.outbox.application.port.out.MessageSendPort;
 import com.loopers.outbox.application.port.out.MessageSendPort.SentPosition;
 import com.loopers.outbox.application.port.out.OrderOutboxPort;
+import com.loopers.outbox.application.port.out.TraceContextPort;
 import com.loopers.outbox.domain.OrderOutbox;
 import com.loopers.outbox.domain.OrderOutboxBackoff;
 import com.loopers.outbox.domain.OrderOutboxStatus;
@@ -45,6 +46,7 @@ public class OrderOutboxRelayService implements OrderOutboxRelayUseCase {
 
     private final OrderOutboxPort orderOutboxPort;
     private final MessageSendPort messageSendPort;
+    private final TraceContextPort traceContextPort;
     private final OrderOutboxBackoff backoff;
     private final Clock clock;
     private final TransactionTemplate transaction;
@@ -55,6 +57,7 @@ public class OrderOutboxRelayService implements OrderOutboxRelayUseCase {
     public OrderOutboxRelayService(
         OrderOutboxPort orderOutboxPort,
         MessageSendPort messageSendPort,
+        TraceContextPort traceContextPort,
         OrderOutboxBackoff backoff,
         Clock clock,
         PlatformTransactionManager transactionManager,
@@ -64,6 +67,7 @@ public class OrderOutboxRelayService implements OrderOutboxRelayUseCase {
     ) {
         this.orderOutboxPort = orderOutboxPort;
         this.messageSendPort = messageSendPort;
+        this.traceContextPort = traceContextPort;
         this.backoff = backoff;
         this.clock = clock;
         this.transaction = new TransactionTemplate(transactionManager);
@@ -114,7 +118,9 @@ public class OrderOutboxRelayService implements OrderOutboxRelayUseCase {
             return null;
         }
         try {
-            return new InFlight(eventId, messageSendPort.send(topic, claimed.getMessageKey(), claimed.getPayload()));
+            // 결과를 반영한 요청의 trace를 부모로 보낸다 — 발행·소비가 그 trace에 이어진다 (W10 D-12 (나))
+            return new InFlight(eventId, traceContextPort.continueTrace(claimed.getTraceParent(),
+                () -> messageSendPort.send(topic, claimed.getMessageKey(), claimed.getPayload())));
         } catch (RuntimeException e) {
             // send() 호출 자체의 실패 (metadata 없음, max.block.ms) — broker에 아무것도 가지 않았다
             recordFailure(eventId, e);

@@ -26,6 +26,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 /**
  * 결과 적용 경계 (plan.md 4장, 4-1, ADR-W5-04). callback·reconcile·생성 응답·발송 실패·정리·만료가 모두 여기로 와서 결제와 주문·재고를 함께 바꾼다.
@@ -74,45 +75,63 @@ public class PaymentResultApplier {
      * 결과를 모르는 결제(PENDING·UNKNOWN)를 PG 권위 조회로 확인한다. 생성하지 않고, 0건을 실패로 확정하지 않는다 (plan.md 5-1).
      * 거래 키가 있으면 그 거래 한 건, 없으면 PG 주문 식별자로 목록을 찾는다. 발송 전·중(REQUESTED·SENDING)이면 건너뛴다.
      * 종결된 결제도 조회한다 — 늦게 온 callback이 종결과 반대 결과를 가리키면 CONFLICT로 이상을 남긴다 (R-4).
+     * 조회 결과는 경계 로그 ③ payment.lookup.result로 남는다 (W10 D-5).
      */
-    public PaymentApplyOutcome reconcile(Long paymentId) {
+    public PaymentApplyOutcome reconcile(Long paymentId, PaymentResultSource source) {
         Payment payment = paymentPort.findById(paymentId).orElseThrow();
         if (payment.getStatus() == PaymentStatus.REQUESTED || payment.getStatus() == PaymentStatus.SENDING) {
+            log.info("payment.lookup.skipped orderId={} paymentId={} providerOrderId={} status={} source={}",
+                payment.getOrderId(), paymentId, payment.getProviderOrderId(), payment.getStatus(), source);
             return PaymentApplyOutcome.NOT_FINAL;
         }
         try {
             if (payment.getTransactionKey() != null) {
                 Optional<PgTransaction> found = paymentGatewayPort.findByTransactionKey(payment.getTransactionKey());
-                return found.map(transaction -> apply(paymentId, transaction))
-                    .orElseGet(() -> recordCheck(paymentId, NOT_FOUND));
+                if (found.isEmpty()) {
+                    log.info("payment.lookup.result orderId={} paymentId={} providerOrderId={} by=TRANSACTION_KEY found=0 pgStatus=- transactionKey=- source={}",
+                        payment.getOrderId(), paymentId, payment.getProviderOrderId(), source);
+                    return recordCheck(paymentId, NOT_FOUND, source);
+                }
+                PgTransaction transaction = found.get();
+                log.info("payment.lookup.result orderId={} paymentId={} providerOrderId={} by=TRANSACTION_KEY found=1 pgStatus={} transactionKey={} source={}",
+                    payment.getOrderId(), paymentId, payment.getProviderOrderId(), transaction.status(), transaction.transactionKey(), source);
+                return apply(paymentId, transaction, source);
             }
             List<PgTransaction> found = paymentGatewayPort.findByProviderOrderId(payment.getProviderOrderId());
             if (found.isEmpty()) {
-                return recordCheck(paymentId, NOT_FOUND);
+                log.info("payment.lookup.result orderId={} paymentId={} providerOrderId={} by=PROVIDER_ORDER_ID found=0 pgStatus=- transactionKey=- source={}",
+                    payment.getOrderId(), paymentId, payment.getProviderOrderId(), source);
+                return recordCheck(paymentId, NOT_FOUND, source);
             }
             if (found.size() > 1) {
+                log.info("payment.lookup.result orderId={} paymentId={} providerOrderId={} by=PROVIDER_ORDER_ID found={} pgStatus=- transactionKey=- source={}",
+                    payment.getOrderId(), paymentId, payment.getProviderOrderId(), found.size(), source);
                 log.warn("PG 거래가 여러 건입니다 — 상태를 바꾸지 않습니다. paymentId={}, count={}", paymentId, found.size());
-                return recordCheck(paymentId, "MULTIPLE:" + found.size());
+                return recordCheck(paymentId, "MULTIPLE:" + found.size(), source);
             }
-            return apply(paymentId, found.get(0));
+            PgTransaction transaction = found.get(0);
+            log.info("payment.lookup.result orderId={} paymentId={} providerOrderId={} by=PROVIDER_ORDER_ID found=1 pgStatus={} transactionKey={} source={}",
+                payment.getOrderId(), paymentId, payment.getProviderOrderId(), transaction.status(), transaction.transactionKey(), source);
+            return apply(paymentId, transaction, source);
         } catch (PgLookupUnavailableException e) {
-            log.info("PG 조회 불가 — 다음 조회로 미룹니다. paymentId={}, reason={}", paymentId, e.getMessage());
-            return recordCheck(paymentId, UNAVAILABLE);
+            log.info("payment.lookup.result orderId={} paymentId={} providerOrderId={} found=UNAVAILABLE reason={} source={}",
+                payment.getOrderId(), paymentId, payment.getProviderOrderId(), e.getMessage(), source);
+            return recordCheck(paymentId, UNAVAILABLE, source);
         }
     }
 
     /**
      * PG가 알려 준 거래 한 건을 반영한다 (조회 결과). 식별·금액이 다르거나 종결과 모순이면 상태를 두고 경고한다.
      */
-    public PaymentApplyOutcome apply(Long paymentId, PgTransaction observed) {
-        return inLockedPayment(paymentId, false, payment -> observe(payment, observed));
+    public PaymentApplyOutcome apply(Long paymentId, PgTransaction observed, PaymentResultSource source) {
+        return inLockedPayment(paymentId, false, source, payment -> observe(payment, observed));
     }
 
     /**
      * 생성 응답 (TX B). 수락(PENDING)은 거래 키를 기록하고, 최종 상태면 조회 결과처럼 반영한다. 발송 장부를 끝낸다.
      */
     public PaymentApplyOutcome recordCreated(Long paymentId, PgTransaction created) {
-        return inLockedPayment(paymentId, true, payment -> switch (created.status()) {
+        return inLockedPayment(paymentId, true, PaymentResultSource.DISPATCH, payment -> switch (created.status()) {
             case PENDING -> payment.recordAccepted(created.transactionKey(), ZonedDateTime.now());
             case SUCCESS, FAILED -> observe(payment, created);
         });
@@ -122,34 +141,35 @@ public class PaymentResultApplier {
      * PG가 거래를 만들지 않고 거절했다 (효과 0건) → 실패로 확정, 재고 반환 (TX B).
      */
     public PaymentApplyOutcome recordRejected(Long paymentId, String reason) {
-        return inLockedPayment(paymentId, true, payment -> payment.recordRejected(reason, ZonedDateTime.now()));
+        return inLockedPayment(paymentId, true, PaymentResultSource.DISPATCH, payment -> payment.recordRejected(reason, ZonedDateTime.now()));
     }
 
     /**
      * 보냈을 수 있으나 결과를 모른다 → UNKNOWN, 조회로만 종결 (TX B). 정리 스케줄러가 멈춘 SENDING에도 쓴다.
      */
-    public PaymentApplyOutcome recordUnknown(Long paymentId) {
-        return inLockedPayment(paymentId, true, payment -> payment.recordUnknown(ZonedDateTime.now()));
+    public PaymentApplyOutcome recordUnknown(Long paymentId, PaymentResultSource source) {
+        return inLockedPayment(paymentId, true, source, payment -> payment.recordUnknown(ZonedDateTime.now()));
     }
 
     /**
      * 발송 권한을 얻었지만 호출 전에 막혔다 (회로 OPEN·연결 실패) → FAILED(NOT_SENT), 재고 반환 (ADR-W5-03).
      */
     public PaymentApplyOutcome closeNotSentAfterClaim(Long paymentId) {
-        return inLockedPayment(paymentId, true, payment -> payment.closeNotSent(ZonedDateTime.now()));
+        return inLockedPayment(paymentId, true, PaymentResultSource.DISPATCH, payment -> payment.closeNotSent(ZonedDateTime.now()));
     }
 
     /**
      * 아무도 발송 권한을 얻지 않은 결제(장부 PENDING)를 보내지 않고 닫는다 — 풀 거절·정리 스케줄러 (ADR-W5-03).
      * 장부를 조건부로 닫는 데 성공한 실행만 결제를 닫는다. 동시에 claim한 발송이 이겼으면 아무것도 하지 않는다.
      */
-    public PaymentApplyOutcome closeUnclaimed(Long paymentId) {
-        return newTransaction.execute(status -> {
+    public PaymentApplyOutcome closeUnclaimed(Long paymentId, PaymentResultSource source) {
+        return inNewTransaction(paymentId, source, () -> {
             if (!paymentOutboxPort.close(paymentId, ZonedDateTime.now())) {
-                return PaymentApplyOutcome.ALREADY_APPLIED;
+                return Applied.untouched(PaymentApplyOutcome.ALREADY_APPLIED);
             }
             Payment payment = paymentPort.findByIdForUpdate(paymentId).orElseThrow();
-            return afterPaymentChanged(payment, payment.closeNotSent(ZonedDateTime.now()));
+            PaymentStatus from = payment.getStatus();
+            return Applied.of(payment, from, afterPaymentChanged(payment, payment.closeNotSent(ZonedDateTime.now())));
         });
     }
 
@@ -158,11 +178,11 @@ public class PaymentResultApplier {
      * PG 마지막 조회는 호출자가 잠금 밖에서 먼저 한다. 그 사이 종결됐으면 ALREADY_APPLIED로 아무것도 바꾸지 않는다.
      */
     public PaymentApplyOutcome expire(Long paymentId) {
-        return inLockedPayment(paymentId, false, payment -> payment.expireUnresolved(ZonedDateTime.now()));
+        return inLockedPayment(paymentId, false, PaymentResultSource.SCHEDULER, payment -> payment.expireUnresolved(ZonedDateTime.now()));
     }
 
-    private PaymentApplyOutcome recordCheck(Long paymentId, String result) {
-        return inLockedPayment(paymentId, false, payment -> {
+    private PaymentApplyOutcome recordCheck(Long paymentId, String result, PaymentResultSource source) {
+        return inLockedPayment(paymentId, false, source, payment -> {
             if (payment.isFinal()) {
                 return PaymentApplyOutcome.ALREADY_APPLIED;
             }
@@ -196,14 +216,65 @@ public class PaymentResultApplier {
      * 새 트랜잭션에서 (필요하면 발송 장부를 먼저 끝내고) 결제를 잠가 바꾼 뒤, 이번 호출이 종결로 옮겼으면 주문·선점까지 같은 트랜잭션으로 반영한다.
      * 장부 갱신은 영속성 컨텍스트를 비우므로 결제를 읽기 전에 한다.
      */
-    private PaymentApplyOutcome inLockedPayment(Long paymentId, boolean finishOutbox, Function<Payment, PaymentApplyOutcome> change) {
-        return newTransaction.execute(status -> {
+    private PaymentApplyOutcome inLockedPayment(
+        Long paymentId, boolean finishOutbox, PaymentResultSource source, Function<Payment, PaymentApplyOutcome> change
+    ) {
+        return inNewTransaction(paymentId, source, () -> {
             if (finishOutbox) {
                 paymentOutboxPort.markDone(paymentId, ZonedDateTime.now());
             }
             Payment payment = paymentPort.findByIdForUpdate(paymentId).orElseThrow();
-            return afterPaymentChanged(payment, change.apply(payment));
+            PaymentStatus from = payment.getStatus();
+            return Applied.of(payment, from, afterPaymentChanged(payment, change.apply(payment)));
         });
+    }
+
+    /**
+     * 반영 트랜잭션 하나. commit된 뒤에 경계 로그 ④ payment.apply를, 실패하면 ⑤ payment.apply.failed를 남긴다 (W10 D-5).
+     * ④를 트랜잭션 안에서 남기면 commit이 실패해도 "반영했다"는 줄이 남는다.
+     */
+    private PaymentApplyOutcome inNewTransaction(Long paymentId, PaymentResultSource source, Supplier<Applied> work) {
+        Applied applied;
+        try {
+            applied = newTransaction.execute(status -> work.get());
+        } catch (RuntimeException e) {
+            logApplyFailed(paymentId, source, e);
+            throw e;
+        }
+        if (applied.orderId() != null) {
+            log.info("payment.apply orderId={} paymentId={} providerOrderId={} from={} to={} outcome={} source={}",
+                applied.orderId(), paymentId, applied.providerOrderId(), applied.from(), applied.to(), applied.outcome(), source);
+        }
+        return applied.outcome();
+    }
+
+    /**
+     * 반영 트랜잭션이 실패했다 (가설 3의 증거). 식별자는 잠금 없이 다시 읽어 채운다 — 그마저 실패하면 paymentId만 남긴다.
+     */
+    private void logApplyFailed(Long paymentId, PaymentResultSource source, RuntimeException e) {
+        Optional<Payment> payment;
+        try {
+            payment = paymentPort.findById(paymentId);
+        } catch (RuntimeException lookupFailure) {
+            payment = Optional.empty();
+        }
+        log.error("payment.apply.failed orderId={} paymentId={} providerOrderId={} source={} error={}",
+            payment.map(Payment::getOrderId).orElse(null), paymentId, payment.map(Payment::getProviderOrderId).orElse(null),
+            source, e.toString(), e);
+    }
+
+    /**
+     * 반영 트랜잭션의 결과. 결제를 읽지 않고 끝났으면(untouched) 식별자가 없다.
+     */
+    private record Applied(Long orderId, String providerOrderId, PaymentStatus from, PaymentStatus to, PaymentApplyOutcome outcome) {
+
+        static Applied of(Payment payment, PaymentStatus from, PaymentApplyOutcome outcome) {
+            return new Applied(payment.getOrderId(), payment.getProviderOrderId(), from, payment.getStatus(), outcome);
+        }
+
+        static Applied untouched(PaymentApplyOutcome outcome) {
+            return new Applied(null, null, null, null, outcome);
+        }
     }
 
     private PaymentApplyOutcome afterPaymentChanged(Payment payment, PaymentApplyOutcome outcome) {

@@ -29,7 +29,7 @@ public class PaymentDispatcher implements PaymentDispatchUseCase {
             paymentSender.send(event);
         } catch (RejectedExecutionException e) {
             log.warn("발송 풀이 가득 차 보내지 않고 닫습니다. paymentId={}", event.paymentId());
-            paymentResultApplier.closeUnclaimed(event.paymentId());
+            paymentResultApplier.closeUnclaimed(event.paymentId(), PaymentResultSource.DISPATCH);
         }
     }
 }

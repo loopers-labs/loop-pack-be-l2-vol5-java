@@ -14,7 +14,10 @@ public interface OrderOutboxPort {
     /**
      * payload를 JSON으로 한 번 바꿔 PENDING 행으로 남긴다. 이 문자열이 이후 모든 재발행에서 그대로 나간다.
      */
-    OrderOutbox append(String eventId, Long orderId, String eventType, int schemaVersion, Object payload, ZonedDateTime now);
+    /**
+     * @param traceParent 결과를 반영한 요청의 trace 문맥 (W3C traceparent). trace가 없으면 null (W10 D-12 (나))
+     */
+    OrderOutbox append(String eventId, Long orderId, String eventType, int schemaVersion, Object payload, String traceParent, ZonedDateTime now);
 
     OrderOutbox save(OrderOutbox outbox);
 

@@ -1,0 +1,9 @@
+run=w10-20261125-192654
+startedAt=2026-11-25T10:28:18Z
+gitCommit=c421a2647b0d7efafe817547b845df7035a919c9
+pgSimSha256=9266b3f03c023c130c8dda515ebacb5ec30a7920357ae8fb399681c16d9c1136
+jars=commerce-api-c421a264.jar commerce-streamer-c421a264.jar commerce-batch-c421a264.jar
+pgSim=90221@2026-11-25T10:27:59+00:00
+mysqlContainer=7f7e9a12932ad2904d303108de710e20abe9c26a92882c5370d24b459f1fa770
+ports: api=18080 management=18081 mysql=33329 tempo=33200 grafana=33000
+finishedAt=2026-11-25T10:31:42Z

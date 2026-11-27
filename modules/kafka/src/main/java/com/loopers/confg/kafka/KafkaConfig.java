@@ -50,7 +50,15 @@ public class KafkaConfig {
 
     @Bean
     public KafkaTemplate<Object, Object> kafkaTemplate(ProducerFactory<Object, Object> producerFactory) {
-        return new KafkaTemplate<>(producerFactory);
+        return observed(new KafkaTemplate<>(producerFactory));
+    }
+
+    /**
+     * 발행에 trace 문맥(traceparent 헤더)을 싣는다 (W10 D-12). template을 직접 만들어 spring.kafka.template.observation-enabled가 먹지 않는다.
+     */
+    private static <K, V> KafkaTemplate<K, V> observed(KafkaTemplate<K, V> template) {
+        template.setObservationEnabled(true);
+        return template;
     }
 
     /**
@@ -62,7 +70,7 @@ public class KafkaConfig {
         Map<String, Object> props = new HashMap<>(kafkaProperties.buildProducerProperties());
         props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
         props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
-        return new KafkaTemplate<>(new DefaultKafkaProducerFactory<>(props));
+        return observed(new KafkaTemplate<>(new DefaultKafkaProducerFactory<>(props)));
     }
 
     @Bean
@@ -89,6 +97,7 @@ public class KafkaConfig {
         factory.setBatchMessageConverter(new BatchMessagingMessageConverter(converter));
         factory.setConcurrency(3);
         factory.setBatchListener(true);
+        factory.getContainerProperties().setObservationEnabled(true); // 받은 traceparent를 이어 소비를 같은 trace에 둔다 (W10 D-12)
         return factory;
     }
 }

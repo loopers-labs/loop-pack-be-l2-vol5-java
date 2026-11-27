@@ -62,4 +62,9 @@ public class PaymentPersistenceAdapter implements PaymentPort {
     public List<Long> findExpirable(ZonedDateTime sentBefore, int limit) {
         return paymentJpaRepository.findExpirableIds(UNRESOLVED, sentBefore, PageRequest.of(0, limit));
     }
+
+    @Override
+    public long countByStatus(PaymentStatus status) {
+        return paymentJpaRepository.countByStatus(status);
+    }
 }

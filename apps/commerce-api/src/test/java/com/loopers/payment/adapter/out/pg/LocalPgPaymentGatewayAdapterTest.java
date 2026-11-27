@@ -12,6 +12,7 @@ import com.loopers.support.pg.LocalTestPgServer;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import io.github.resilience4j.retry.RetryRegistry;
+import io.micrometer.observation.ObservationRegistry;
 import io.github.resilience4j.springboot3.circuitbreaker.autoconfigure.CircuitBreakerAutoConfiguration;
 import io.github.resilience4j.springboot3.retry.autoconfigure.RetryAutoConfiguration;
 import org.junit.jupiter.api.AfterAll;
@@ -22,6 +23,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -57,7 +59,14 @@ class LocalPgPaymentGatewayAdapterTest {
     @Configuration
     @ImportAutoConfiguration({CircuitBreakerAutoConfiguration.class, RetryAutoConfiguration.class})
     @Import({PgConfig.class, LocalPgPaymentGatewayAdapter.class})
-    static class PgAdapterContext {}
+    static class PgAdapterContext {
+
+        /** 이 테스트는 PG 계약만 본다 — trace는 기록하지 않는다 (W10 D-12의 확인은 run.sh) */
+        @Bean
+        ObservationRegistry observationRegistry() {
+            return ObservationRegistry.NOOP;
+        }
+    }
 
     @DynamicPropertySource
     static void pgProperties(DynamicPropertyRegistry registry) {
@@ -137,14 +146,16 @@ class LocalPgPaymentGatewayAdapterTest {
             assertThat(PG.transactionsCreated()).isZero();
         }
 
-        @DisplayName("G-3 거래는 생겼지만 응답이 읽기 timeout보다 늦으면 PgUnknownResultException이고, 숨은 재시도 없이 생성 호출·거래는 각 1이며, 주문 단위 조회로 그 거래를 찾는다")
+        @DisplayName("G-3 거래는 생겼지만 응답이 읽기 timeout보다 늦으면 PgUnknownResultException(READ_TIMEOUT)이고, 숨은 재시도 없이 생성 호출·거래는 각 1이며, 주문 단위 조회로 그 거래를 찾는다")
         @Test
         void unknownWhenResponseIsLost() {
             // arrange
             PG.delayNextCreateResponse(Duration.ofMillis(1500));
 
             // act & assert
-            assertThatThrownBy(() -> adapter.request(paymentRequest())).isInstanceOf(PgUnknownResultException.class);
+            assertThatThrownBy(() -> adapter.request(paymentRequest()))
+                .isInstanceOfSatisfying(PgUnknownResultException.class,
+                    e -> assertThat(e.getReason()).isEqualTo(PgUnknownResultException.Reason.READ_TIMEOUT));
             await().during(Duration.ofMillis(1500)).atMost(Duration.ofSeconds(3))
                 .until(() -> PG.createCalls() == 1 && PG.transactionsCreated() == 1);
             List<PgTransaction> found = adapter.findByProviderOrderId(ORDER_ID);
@@ -160,7 +171,9 @@ class LocalPgPaymentGatewayAdapterTest {
             PG.dropNextCreateConnection();
 
             // act & assert
-            assertThatThrownBy(() -> adapter.request(paymentRequest())).isInstanceOf(PgUnknownResultException.class);
+            assertThatThrownBy(() -> adapter.request(paymentRequest()))
+                .isInstanceOfSatisfying(PgUnknownResultException.class,
+                    e -> assertThat(e.getReason()).isEqualTo(PgUnknownResultException.Reason.READ_FAILED));
             await().during(Duration.ofMillis(500)).atMost(Duration.ofSeconds(2))
                 .until(() -> PG.createCalls() == 1 && PG.transactionsCreated() == 1);
         }
@@ -172,7 +185,7 @@ class LocalPgPaymentGatewayAdapterTest {
             PgProperties downPg = new PgProperties(
                 "http://127.0.0.1:" + unusedPort(), properties.userId(), properties.callbackUrl(),
                 properties.connectTimeout(), properties.createReadTimeout(), properties.lookupReadTimeout());
-            LocalPgPaymentGatewayAdapter downAdapter = new LocalPgPaymentGatewayAdapter(downPg, circuitBreakerRegistry, retryRegistry);
+            LocalPgPaymentGatewayAdapter downAdapter = new LocalPgPaymentGatewayAdapter(downPg, circuitBreakerRegistry, retryRegistry, ObservationRegistry.NOOP);
 
             // act & assert
             assertThatThrownBy(() -> downAdapter.request(paymentRequest())).isInstanceOf(PgNotSentException.class);
@@ -185,7 +198,9 @@ class LocalPgPaymentGatewayAdapterTest {
             PG.failNextCreateAfterCreating();
 
             // act & assert
-            assertThatThrownBy(() -> adapter.request(paymentRequest())).isInstanceOf(PgUnknownResultException.class);
+            assertThatThrownBy(() -> adapter.request(paymentRequest()))
+                .isInstanceOfSatisfying(PgUnknownResultException.class,
+                    e -> assertThat(e.getReason()).isEqualTo(PgUnknownResultException.Reason.SERVER_ERROR));
             assertThat(PG.transactionsCreated()).isEqualTo(1);
         }
 
@@ -196,7 +211,9 @@ class LocalPgPaymentGatewayAdapterTest {
             PG.garbleNextCreateResponse();
 
             // act & assert
-            assertThatThrownBy(() -> adapter.request(paymentRequest())).isInstanceOf(PgUnknownResultException.class);
+            assertThatThrownBy(() -> adapter.request(paymentRequest()))
+                .isInstanceOfSatisfying(PgUnknownResultException.class,
+                    e -> assertThat(e.getReason()).isEqualTo(PgUnknownResultException.Reason.UNREADABLE));
             assertThat(PG.transactionsCreated()).isEqualTo(1);
         }
 

@@ -1,6 +1,7 @@
 package com.loopers.payment.scenario;
 
 import com.loopers.order.domain.OrderStatus;
+import com.loopers.payment.application.PaymentResultSource;
 import com.loopers.payment.application.port.out.PaymentGatewayPort;
 import com.loopers.payment.application.port.out.PgPaymentRequest;
 import com.loopers.payment.application.port.out.PgTransaction;
@@ -111,7 +112,7 @@ class S09LookupAnomalyScenarioTest extends PaymentScenarioSupport {
         PgTransaction transactionOfB = paymentGatewayPort.findByTransactionKey(paymentOf(orderB).getTransactionKey()).orElseThrow();
 
         // act: B의 거래가 A의 결과로 잘못 들어온다
-        PaymentApplyOutcome outcome = paymentResultApplier.apply(paymentOf(orderA).getId(), transactionOfB);
+        PaymentApplyOutcome outcome = paymentResultApplier.apply(paymentOf(orderA).getId(), transactionOfB, PaymentResultSource.RECONCILE_API);
 
         // assert
         assertThat(outcome).isEqualTo(PaymentApplyOutcome.MISMATCH);

@@ -5,6 +5,7 @@ import com.loopers.order.domain.OrderModel;
 import com.loopers.payment.application.port.in.PaymentInfo;
 import com.loopers.payment.application.port.out.PaymentPort;
 import com.loopers.payment.domain.Payment;
+import com.loopers.payment.domain.PaymentStatus;
 import com.loopers.support.error.CoreException;
 import com.loopers.support.error.ErrorType;
 import lombok.RequiredArgsConstructor;
@@ -32,5 +33,12 @@ public class PaymentQueryService {
         Payment payment = paymentPort.findByOrderId(orderId)
             .orElseThrow(() -> new CoreException(ErrorType.NOT_FOUND, "[orderId = " + orderId + "] 결제 시도가 없습니다."));
         return PaymentInfo.of(order, payment);
+    }
+
+    /**
+     * 업무 지표 (W10 D-4): 지금 이 상태인 결제 수. 지표를 읽을 때마다 센다.
+     */
+    public long countByStatus(PaymentStatus status) {
+        return paymentPort.countByStatus(status);
     }
 }

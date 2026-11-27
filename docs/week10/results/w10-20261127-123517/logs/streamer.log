@@ -1,0 +1,1459 @@
+
+  .   ____          _            __ _ _
+ /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
+( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
+ \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
+  '  |____| .__|_| |_|_| |_\__, | / / / /
+ =========|_|==============|___/=/_/_/_/
+
+ :: Spring Boot ::                (v3.4.4)
+
+2026-11-27T12:36:38.946+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] c.loopers.CommerceStreamerApplication    : Starting CommerceStreamerApplication vef6090fe using Java 21.0.13 with PID 88221 (/Users/tanonkim/Documents/loopers/loop-pack-be-l2-vol5-java-claude/apps/commerce-streamer/build/libs/commerce-streamer-ef6090fe.jar started by tanonkim in /Users/tanonkim/Documents/loopers/loop-pack-be-l2-vol5-java-claude)
+2026-11-27T12:36:38.948+09:00 DEBUG 88221 --- [commerce-streamer] [           main] [                                                 ] c.loopers.CommerceStreamerApplication    : Running with Spring Boot v3.4.4, Spring v6.2.5
+2026-11-27T12:36:38.948+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] c.loopers.CommerceStreamerApplication    : The following 1 profile is active: "local"
+2026-11-27T12:36:39.373+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] .s.d.r.c.RepositoryConfigurationDelegate : Multiple Spring Data modules found, entering strict repository configuration mode
+2026-11-27T12:36:39.374+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] .s.d.r.c.RepositoryConfigurationDelegate : Bootstrapping Spring Data JPA repositories in DEFAULT mode.
+2026-11-27T12:36:39.482+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] .s.d.r.c.RepositoryConfigurationDelegate : Finished Spring Data repository scanning in 102 ms. Found 5 JPA repository interfaces.
+2026-11-27T12:36:40.215+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat initialized with port 0 (http)
+2026-11-27T12:36:40.224+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.apache.catalina.core.StandardService   : Starting service [Tomcat]
+2026-11-27T12:36:40.224+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.apache.catalina.core.StandardEngine    : Starting Servlet engine: [Apache Tomcat/10.1.39]
+2026-11-27T12:36:40.249+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.a.c.c.C.[Tomcat].[localhost].[/]       : Initializing Spring embedded WebApplicationContext
+2026-11-27T12:36:40.249+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] w.s.c.ServletWebServerApplicationContext : Root WebApplicationContext: initialization completed in 1277 ms
+2026-11-27T12:36:40.580+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] com.zaxxer.hikari.HikariDataSource       : mysql-main-pool - Starting...
+2026-11-27T12:36:40.796+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] com.zaxxer.hikari.pool.HikariPool        : mysql-main-pool - Added connection com.mysql.cj.jdbc.ConnectionImpl@ae74eef
+2026-11-27T12:36:40.797+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] com.zaxxer.hikari.HikariDataSource       : mysql-main-pool - Start completed.
+2026-11-27T12:36:40.867+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.hibernate.jpa.internal.util.LogHelper  : HHH000204: Processing PersistenceUnitInfo [name: default]
+2026-11-27T12:36:40.925+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] org.hibernate.Version                    : HHH000412: Hibernate ORM core version 6.6.11.Final
+2026-11-27T12:36:40.950+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.h.c.internal.RegionFactoryInitiator    : HHH000026: Second-level cache disabled
+2026-11-27T12:36:41.158+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.s.o.j.p.SpringPersistenceUnitInfo      : No LoadTimeWeaver setup: ignoring JPA class transformer
+2026-11-27T12:36:41.237+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] org.hibernate.orm.connections.pooling    : HHH10001005: Database info:
+	Database JDBC URL [Connecting through datasource 'HikariDataSource (mysql-main-pool)']
+	Database driver: undefined/unknown
+	Database version: 8.0.46
+	Autocommit mode: undefined/unknown
+	Isolation level: undefined/unknown
+	Minimum pool size: undefined/unknown
+	Maximum pool size: undefined/unknown
+2026-11-27T12:36:41.836+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.h.e.t.j.p.i.JtaPlatformInitiator       : HHH000489: No JTA platform available (set 'hibernate.transaction.jta.platform' to enable JTA platform integration)
+2026-11-27T12:36:42.034+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] j.LocalContainerEntityManagerFactoryBean : Initialized JPA EntityManagerFactory for persistence unit 'default'
+2026-11-27T12:36:42.377+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.s.d.j.r.query.QueryEnhancerFactory     : Hibernate is in classpath; If applicable, HQL parser will be used.
+2026-11-27T12:36:43.720+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.a.k.clients.admin.AdminClientConfig    : AdminClientConfig values: 
+	auto.include.jmx.reporter = true
+	bootstrap.controllers = []
+	bootstrap.servers = [localhost:39292, localhost:39293, localhost:39294]
+	client.dns.lookup = use_all_dns_ips
+	client.id = commerce-streamer
+	connections.max.idle.ms = 300000
+	default.api.timeout.ms = 60000
+	enable.metrics.push = true
+	metadata.max.age.ms = 300000
+	metadata.recovery.strategy = none
+	metric.reporters = []
+	metrics.num.samples = 2
+	metrics.recording.level = INFO
+	metrics.sample.window.ms = 30000
+	receive.buffer.bytes = 65536
+	reconnect.backoff.max.ms = 1000
+	reconnect.backoff.ms = 50
+	request.timeout.ms = 20000
+	retries = 2147483647
+	retry.backoff.max.ms = 1000
+	retry.backoff.ms = 500
+	sasl.client.callback.handler.class = null
+	sasl.jaas.config = null
+	sasl.kerberos.kinit.cmd = /usr/bin/kinit
+	sasl.kerberos.min.time.before.relogin = 60000
+	sasl.kerberos.service.name = null
+	sasl.kerberos.ticket.renew.jitter = 0.05
+	sasl.kerberos.ticket.renew.window.factor = 0.8
+	sasl.login.callback.handler.class = null
+	sasl.login.class = null
+	sasl.login.connect.timeout.ms = null
+	sasl.login.read.timeout.ms = null
+	sasl.login.refresh.buffer.seconds = 300
+	sasl.login.refresh.min.period.seconds = 60
+	sasl.login.refresh.window.factor = 0.8
+	sasl.login.refresh.window.jitter = 0.05
+	sasl.login.retry.backoff.max.ms = 10000
+	sasl.login.retry.backoff.ms = 100
+	sasl.mechanism = GSSAPI
+	sasl.oauthbearer.clock.skew.seconds = 30
+	sasl.oauthbearer.expected.audience = null
+	sasl.oauthbearer.expected.issuer = null
+	sasl.oauthbearer.jwks.endpoint.refresh.ms = 3600000
+	sasl.oauthbearer.jwks.endpoint.retry.backoff.max.ms = 10000
+	sasl.oauthbearer.jwks.endpoint.retry.backoff.ms = 100
+	sasl.oauthbearer.jwks.endpoint.url = null
+	sasl.oauthbearer.scope.claim.name = scope
+	sasl.oauthbearer.sub.claim.name = sub
+	sasl.oauthbearer.token.endpoint.url = null
+	security.protocol = PLAINTEXT
+	security.providers = null
+	send.buffer.bytes = 131072
+	socket.connection.setup.timeout.max.ms = 30000
+	socket.connection.setup.timeout.ms = 10000
+	ssl.cipher.suites = null
+	ssl.enabled.protocols = [TLSv1.2, TLSv1.3]
+	ssl.endpoint.identification.algorithm = https
+	ssl.engine.factory.class = null
+	ssl.key.password = null
+	ssl.keymanager.algorithm = SunX509
+	ssl.keystore.certificate.chain = null
+	ssl.keystore.key = null
+	ssl.keystore.location = null
+	ssl.keystore.password = null
+	ssl.keystore.type = JKS
+	ssl.protocol = TLSv1.3
+	ssl.provider = null
+	ssl.secure.random.implementation = null
+	ssl.trustmanager.algorithm = PKIX
+	ssl.truststore.certificates = null
+	ssl.truststore.location = null
+	ssl.truststore.password = null
+	ssl.truststore.type = JKS
+
+2026-11-27T12:36:43.801+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.a.k.clients.admin.AdminClientConfig    : These configurations '[auto.create.topics.enable, auto.register.schemas, use.latest.version, spring.json.add.type.headers, auto.offset.reset]' were supplied but are not used yet.
+2026-11-27T12:36:43.802+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.a.kafka.common.utils.AppInfoParser     : Kafka version: 3.8.1
+2026-11-27T12:36:43.802+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.a.kafka.common.utils.AppInfoParser     : Kafka commitId: 70d6ff42debf7e17
+2026-11-27T12:36:43.802+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.a.kafka.common.utils.AppInfoParser     : Kafka startTimeMs: 1795750603801
+2026-11-27T12:36:44.032+09:00  INFO 88221 --- [commerce-streamer] [mmerce-streamer] [                                                 ] o.a.kafka.common.utils.AppInfoParser     : App info kafka.admin.client for commerce-streamer unregistered
+2026-11-27T12:36:44.034+09:00  INFO 88221 --- [commerce-streamer] [mmerce-streamer] [                                                 ] o.apache.kafka.common.metrics.Metrics    : Metrics scheduler closed
+2026-11-27T12:36:44.035+09:00  INFO 88221 --- [commerce-streamer] [mmerce-streamer] [                                                 ] o.apache.kafka.common.metrics.Metrics    : Closing reporter org.apache.kafka.common.metrics.JmxReporter
+2026-11-27T12:36:44.035+09:00  INFO 88221 --- [commerce-streamer] [mmerce-streamer] [                                                 ] o.apache.kafka.common.metrics.Metrics    : Metrics reporters closed
+2026-11-27T12:36:44.044+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat started on port 53675 (http) with context path '/'
+2026-11-27T12:36:44.087+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat initialized with port 0 (http)
+2026-11-27T12:36:44.088+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.apache.catalina.core.StandardService   : Starting service [Tomcat]
+2026-11-27T12:36:44.088+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.apache.catalina.core.StandardEngine    : Starting Servlet engine: [Apache Tomcat/10.1.39]
+2026-11-27T12:36:44.090+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.a.c.c.C.[Tomcat-1].[localhost].[/]     : Initializing Spring embedded WebApplicationContext
+2026-11-27T12:36:44.090+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] w.s.c.ServletWebServerApplicationContext : Root WebApplicationContext: initialization completed in 43 ms
+2026-11-27T12:36:44.097+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.s.b.a.e.web.EndpointLinksResolver      : Exposing 2 endpoints beneath base path '/actuator'
+2026-11-27T12:36:44.114+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat started on port 53676 (http) with context path '/'
+2026-11-27T12:36:44.129+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.a.k.clients.consumer.ConsumerConfig    : ConsumerConfig values: 
+	allow.auto.create.topics = true
+	auto.commit.interval.ms = 5000
+	auto.include.jmx.reporter = true
+	auto.offset.reset = earliest
+	bootstrap.servers = [localhost:39292, localhost:39293, localhost:39294]
+	check.crcs = true
+	client.dns.lookup = use_all_dns_ips
+	client.id = commerce-streamer-0
+	client.rack = 
+	connections.max.idle.ms = 540000
+	default.api.timeout.ms = 60000
+	enable.auto.commit = false
+	enable.metrics.push = true
+	exclude.internal.topics = true
+	fetch.max.bytes = 52428800
+	fetch.max.wait.ms = 500
+	fetch.min.bytes = 1
+	group.id = commerce-streamer.product-purchase-activity
+	group.instance.id = null
+	group.protocol = classic
+	group.remote.assignor = null
+	heartbeat.interval.ms = 3000
+	interceptor.classes = []
+	internal.leave.group.on.close = true
+	internal.throw.on.fetch.stable.offset.unsupported = false
+	isolation.level = read_uncommitted
+	key.deserializer = class org.apache.kafka.common.serialization.StringDeserializer
+	max.partition.fetch.bytes = 1048576
+	max.poll.interval.ms = 300000
+	max.poll.records = 500
+	metadata.max.age.ms = 300000
+	metadata.recovery.strategy = none
+	metric.reporters = []
+	metrics.num.samples = 2
+	metrics.recording.level = INFO
+	metrics.sample.window.ms = 30000
+	partition.assignment.strategy = [org.apache.kafka.clients.consumer.CooperativeStickyAssignor]
+	receive.buffer.bytes = 65536
+	reconnect.backoff.max.ms = 1000
+	reconnect.backoff.ms = 50
+	request.timeout.ms = 20000
+	retry.backoff.max.ms = 1000
+	retry.backoff.ms = 500
+	sasl.client.callback.handler.class = null
+	sasl.jaas.config = null
+	sasl.kerberos.kinit.cmd = /usr/bin/kinit
+	sasl.kerberos.min.time.before.relogin = 60000
+	sasl.kerberos.service.name = null
+	sasl.kerberos.ticket.renew.jitter = 0.05
+	sasl.kerberos.ticket.renew.window.factor = 0.8
+	sasl.login.callback.handler.class = null
+	sasl.login.class = null
+	sasl.login.connect.timeout.ms = null
+	sasl.login.read.timeout.ms = null
+	sasl.login.refresh.buffer.seconds = 300
+	sasl.login.refresh.min.period.seconds = 60
+	sasl.login.refresh.window.factor = 0.8
+	sasl.login.refresh.window.jitter = 0.05
+	sasl.login.retry.backoff.max.ms = 10000
+	sasl.login.retry.backoff.ms = 100
+	sasl.mechanism = GSSAPI
+	sasl.oauthbearer.clock.skew.seconds = 30
+	sasl.oauthbearer.expected.audience = null
+	sasl.oauthbearer.expected.issuer = null
+	sasl.oauthbearer.jwks.endpoint.refresh.ms = 3600000
+	sasl.oauthbearer.jwks.endpoint.retry.backoff.max.ms = 10000
+	sasl.oauthbearer.jwks.endpoint.retry.backoff.ms = 100
+	sasl.oauthbearer.jwks.endpoint.url = null
+	sasl.oauthbearer.scope.claim.name = scope
+	sasl.oauthbearer.sub.claim.name = sub
+	sasl.oauthbearer.token.endpoint.url = null
+	security.protocol = PLAINTEXT
+	security.providers = null
+	send.buffer.bytes = 131072
+	session.timeout.ms = 45000
+	socket.connection.setup.timeout.max.ms = 30000
+	socket.connection.setup.timeout.ms = 10000
+	ssl.cipher.suites = null
+	ssl.enabled.protocols = [TLSv1.2, TLSv1.3]
+	ssl.endpoint.identification.algorithm = https
+	ssl.engine.factory.class = null
+	ssl.key.password = null
+	ssl.keymanager.algorithm = SunX509
+	ssl.keystore.certificate.chain = null
+	ssl.keystore.key = null
+	ssl.keystore.location = null
+	ssl.keystore.password = null
+	ssl.keystore.type = JKS
+	ssl.protocol = TLSv1.3
+	ssl.provider = null
+	ssl.secure.random.implementation = null
+	ssl.trustmanager.algorithm = PKIX
+	ssl.truststore.certificates = null
+	ssl.truststore.location = null
+	ssl.truststore.password = null
+	ssl.truststore.type = JKS
+	value.deserializer = class org.apache.kafka.common.serialization.StringDeserializer
+
+2026-11-27T12:36:44.154+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.a.k.c.t.i.KafkaMetricsCollector        : initializing Kafka metrics collector
+2026-11-27T12:36:44.185+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.a.k.clients.consumer.ConsumerConfig    : These configurations '[auto.create.topics.enable, auto.register.schemas, use.latest.version, spring.json.add.type.headers]' were supplied but are not used yet.
+2026-11-27T12:36:44.185+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.a.kafka.common.utils.AppInfoParser     : Kafka version: 3.8.1
+2026-11-27T12:36:44.185+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.a.kafka.common.utils.AppInfoParser     : Kafka commitId: 70d6ff42debf7e17
+2026-11-27T12:36:44.185+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.a.kafka.common.utils.AppInfoParser     : Kafka startTimeMs: 1795750604185
+2026-11-27T12:36:44.187+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.a.k.c.c.internals.LegacyKafkaConsumer  : [Consumer clientId=commerce-streamer-0, groupId=commerce-streamer.product-purchase-activity] Subscribed to topic(s): order-events
+2026-11-27T12:36:44.190+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.a.k.clients.consumer.ConsumerConfig    : ConsumerConfig values: 
+	allow.auto.create.topics = true
+	auto.commit.interval.ms = 5000
+	auto.include.jmx.reporter = true
+	auto.offset.reset = earliest
+	bootstrap.servers = [localhost:39292, localhost:39293, localhost:39294]
+	check.crcs = true
+	client.dns.lookup = use_all_dns_ips
+	client.id = commerce-streamer-1
+	client.rack = 
+	connections.max.idle.ms = 540000
+	default.api.timeout.ms = 60000
+	enable.auto.commit = false
+	enable.metrics.push = true
+	exclude.internal.topics = true
+	fetch.max.bytes = 52428800
+	fetch.max.wait.ms = 500
+	fetch.min.bytes = 1
+	group.id = commerce-streamer.product-purchase-activity
+	group.instance.id = null
+	group.protocol = classic
+	group.remote.assignor = null
+	heartbeat.interval.ms = 3000
+	interceptor.classes = []
+	internal.leave.group.on.close = true
+	internal.throw.on.fetch.stable.offset.unsupported = false
+	isolation.level = read_uncommitted
+	key.deserializer = class org.apache.kafka.common.serialization.StringDeserializer
+	max.partition.fetch.bytes = 1048576
+	max.poll.interval.ms = 300000
+	max.poll.records = 500
+	metadata.max.age.ms = 300000
+	metadata.recovery.strategy = none
+	metric.reporters = []
+	metrics.num.samples = 2
+	metrics.recording.level = INFO
+	metrics.sample.window.ms = 30000
+	partition.assignment.strategy = [org.apache.kafka.clients.consumer.CooperativeStickyAssignor]
+	receive.buffer.bytes = 65536
+	reconnect.backoff.max.ms = 1000
+	reconnect.backoff.ms = 50
+	request.timeout.ms = 20000
+	retry.backoff.max.ms = 1000
+	retry.backoff.ms = 500
+	sasl.client.callback.handler.class = null
+	sasl.jaas.config = null
+	sasl.kerberos.kinit.cmd = /usr/bin/kinit
+	sasl.kerberos.min.time.before.relogin = 60000
+	sasl.kerberos.service.name = null
+	sasl.kerberos.ticket.renew.jitter = 0.05
+	sasl.kerberos.ticket.renew.window.factor = 0.8
+	sasl.login.callback.handler.class = null
+	sasl.login.class = null
+	sasl.login.connect.timeout.ms = null
+	sasl.login.read.timeout.ms = null
+	sasl.login.refresh.buffer.seconds = 300
+	sasl.login.refresh.min.period.seconds = 60
+	sasl.login.refresh.window.factor = 0.8
+	sasl.login.refresh.window.jitter = 0.05
+	sasl.login.retry.backoff.max.ms = 10000
+	sasl.login.retry.backoff.ms = 100
+	sasl.mechanism = GSSAPI
+	sasl.oauthbearer.clock.skew.seconds = 30
+	sasl.oauthbearer.expected.audience = null
+	sasl.oauthbearer.expected.issuer = null
+	sasl.oauthbearer.jwks.endpoint.refresh.ms = 3600000
+	sasl.oauthbearer.jwks.endpoint.retry.backoff.max.ms = 10000
+	sasl.oauthbearer.jwks.endpoint.retry.backoff.ms = 100
+	sasl.oauthbearer.jwks.endpoint.url = null
+	sasl.oauthbearer.scope.claim.name = scope
+	sasl.oauthbearer.sub.claim.name = sub
+	sasl.oauthbearer.token.endpoint.url = null
+	security.protocol = PLAINTEXT
+	security.providers = null
+	send.buffer.bytes = 131072
+	session.timeout.ms = 45000
+	socket.connection.setup.timeout.max.ms = 30000
+	socket.connection.setup.timeout.ms = 10000
+	ssl.cipher.suites = null
+	ssl.enabled.protocols = [TLSv1.2, TLSv1.3]
+	ssl.endpoint.identification.algorithm = https
+	ssl.engine.factory.class = null
+	ssl.key.password = null
+	ssl.keymanager.algorithm = SunX509
+	ssl.keystore.certificate.chain = null
+	ssl.keystore.key = null
+	ssl.keystore.location = null
+	ssl.keystore.password = null
+	ssl.keystore.type = JKS
+	ssl.protocol = TLSv1.3
+	ssl.provider = null
+	ssl.secure.random.implementation = null
+	ssl.trustmanager.algorithm = PKIX
+	ssl.truststore.certificates = null
+	ssl.truststore.location = null
+	ssl.truststore.password = null
+	ssl.truststore.type = JKS
+	value.deserializer = class org.apache.kafka.common.serialization.StringDeserializer
+
+2026-11-27T12:36:44.190+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.a.k.c.t.i.KafkaMetricsCollector        : initializing Kafka metrics collector
+2026-11-27T12:36:44.193+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.a.k.clients.consumer.ConsumerConfig    : These configurations '[auto.create.topics.enable, auto.register.schemas, use.latest.version, spring.json.add.type.headers]' were supplied but are not used yet.
+2026-11-27T12:36:44.193+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.a.kafka.common.utils.AppInfoParser     : Kafka version: 3.8.1
+2026-11-27T12:36:44.193+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.a.kafka.common.utils.AppInfoParser     : Kafka commitId: 70d6ff42debf7e17
+2026-11-27T12:36:44.193+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.a.kafka.common.utils.AppInfoParser     : Kafka startTimeMs: 1795750604193
+2026-11-27T12:36:44.193+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.a.k.c.c.internals.LegacyKafkaConsumer  : [Consumer clientId=commerce-streamer-1, groupId=commerce-streamer.product-purchase-activity] Subscribed to topic(s): order-events
+2026-11-27T12:36:44.194+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.a.k.clients.consumer.ConsumerConfig    : ConsumerConfig values: 
+	allow.auto.create.topics = true
+	auto.commit.interval.ms = 5000
+	auto.include.jmx.reporter = true
+	auto.offset.reset = earliest
+	bootstrap.servers = [localhost:39292, localhost:39293, localhost:39294]
+	check.crcs = true
+	client.dns.lookup = use_all_dns_ips
+	client.id = commerce-streamer-2
+	client.rack = 
+	connections.max.idle.ms = 540000
+	default.api.timeout.ms = 60000
+	enable.auto.commit = false
+	enable.metrics.push = true
+	exclude.internal.topics = true
+	fetch.max.bytes = 52428800
+	fetch.max.wait.ms = 500
+	fetch.min.bytes = 1
+	group.id = commerce-streamer.product-purchase-activity
+	group.instance.id = null
+	group.protocol = classic
+	group.remote.assignor = null
+	heartbeat.interval.ms = 3000
+	interceptor.classes = []
+	internal.leave.group.on.close = true
+	internal.throw.on.fetch.stable.offset.unsupported = false
+	isolation.level = read_uncommitted
+	key.deserializer = class org.apache.kafka.common.serialization.StringDeserializer
+	max.partition.fetch.bytes = 1048576
+	max.poll.interval.ms = 300000
+	max.poll.records = 500
+	metadata.max.age.ms = 300000
+	metadata.recovery.strategy = none
+	metric.reporters = []
+	metrics.num.samples = 2
+	metrics.recording.level = INFO
+	metrics.sample.window.ms = 30000
+	partition.assignment.strategy = [org.apache.kafka.clients.consumer.CooperativeStickyAssignor]
+	receive.buffer.bytes = 65536
+	reconnect.backoff.max.ms = 1000
+	reconnect.backoff.ms = 50
+	request.timeout.ms = 20000
+	retry.backoff.max.ms = 1000
+	retry.backoff.ms = 500
+	sasl.client.callback.handler.class = null
+	sasl.jaas.config = null
+	sasl.kerberos.kinit.cmd = /usr/bin/kinit
+	sasl.kerberos.min.time.before.relogin = 60000
+	sasl.kerberos.service.name = null
+	sasl.kerberos.ticket.renew.jitter = 0.05
+	sasl.kerberos.ticket.renew.window.factor = 0.8
+	sasl.login.callback.handler.class = null
+	sasl.login.class = null
+	sasl.login.connect.timeout.ms = null
+	sasl.login.read.timeout.ms = null
+	sasl.login.refresh.buffer.seconds = 300
+	sasl.login.refresh.min.period.seconds = 60
+	sasl.login.refresh.window.factor = 0.8
+	sasl.login.refresh.window.jitter = 0.05
+	sasl.login.retry.backoff.max.ms = 10000
+	sasl.login.retry.backoff.ms = 100
+	sasl.mechanism = GSSAPI
+	sasl.oauthbearer.clock.skew.seconds = 30
+	sasl.oauthbearer.expected.audience = null
+	sasl.oauthbearer.expected.issuer = null
+	sasl.oauthbearer.jwks.endpoint.refresh.ms = 3600000
+	sasl.oauthbearer.jwks.endpoint.retry.backoff.max.ms = 10000
+	sasl.oauthbearer.jwks.endpoint.retry.backoff.ms = 100
+	sasl.oauthbearer.jwks.endpoint.url = null
+	sasl.oauthbearer.scope.claim.name = scope
+	sasl.oauthbearer.sub.claim.name = sub
+	sasl.oauthbearer.token.endpoint.url = null
+	security.protocol = PLAINTEXT
+	security.providers = null
+	send.buffer.bytes = 131072
+	session.timeout.ms = 45000
+	socket.connection.setup.timeout.max.ms = 30000
+	socket.connection.setup.timeout.ms = 10000
+	ssl.cipher.suites = null
+	ssl.enabled.protocols = [TLSv1.2, TLSv1.3]
+	ssl.endpoint.identification.algorithm = https
+	ssl.engine.factory.class = null
+	ssl.key.password = null
+	ssl.keymanager.algorithm = SunX509
+	ssl.keystore.certificate.chain = null
+	ssl.keystore.key = null
+	ssl.keystore.location = null
+	ssl.keystore.password = null
+	ssl.keystore.type = JKS
+	ssl.protocol = TLSv1.3
+	ssl.provider = null
+	ssl.secure.random.implementation = null
+	ssl.trustmanager.algorithm = PKIX
+	ssl.truststore.certificates = null
+	ssl.truststore.location = null
+	ssl.truststore.password = null
+	ssl.truststore.type = JKS
+	value.deserializer = class org.apache.kafka.common.serialization.StringDeserializer
+
+2026-11-27T12:36:44.194+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.a.k.c.t.i.KafkaMetricsCollector        : initializing Kafka metrics collector
+2026-11-27T12:36:44.196+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.a.k.clients.consumer.ConsumerConfig    : These configurations '[auto.create.topics.enable, auto.register.schemas, use.latest.version, spring.json.add.type.headers]' were supplied but are not used yet.
+2026-11-27T12:36:44.196+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.a.kafka.common.utils.AppInfoParser     : Kafka version: 3.8.1
+2026-11-27T12:36:44.196+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.a.kafka.common.utils.AppInfoParser     : Kafka commitId: 70d6ff42debf7e17
+2026-11-27T12:36:44.196+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.a.kafka.common.utils.AppInfoParser     : Kafka startTimeMs: 1795750604196
+2026-11-27T12:36:44.197+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.a.k.c.c.internals.LegacyKafkaConsumer  : [Consumer clientId=commerce-streamer-2, groupId=commerce-streamer.product-purchase-activity] Subscribed to topic(s): order-events
+2026-11-27T12:36:44.197+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.a.k.clients.consumer.ConsumerConfig    : ConsumerConfig values: 
+	allow.auto.create.topics = true
+	auto.commit.interval.ms = 5000
+	auto.include.jmx.reporter = true
+	auto.offset.reset = earliest
+	bootstrap.servers = [localhost:39292, localhost:39293, localhost:39294]
+	check.crcs = true
+	client.dns.lookup = use_all_dns_ips
+	client.id = commerce-streamer-0
+	client.rack = 
+	connections.max.idle.ms = 540000
+	default.api.timeout.ms = 60000
+	enable.auto.commit = false
+	enable.metrics.push = true
+	exclude.internal.topics = true
+	fetch.max.bytes = 52428800
+	fetch.max.wait.ms = 500
+	fetch.min.bytes = 1
+	group.id = commerce-streamer.coupon-issue
+	group.instance.id = null
+	group.protocol = classic
+	group.remote.assignor = null
+	heartbeat.interval.ms = 3000
+	interceptor.classes = []
+	internal.leave.group.on.close = true
+	internal.throw.on.fetch.stable.offset.unsupported = false
+	isolation.level = read_uncommitted
+	key.deserializer = class org.apache.kafka.common.serialization.StringDeserializer
+	max.partition.fetch.bytes = 1048576
+	max.poll.interval.ms = 300000
+	max.poll.records = 500
+	metadata.max.age.ms = 300000
+	metadata.recovery.strategy = none
+	metric.reporters = []
+	metrics.num.samples = 2
+	metrics.recording.level = INFO
+	metrics.sample.window.ms = 30000
+	partition.assignment.strategy = [org.apache.kafka.clients.consumer.CooperativeStickyAssignor]
+	receive.buffer.bytes = 65536
+	reconnect.backoff.max.ms = 1000
+	reconnect.backoff.ms = 50
+	request.timeout.ms = 20000
+	retry.backoff.max.ms = 1000
+	retry.backoff.ms = 500
+	sasl.client.callback.handler.class = null
+	sasl.jaas.config = null
+	sasl.kerberos.kinit.cmd = /usr/bin/kinit
+	sasl.kerberos.min.time.before.relogin = 60000
+	sasl.kerberos.service.name = null
+	sasl.kerberos.ticket.renew.jitter = 0.05
+	sasl.kerberos.ticket.renew.window.factor = 0.8
+	sasl.login.callback.handler.class = null
+	sasl.login.class = null
+	sasl.login.connect.timeout.ms = null
+	sasl.login.read.timeout.ms = null
+	sasl.login.refresh.buffer.seconds = 300
+	sasl.login.refresh.min.period.seconds = 60
+	sasl.login.refresh.window.factor = 0.8
+	sasl.login.refresh.window.jitter = 0.05
+	sasl.login.retry.backoff.max.ms = 10000
+	sasl.login.retry.backoff.ms = 100
+	sasl.mechanism = GSSAPI
+	sasl.oauthbearer.clock.skew.seconds = 30
+	sasl.oauthbearer.expected.audience = null
+	sasl.oauthbearer.expected.issuer = null
+	sasl.oauthbearer.jwks.endpoint.refresh.ms = 3600000
+	sasl.oauthbearer.jwks.endpoint.retry.backoff.max.ms = 10000
+	sasl.oauthbearer.jwks.endpoint.retry.backoff.ms = 100
+	sasl.oauthbearer.jwks.endpoint.url = null
+	sasl.oauthbearer.scope.claim.name = scope
+	sasl.oauthbearer.sub.claim.name = sub
+	sasl.oauthbearer.token.endpoint.url = null
+	security.protocol = PLAINTEXT
+	security.providers = null
+	send.buffer.bytes = 131072
+	session.timeout.ms = 45000
+	socket.connection.setup.timeout.max.ms = 30000
+	socket.connection.setup.timeout.ms = 10000
+	ssl.cipher.suites = null
+	ssl.enabled.protocols = [TLSv1.2, TLSv1.3]
+	ssl.endpoint.identification.algorithm = https
+	ssl.engine.factory.class = null
+	ssl.key.password = null
+	ssl.keymanager.algorithm = SunX509
+	ssl.keystore.certificate.chain = null
+	ssl.keystore.key = null
+	ssl.keystore.location = null
+	ssl.keystore.password = null
+	ssl.keystore.type = JKS
+	ssl.protocol = TLSv1.3
+	ssl.provider = null
+	ssl.secure.random.implementation = null
+	ssl.trustmanager.algorithm = PKIX
+	ssl.truststore.certificates = null
+	ssl.truststore.location = null
+	ssl.truststore.password = null
+	ssl.truststore.type = JKS
+	value.deserializer = class org.apache.kafka.common.serialization.StringDeserializer
+
+2026-11-27T12:36:44.197+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.a.k.c.t.i.KafkaMetricsCollector        : initializing Kafka metrics collector
+2026-11-27T12:36:44.199+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.a.k.clients.consumer.ConsumerConfig    : These configurations '[auto.create.topics.enable, auto.register.schemas, use.latest.version, spring.json.add.type.headers]' were supplied but are not used yet.
+2026-11-27T12:36:44.199+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.a.kafka.common.utils.AppInfoParser     : The mbean of App info: [kafka.consumer], id: [commerce-streamer-0] already exists, so skipping a new mbean creation.
+2026-11-27T12:36:44.200+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.a.k.c.c.internals.LegacyKafkaConsumer  : [Consumer clientId=commerce-streamer-0, groupId=commerce-streamer.coupon-issue] Subscribed to topic(s): coupon-issue-requests
+2026-11-27T12:36:44.200+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.a.k.clients.consumer.ConsumerConfig    : ConsumerConfig values: 
+	allow.auto.create.topics = true
+	auto.commit.interval.ms = 5000
+	auto.include.jmx.reporter = true
+	auto.offset.reset = earliest
+	bootstrap.servers = [localhost:39292, localhost:39293, localhost:39294]
+	check.crcs = true
+	client.dns.lookup = use_all_dns_ips
+	client.id = commerce-streamer-1
+	client.rack = 
+	connections.max.idle.ms = 540000
+	default.api.timeout.ms = 60000
+	enable.auto.commit = false
+	enable.metrics.push = true
+	exclude.internal.topics = true
+	fetch.max.bytes = 52428800
+	fetch.max.wait.ms = 500
+	fetch.min.bytes = 1
+	group.id = commerce-streamer.coupon-issue
+	group.instance.id = null
+	group.protocol = classic
+	group.remote.assignor = null
+	heartbeat.interval.ms = 3000
+	interceptor.classes = []
+	internal.leave.group.on.close = true
+	internal.throw.on.fetch.stable.offset.unsupported = false
+	isolation.level = read_uncommitted
+	key.deserializer = class org.apache.kafka.common.serialization.StringDeserializer
+	max.partition.fetch.bytes = 1048576
+	max.poll.interval.ms = 300000
+	max.poll.records = 500
+	metadata.max.age.ms = 300000
+	metadata.recovery.strategy = none
+	metric.reporters = []
+	metrics.num.samples = 2
+	metrics.recording.level = INFO
+	metrics.sample.window.ms = 30000
+	partition.assignment.strategy = [org.apache.kafka.clients.consumer.CooperativeStickyAssignor]
+	receive.buffer.bytes = 65536
+	reconnect.backoff.max.ms = 1000
+	reconnect.backoff.ms = 50
+	request.timeout.ms = 20000
+	retry.backoff.max.ms = 1000
+	retry.backoff.ms = 500
+	sasl.client.callback.handler.class = null
+	sasl.jaas.config = null
+	sasl.kerberos.kinit.cmd = /usr/bin/kinit
+	sasl.kerberos.min.time.before.relogin = 60000
+	sasl.kerberos.service.name = null
+	sasl.kerberos.ticket.renew.jitter = 0.05
+	sasl.kerberos.ticket.renew.window.factor = 0.8
+	sasl.login.callback.handler.class = null
+	sasl.login.class = null
+	sasl.login.connect.timeout.ms = null
+	sasl.login.read.timeout.ms = null
+	sasl.login.refresh.buffer.seconds = 300
+	sasl.login.refresh.min.period.seconds = 60
+	sasl.login.refresh.window.factor = 0.8
+	sasl.login.refresh.window.jitter = 0.05
+	sasl.login.retry.backoff.max.ms = 10000
+	sasl.login.retry.backoff.ms = 100
+	sasl.mechanism = GSSAPI
+	sasl.oauthbearer.clock.skew.seconds = 30
+	sasl.oauthbearer.expected.audience = null
+	sasl.oauthbearer.expected.issuer = null
+	sasl.oauthbearer.jwks.endpoint.refresh.ms = 3600000
+	sasl.oauthbearer.jwks.endpoint.retry.backoff.max.ms = 10000
+	sasl.oauthbearer.jwks.endpoint.retry.backoff.ms = 100
+	sasl.oauthbearer.jwks.endpoint.url = null
+	sasl.oauthbearer.scope.claim.name = scope
+	sasl.oauthbearer.sub.claim.name = sub
+	sasl.oauthbearer.token.endpoint.url = null
+	security.protocol = PLAINTEXT
+	security.providers = null
+	send.buffer.bytes = 131072
+	session.timeout.ms = 45000
+	socket.connection.setup.timeout.max.ms = 30000
+	socket.connection.setup.timeout.ms = 10000
+	ssl.cipher.suites = null
+	ssl.enabled.protocols = [TLSv1.2, TLSv1.3]
+	ssl.endpoint.identification.algorithm = https
+	ssl.engine.factory.class = null
+	ssl.key.password = null
+	ssl.keymanager.algorithm = SunX509
+	ssl.keystore.certificate.chain = null
+	ssl.keystore.key = null
+	ssl.keystore.location = null
+	ssl.keystore.password = null
+	ssl.keystore.type = JKS
+	ssl.protocol = TLSv1.3
+	ssl.provider = null
+	ssl.secure.random.implementation = null
+	ssl.trustmanager.algorithm = PKIX
+	ssl.truststore.certificates = null
+	ssl.truststore.location = null
+	ssl.truststore.password = null
+	ssl.truststore.type = JKS
+	value.deserializer = class org.apache.kafka.common.serialization.StringDeserializer
+
+2026-11-27T12:36:44.200+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.a.k.c.t.i.KafkaMetricsCollector        : initializing Kafka metrics collector
+2026-11-27T12:36:44.202+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.a.k.clients.consumer.ConsumerConfig    : These configurations '[auto.create.topics.enable, auto.register.schemas, use.latest.version, spring.json.add.type.headers]' were supplied but are not used yet.
+2026-11-27T12:36:44.202+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.a.kafka.common.utils.AppInfoParser     : The mbean of App info: [kafka.consumer], id: [commerce-streamer-1] already exists, so skipping a new mbean creation.
+2026-11-27T12:36:44.202+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.a.k.c.c.internals.LegacyKafkaConsumer  : [Consumer clientId=commerce-streamer-1, groupId=commerce-streamer.coupon-issue] Subscribed to topic(s): coupon-issue-requests
+2026-11-27T12:36:44.203+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.a.k.clients.consumer.ConsumerConfig    : ConsumerConfig values: 
+	allow.auto.create.topics = true
+	auto.commit.interval.ms = 5000
+	auto.include.jmx.reporter = true
+	auto.offset.reset = latest
+	bootstrap.servers = [localhost:39292, localhost:39293, localhost:39294]
+	check.crcs = true
+	client.dns.lookup = use_all_dns_ips
+	client.id = commerce-streamer-0
+	client.rack = 
+	connections.max.idle.ms = 540000
+	default.api.timeout.ms = 60000
+	enable.auto.commit = false
+	enable.metrics.push = true
+	exclude.internal.topics = true
+	fetch.max.bytes = 52428800
+	fetch.max.wait.ms = 5000
+	fetch.min.bytes = 1048576
+	group.id = loopers-default-consumer
+	group.instance.id = null
+	group.protocol = classic
+	group.remote.assignor = null
+	heartbeat.interval.ms = 20000
+	interceptor.classes = []
+	internal.leave.group.on.close = true
+	internal.throw.on.fetch.stable.offset.unsupported = false
+	isolation.level = read_uncommitted
+	key.deserializer = class org.apache.kafka.common.serialization.StringDeserializer
+	max.partition.fetch.bytes = 1048576
+	max.poll.interval.ms = 120000
+	max.poll.records = 3000
+	metadata.max.age.ms = 300000
+	metadata.recovery.strategy = none
+	metric.reporters = []
+	metrics.num.samples = 2
+	metrics.recording.level = INFO
+	metrics.sample.window.ms = 30000
+	partition.assignment.strategy = [class org.apache.kafka.clients.consumer.RangeAssignor, class org.apache.kafka.clients.consumer.CooperativeStickyAssignor]
+	receive.buffer.bytes = 65536
+	reconnect.backoff.max.ms = 1000
+	reconnect.backoff.ms = 50
+	request.timeout.ms = 20000
+	retry.backoff.max.ms = 1000
+	retry.backoff.ms = 500
+	sasl.client.callback.handler.class = null
+	sasl.jaas.config = null
+	sasl.kerberos.kinit.cmd = /usr/bin/kinit
+	sasl.kerberos.min.time.before.relogin = 60000
+	sasl.kerberos.service.name = null
+	sasl.kerberos.ticket.renew.jitter = 0.05
+	sasl.kerberos.ticket.renew.window.factor = 0.8
+	sasl.login.callback.handler.class = null
+	sasl.login.class = null
+	sasl.login.connect.timeout.ms = null
+	sasl.login.read.timeout.ms = null
+	sasl.login.refresh.buffer.seconds = 300
+	sasl.login.refresh.min.period.seconds = 60
+	sasl.login.refresh.window.factor = 0.8
+	sasl.login.refresh.window.jitter = 0.05
+	sasl.login.retry.backoff.max.ms = 10000
+	sasl.login.retry.backoff.ms = 100
+	sasl.mechanism = GSSAPI
+	sasl.oauthbearer.clock.skew.seconds = 30
+	sasl.oauthbearer.expected.audience = null
+	sasl.oauthbearer.expected.issuer = null
+	sasl.oauthbearer.jwks.endpoint.refresh.ms = 3600000
+	sasl.oauthbearer.jwks.endpoint.retry.backoff.max.ms = 10000
+	sasl.oauthbearer.jwks.endpoint.retry.backoff.ms = 100
+	sasl.oauthbearer.jwks.endpoint.url = null
+	sasl.oauthbearer.scope.claim.name = scope
+	sasl.oauthbearer.sub.claim.name = sub
+	sasl.oauthbearer.token.endpoint.url = null
+	security.protocol = PLAINTEXT
+	security.providers = null
+	send.buffer.bytes = 131072
+	session.timeout.ms = 60000
+	socket.connection.setup.timeout.max.ms = 30000
+	socket.connection.setup.timeout.ms = 10000
+	ssl.cipher.suites = null
+	ssl.enabled.protocols = [TLSv1.2, TLSv1.3]
+	ssl.endpoint.identification.algorithm = https
+	ssl.engine.factory.class = null
+	ssl.key.password = null
+	ssl.keymanager.algorithm = SunX509
+	ssl.keystore.certificate.chain = null
+	ssl.keystore.key = null
+	ssl.keystore.location = null
+	ssl.keystore.password = null
+	ssl.keystore.type = JKS
+	ssl.protocol = TLSv1.3
+	ssl.provider = null
+	ssl.secure.random.implementation = null
+	ssl.trustmanager.algorithm = PKIX
+	ssl.truststore.certificates = null
+	ssl.truststore.location = null
+	ssl.truststore.password = null
+	ssl.truststore.type = JKS
+	value.deserializer = class org.apache.kafka.common.serialization.ByteArrayDeserializer
+
+2026-11-27T12:36:44.204+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.a.k.c.t.i.KafkaMetricsCollector        : initializing Kafka metrics collector
+2026-11-27T12:36:44.207+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.a.k.clients.consumer.ConsumerConfig    : These configurations '[auto.create.topics.enable, auto.register.schemas, use.latest.version, spring.json.add.type.headers]' were supplied but are not used yet.
+2026-11-27T12:36:44.207+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.a.kafka.common.utils.AppInfoParser     : The mbean of App info: [kafka.consumer], id: [commerce-streamer-0] already exists, so skipping a new mbean creation.
+2026-11-27T12:36:44.207+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.a.k.c.c.internals.LegacyKafkaConsumer  : [Consumer clientId=commerce-streamer-0, groupId=loopers-default-consumer] Subscribed to topic(s): demo.internal.topic-v1
+2026-11-27T12:36:44.212+09:00  INFO 88221 --- [commerce-streamer] [-activity-0-C-1] [                                                 ] org.apache.kafka.clients.Metadata        : [Consumer clientId=commerce-streamer-0, groupId=commerce-streamer.product-purchase-activity] Cluster ID: bG9vcGVyc3cxMGthZrYaAA
+2026-11-27T12:36:44.213+09:00  INFO 88221 --- [commerce-streamer] [-activity-1-C-1] [                                                 ] org.apache.kafka.clients.Metadata        : [Consumer clientId=commerce-streamer-1, groupId=commerce-streamer.product-purchase-activity] Cluster ID: bG9vcGVyc3cxMGthZrYaAA
+2026-11-27T12:36:44.212+09:00  INFO 88221 --- [commerce-streamer] [-activity-2-C-1] [                                                 ] org.apache.kafka.clients.Metadata        : [Consumer clientId=commerce-streamer-2, groupId=commerce-streamer.product-purchase-activity] Cluster ID: bG9vcGVyc3cxMGthZrYaAA
+2026-11-27T12:36:44.213+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.a.k.clients.consumer.ConsumerConfig    : ConsumerConfig values: 
+	allow.auto.create.topics = true
+	auto.commit.interval.ms = 5000
+	auto.include.jmx.reporter = true
+	auto.offset.reset = latest
+	bootstrap.servers = [localhost:39292, localhost:39293, localhost:39294]
+	check.crcs = true
+	client.dns.lookup = use_all_dns_ips
+	client.id = commerce-streamer-1
+	client.rack = 
+	connections.max.idle.ms = 540000
+	default.api.timeout.ms = 60000
+	enable.auto.commit = false
+	enable.metrics.push = true
+	exclude.internal.topics = true
+	fetch.max.bytes = 52428800
+	fetch.max.wait.ms = 5000
+	fetch.min.bytes = 1048576
+	group.id = loopers-default-consumer
+	group.instance.id = null
+	group.protocol = classic
+	group.remote.assignor = null
+	heartbeat.interval.ms = 20000
+	interceptor.classes = []
+	internal.leave.group.on.close = true
+	internal.throw.on.fetch.stable.offset.unsupported = false
+	isolation.level = read_uncommitted
+	key.deserializer = class org.apache.kafka.common.serialization.StringDeserializer
+	max.partition.fetch.bytes = 1048576
+	max.poll.interval.ms = 120000
+	max.poll.records = 3000
+	metadata.max.age.ms = 300000
+	metadata.recovery.strategy = none
+	metric.reporters = []
+	metrics.num.samples = 2
+	metrics.recording.level = INFO
+	metrics.sample.window.ms = 30000
+	partition.assignment.strategy = [class org.apache.kafka.clients.consumer.RangeAssignor, class org.apache.kafka.clients.consumer.CooperativeStickyAssignor]
+	receive.buffer.bytes = 65536
+	reconnect.backoff.max.ms = 1000
+	reconnect.backoff.ms = 50
+	request.timeout.ms = 20000
+	retry.backoff.max.ms = 1000
+	retry.backoff.ms = 500
+	sasl.client.callback.handler.class = null
+	sasl.jaas.config = null
+	sasl.kerberos.kinit.cmd = /usr/bin/kinit
+	sasl.kerberos.min.time.before.relogin = 60000
+	sasl.kerberos.service.name = null
+	sasl.kerberos.ticket.renew.jitter = 0.05
+	sasl.kerberos.ticket.renew.window.factor = 0.8
+	sasl.login.callback.handler.class = null
+	sasl.login.class = null
+	sasl.login.connect.timeout.ms = null
+	sasl.login.read.timeout.ms = null
+	sasl.login.refresh.buffer.seconds = 300
+	sasl.login.refresh.min.period.seconds = 60
+	sasl.login.refresh.window.factor = 0.8
+	sasl.login.refresh.window.jitter = 0.05
+	sasl.login.retry.backoff.max.ms = 10000
+	sasl.login.retry.backoff.ms = 100
+	sasl.mechanism = GSSAPI
+	sasl.oauthbearer.clock.skew.seconds = 30
+	sasl.oauthbearer.expected.audience = null
+	sasl.oauthbearer.expected.issuer = null
+	sasl.oauthbearer.jwks.endpoint.refresh.ms = 3600000
+	sasl.oauthbearer.jwks.endpoint.retry.backoff.max.ms = 10000
+	sasl.oauthbearer.jwks.endpoint.retry.backoff.ms = 100
+	sasl.oauthbearer.jwks.endpoint.url = null
+	sasl.oauthbearer.scope.claim.name = scope
+	sasl.oauthbearer.sub.claim.name = sub
+	sasl.oauthbearer.token.endpoint.url = null
+	security.protocol = PLAINTEXT
+	security.providers = null
+	send.buffer.bytes = 131072
+	session.timeout.ms = 60000
+	socket.connection.setup.timeout.max.ms = 30000
+	socket.connection.setup.timeout.ms = 10000
+	ssl.cipher.suites = null
+	ssl.enabled.protocols = [TLSv1.2, TLSv1.3]
+	ssl.endpoint.identification.algorithm = https
+	ssl.engine.factory.class = null
+	ssl.key.password = null
+	ssl.keymanager.algorithm = SunX509
+	ssl.keystore.certificate.chain = null
+	ssl.keystore.key = null
+	ssl.keystore.location = null
+	ssl.keystore.password = null
+	ssl.keystore.type = JKS
+	ssl.protocol = TLSv1.3
+	ssl.provider = null
+	ssl.secure.random.implementation = null
+	ssl.trustmanager.algorithm = PKIX
+	ssl.truststore.certificates = null
+	ssl.truststore.location = null
+	ssl.truststore.password = null
+	ssl.truststore.type = JKS
+	value.deserializer = class org.apache.kafka.common.serialization.ByteArrayDeserializer
+
+2026-11-27T12:36:44.213+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.a.k.c.t.i.KafkaMetricsCollector        : initializing Kafka metrics collector
+2026-11-27T12:36:44.215+09:00  INFO 88221 --- [commerce-streamer] [pon-issue-1-C-1] [                                                 ] org.apache.kafka.clients.Metadata        : [Consumer clientId=commerce-streamer-1, groupId=commerce-streamer.coupon-issue] Cluster ID: bG9vcGVyc3cxMGthZrYaAA
+2026-11-27T12:36:44.215+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.a.k.clients.consumer.ConsumerConfig    : These configurations '[auto.create.topics.enable, auto.register.schemas, use.latest.version, spring.json.add.type.headers]' were supplied but are not used yet.
+2026-11-27T12:36:44.215+09:00  INFO 88221 --- [commerce-streamer] [pon-issue-0-C-1] [                                                 ] org.apache.kafka.clients.Metadata        : [Consumer clientId=commerce-streamer-0, groupId=commerce-streamer.coupon-issue] Cluster ID: bG9vcGVyc3cxMGthZrYaAA
+2026-11-27T12:36:44.215+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.a.kafka.common.utils.AppInfoParser     : The mbean of App info: [kafka.consumer], id: [commerce-streamer-1] already exists, so skipping a new mbean creation.
+2026-11-27T12:36:44.215+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.a.k.c.c.internals.LegacyKafkaConsumer  : [Consumer clientId=commerce-streamer-1, groupId=loopers-default-consumer] Subscribed to topic(s): demo.internal.topic-v1
+2026-11-27T12:36:44.217+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.a.k.clients.consumer.ConsumerConfig    : ConsumerConfig values: 
+	allow.auto.create.topics = true
+	auto.commit.interval.ms = 5000
+	auto.include.jmx.reporter = true
+	auto.offset.reset = latest
+	bootstrap.servers = [localhost:39292, localhost:39293, localhost:39294]
+	check.crcs = true
+	client.dns.lookup = use_all_dns_ips
+	client.id = commerce-streamer-2
+	client.rack = 
+	connections.max.idle.ms = 540000
+	default.api.timeout.ms = 60000
+	enable.auto.commit = false
+	enable.metrics.push = true
+	exclude.internal.topics = true
+	fetch.max.bytes = 52428800
+	fetch.max.wait.ms = 5000
+	fetch.min.bytes = 1048576
+	group.id = loopers-default-consumer
+	group.instance.id = null
+	group.protocol = classic
+	group.remote.assignor = null
+	heartbeat.interval.ms = 20000
+	interceptor.classes = []
+	internal.leave.group.on.close = true
+	internal.throw.on.fetch.stable.offset.unsupported = false
+	isolation.level = read_uncommitted
+	key.deserializer = class org.apache.kafka.common.serialization.StringDeserializer
+	max.partition.fetch.bytes = 1048576
+	max.poll.interval.ms = 120000
+	max.poll.records = 3000
+	metadata.max.age.ms = 300000
+	metadata.recovery.strategy = none
+	metric.reporters = []
+	metrics.num.samples = 2
+	metrics.recording.level = INFO
+	metrics.sample.window.ms = 30000
+	partition.assignment.strategy = [class org.apache.kafka.clients.consumer.RangeAssignor, class org.apache.kafka.clients.consumer.CooperativeStickyAssignor]
+	receive.buffer.bytes = 65536
+	reconnect.backoff.max.ms = 1000
+	reconnect.backoff.ms = 50
+	request.timeout.ms = 20000
+	retry.backoff.max.ms = 1000
+	retry.backoff.ms = 500
+	sasl.client.callback.handler.class = null
+	sasl.jaas.config = null
+	sasl.kerberos.kinit.cmd = /usr/bin/kinit
+	sasl.kerberos.min.time.before.relogin = 60000
+	sasl.kerberos.service.name = null
+	sasl.kerberos.ticket.renew.jitter = 0.05
+	sasl.kerberos.ticket.renew.window.factor = 0.8
+	sasl.login.callback.handler.class = null
+	sasl.login.class = null
+	sasl.login.connect.timeout.ms = null
+	sasl.login.read.timeout.ms = null
+	sasl.login.refresh.buffer.seconds = 300
+	sasl.login.refresh.min.period.seconds = 60
+	sasl.login.refresh.window.factor = 0.8
+	sasl.login.refresh.window.jitter = 0.05
+	sasl.login.retry.backoff.max.ms = 10000
+	sasl.login.retry.backoff.ms = 100
+	sasl.mechanism = GSSAPI
+	sasl.oauthbearer.clock.skew.seconds = 30
+	sasl.oauthbearer.expected.audience = null
+	sasl.oauthbearer.expected.issuer = null
+	sasl.oauthbearer.jwks.endpoint.refresh.ms = 3600000
+	sasl.oauthbearer.jwks.endpoint.retry.backoff.max.ms = 10000
+	sasl.oauthbearer.jwks.endpoint.retry.backoff.ms = 100
+	sasl.oauthbearer.jwks.endpoint.url = null
+	sasl.oauthbearer.scope.claim.name = scope
+	sasl.oauthbearer.sub.claim.name = sub
+	sasl.oauthbearer.token.endpoint.url = null
+	security.protocol = PLAINTEXT
+	security.providers = null
+	send.buffer.bytes = 131072
+	session.timeout.ms = 60000
+	socket.connection.setup.timeout.max.ms = 30000
+	socket.connection.setup.timeout.ms = 10000
+	ssl.cipher.suites = null
+	ssl.enabled.protocols = [TLSv1.2, TLSv1.3]
+	ssl.endpoint.identification.algorithm = https
+	ssl.engine.factory.class = null
+	ssl.key.password = null
+	ssl.keymanager.algorithm = SunX509
+	ssl.keystore.certificate.chain = null
+	ssl.keystore.key = null
+	ssl.keystore.location = null
+	ssl.keystore.password = null
+	ssl.keystore.type = JKS
+	ssl.protocol = TLSv1.3
+	ssl.provider = null
+	ssl.secure.random.implementation = null
+	ssl.trustmanager.algorithm = PKIX
+	ssl.truststore.certificates = null
+	ssl.truststore.location = null
+	ssl.truststore.password = null
+	ssl.truststore.type = JKS
+	value.deserializer = class org.apache.kafka.common.serialization.ByteArrayDeserializer
+
+2026-11-27T12:36:44.217+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.a.k.c.t.i.KafkaMetricsCollector        : initializing Kafka metrics collector
+2026-11-27T12:36:44.219+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.a.k.clients.consumer.ConsumerConfig    : These configurations '[auto.create.topics.enable, auto.register.schemas, use.latest.version, spring.json.add.type.headers]' were supplied but are not used yet.
+2026-11-27T12:36:44.219+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.a.kafka.common.utils.AppInfoParser     : The mbean of App info: [kafka.consumer], id: [commerce-streamer-2] already exists, so skipping a new mbean creation.
+2026-11-27T12:36:44.219+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] o.a.k.c.c.internals.LegacyKafkaConsumer  : [Consumer clientId=commerce-streamer-2, groupId=loopers-default-consumer] Subscribed to topic(s): demo.internal.topic-v1
+2026-11-27T12:36:44.226+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-2-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-2, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 2 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:36:44.227+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-1-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-1, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 2 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:36:44.227+09:00  INFO 88221 --- [commerce-streamer] [ntainer#0-2-C-1] [                                                 ] org.apache.kafka.clients.Metadata        : [Consumer clientId=commerce-streamer-2, groupId=loopers-default-consumer] Cluster ID: bG9vcGVyc3cxMGthZrYaAA
+2026-11-27T12:36:44.227+09:00  INFO 88221 --- [commerce-streamer] [ntainer#0-1-C-1] [                                                 ] org.apache.kafka.clients.Metadata        : [Consumer clientId=commerce-streamer-1, groupId=loopers-default-consumer] Cluster ID: bG9vcGVyc3cxMGthZrYaAA
+2026-11-27T12:36:44.229+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-0-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-0, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 2 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:36:44.229+09:00  INFO 88221 --- [commerce-streamer] [ntainer#0-0-C-1] [                                                 ] org.apache.kafka.clients.Metadata        : [Consumer clientId=commerce-streamer-0, groupId=loopers-default-consumer] Cluster ID: bG9vcGVyc3cxMGthZrYaAA
+2026-11-27T12:36:44.236+09:00  INFO 88221 --- [commerce-streamer] [           main] [                                                 ] c.loopers.CommerceStreamerApplication    : Started CommerceStreamerApplication in 5.672 seconds (process running for 6.029)
+2026-11-27T12:36:44.731+09:00  INFO 88221 --- [commerce-streamer] [pon-issue-0-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-0, groupId=commerce-streamer.coupon-issue] Discovered group coordinator localhost:39294 (id: 2147483644 rack: null)
+2026-11-27T12:36:44.733+09:00  INFO 88221 --- [commerce-streamer] [pon-issue-0-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-0, groupId=commerce-streamer.coupon-issue] (Re-)joining group
+2026-11-27T12:36:44.745+09:00  INFO 88221 --- [commerce-streamer] [pon-issue-0-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-0, groupId=commerce-streamer.coupon-issue] Request joining group due to: need to re-join with the given member-id: commerce-streamer-0-3e72cb5a-c5f3-4d35-a634-fecc21c1e408
+2026-11-27T12:36:44.745+09:00  INFO 88221 --- [commerce-streamer] [pon-issue-0-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-0, groupId=commerce-streamer.coupon-issue] (Re-)joining group
+2026-11-27T12:36:44.750+09:00  INFO 88221 --- [commerce-streamer] [pon-issue-0-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-0, groupId=commerce-streamer.coupon-issue] Successfully joined group with generation Generation{generationId=1, memberId='commerce-streamer-0-3e72cb5a-c5f3-4d35-a634-fecc21c1e408', protocol='cooperative-sticky'}
+2026-11-27T12:36:44.753+09:00  INFO 88221 --- [commerce-streamer] [pon-issue-0-C-1] [                                                 ] o.a.k.c.c.i.AbstractStickyAssignor       : Final assignment of partitions to consumers: 
+{commerce-streamer-0-3e72cb5a-c5f3-4d35-a634-fecc21c1e408=[coupon-issue-requests-0, coupon-issue-requests-1, coupon-issue-requests-2]}
+2026-11-27T12:36:44.753+09:00  INFO 88221 --- [commerce-streamer] [pon-issue-0-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-0, groupId=commerce-streamer.coupon-issue] Finished assignment for group at generation 1: {commerce-streamer-0-3e72cb5a-c5f3-4d35-a634-fecc21c1e408=Assignment(partitions=[coupon-issue-requests-0, coupon-issue-requests-1, coupon-issue-requests-2])}
+2026-11-27T12:36:44.765+09:00  INFO 88221 --- [commerce-streamer] [-activity-2-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-2, groupId=commerce-streamer.product-purchase-activity] Discovered group coordinator localhost:39293 (id: 2147483645 rack: null)
+2026-11-27T12:36:44.766+09:00  INFO 88221 --- [commerce-streamer] [-activity-2-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-2, groupId=commerce-streamer.product-purchase-activity] (Re-)joining group
+2026-11-27T12:36:44.774+09:00  INFO 88221 --- [commerce-streamer] [-activity-2-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-2, groupId=commerce-streamer.product-purchase-activity] Request joining group due to: need to re-join with the given member-id: commerce-streamer-2-54f26db4-3e16-45ab-8ac7-0b0787499868
+2026-11-27T12:36:44.774+09:00  INFO 88221 --- [commerce-streamer] [-activity-2-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-2, groupId=commerce-streamer.product-purchase-activity] (Re-)joining group
+2026-11-27T12:36:44.779+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-0-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-0, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 6 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:36:44.780+09:00  INFO 88221 --- [commerce-streamer] [-activity-2-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-2, groupId=commerce-streamer.product-purchase-activity] Successfully joined group with generation Generation{generationId=1, memberId='commerce-streamer-2-54f26db4-3e16-45ab-8ac7-0b0787499868', protocol='cooperative-sticky'}
+2026-11-27T12:36:44.781+09:00  INFO 88221 --- [commerce-streamer] [-activity-2-C-1] [                                                 ] o.a.k.c.c.i.AbstractStickyAssignor       : Final assignment of partitions to consumers: 
+{commerce-streamer-2-54f26db4-3e16-45ab-8ac7-0b0787499868=[order-events-0, order-events-1, order-events-2]}
+2026-11-27T12:36:44.781+09:00  INFO 88221 --- [commerce-streamer] [-activity-2-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-2, groupId=commerce-streamer.product-purchase-activity] Finished assignment for group at generation 1: {commerce-streamer-2-54f26db4-3e16-45ab-8ac7-0b0787499868=Assignment(partitions=[order-events-0, order-events-1, order-events-2])}
+2026-11-27T12:36:44.782+09:00  INFO 88221 --- [commerce-streamer] [ntainer#0-0-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-0, groupId=loopers-default-consumer] Discovered group coordinator localhost:39294 (id: 2147483644 rack: null)
+2026-11-27T12:36:44.782+09:00  INFO 88221 --- [commerce-streamer] [ntainer#0-0-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-0, groupId=loopers-default-consumer] (Re-)joining group
+2026-11-27T12:36:44.786+09:00  INFO 88221 --- [commerce-streamer] [ntainer#0-0-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-0, groupId=loopers-default-consumer] Request joining group due to: need to re-join with the given member-id: commerce-streamer-0-a758e98a-3dc2-4c19-b6b9-bb885a5aff59
+2026-11-27T12:36:44.786+09:00  INFO 88221 --- [commerce-streamer] [ntainer#0-0-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-0, groupId=loopers-default-consumer] (Re-)joining group
+2026-11-27T12:36:44.789+09:00  INFO 88221 --- [commerce-streamer] [ntainer#0-0-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-0, groupId=loopers-default-consumer] Successfully joined group with generation Generation{generationId=1, memberId='commerce-streamer-0-a758e98a-3dc2-4c19-b6b9-bb885a5aff59', protocol='range'}
+2026-11-27T12:36:44.798+09:00  INFO 88221 --- [commerce-streamer] [-activity-0-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-0, groupId=commerce-streamer.product-purchase-activity] Discovered group coordinator localhost:39293 (id: 2147483645 rack: null)
+2026-11-27T12:36:44.799+09:00  INFO 88221 --- [commerce-streamer] [-activity-0-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-0, groupId=commerce-streamer.product-purchase-activity] (Re-)joining group
+2026-11-27T12:36:44.800+09:00  INFO 88221 --- [commerce-streamer] [-activity-1-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-1, groupId=commerce-streamer.product-purchase-activity] Discovered group coordinator localhost:39293 (id: 2147483645 rack: null)
+2026-11-27T12:36:44.801+09:00  INFO 88221 --- [commerce-streamer] [-activity-1-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-1, groupId=commerce-streamer.product-purchase-activity] (Re-)joining group
+2026-11-27T12:36:44.802+09:00  INFO 88221 --- [commerce-streamer] [-activity-0-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-0, groupId=commerce-streamer.product-purchase-activity] Request joining group due to: need to re-join with the given member-id: commerce-streamer-0-bd86e590-7daa-4d49-8fa8-f52070c7d4e4
+2026-11-27T12:36:44.802+09:00  INFO 88221 --- [commerce-streamer] [-activity-0-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-0, groupId=commerce-streamer.product-purchase-activity] (Re-)joining group
+2026-11-27T12:36:44.803+09:00  INFO 88221 --- [commerce-streamer] [-activity-2-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-2, groupId=commerce-streamer.product-purchase-activity] SyncGroup failed: The group began another rebalance. Need to re-join the group. Sent generation was Generation{generationId=1, memberId='commerce-streamer-2-54f26db4-3e16-45ab-8ac7-0b0787499868', protocol='cooperative-sticky'}
+2026-11-27T12:36:44.803+09:00  INFO 88221 --- [commerce-streamer] [-activity-2-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-2, groupId=commerce-streamer.product-purchase-activity] Request joining group due to: rebalance failed due to 'The group is rebalancing, so a rejoin is needed.' (RebalanceInProgressException)
+2026-11-27T12:36:44.804+09:00  INFO 88221 --- [commerce-streamer] [-activity-2-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-2, groupId=commerce-streamer.product-purchase-activity] (Re-)joining group
+2026-11-27T12:36:44.804+09:00  INFO 88221 --- [commerce-streamer] [-activity-1-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-1, groupId=commerce-streamer.product-purchase-activity] Request joining group due to: need to re-join with the given member-id: commerce-streamer-1-951bf58b-37a1-4ec0-b5ab-9573df050f1c
+2026-11-27T12:36:44.805+09:00  INFO 88221 --- [commerce-streamer] [-activity-1-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-1, groupId=commerce-streamer.product-purchase-activity] (Re-)joining group
+2026-11-27T12:36:44.806+09:00  INFO 88221 --- [commerce-streamer] [-activity-2-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-2, groupId=commerce-streamer.product-purchase-activity] Successfully joined group with generation Generation{generationId=2, memberId='commerce-streamer-2-54f26db4-3e16-45ab-8ac7-0b0787499868', protocol='cooperative-sticky'}
+2026-11-27T12:36:44.806+09:00  INFO 88221 --- [commerce-streamer] [-activity-1-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-1, groupId=commerce-streamer.product-purchase-activity] Successfully joined group with generation Generation{generationId=2, memberId='commerce-streamer-1-951bf58b-37a1-4ec0-b5ab-9573df050f1c', protocol='cooperative-sticky'}
+2026-11-27T12:36:44.806+09:00  INFO 88221 --- [commerce-streamer] [-activity-0-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-0, groupId=commerce-streamer.product-purchase-activity] Successfully joined group with generation Generation{generationId=2, memberId='commerce-streamer-0-bd86e590-7daa-4d49-8fa8-f52070c7d4e4', protocol='cooperative-sticky'}
+2026-11-27T12:36:44.806+09:00  INFO 88221 --- [commerce-streamer] [-activity-2-C-1] [                                                 ] o.a.k.c.c.i.AbstractStickyAssignor       : Final assignment of partitions to consumers: 
+{commerce-streamer-1-951bf58b-37a1-4ec0-b5ab-9573df050f1c=[order-events-1], commerce-streamer-2-54f26db4-3e16-45ab-8ac7-0b0787499868=[order-events-2], commerce-streamer-0-bd86e590-7daa-4d49-8fa8-f52070c7d4e4=[order-events-0]}
+2026-11-27T12:36:44.806+09:00  INFO 88221 --- [commerce-streamer] [-activity-2-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-2, groupId=commerce-streamer.product-purchase-activity] Finished assignment for group at generation 2: {commerce-streamer-2-54f26db4-3e16-45ab-8ac7-0b0787499868=Assignment(partitions=[order-events-2]), commerce-streamer-1-951bf58b-37a1-4ec0-b5ab-9573df050f1c=Assignment(partitions=[order-events-1]), commerce-streamer-0-bd86e590-7daa-4d49-8fa8-f52070c7d4e4=Assignment(partitions=[order-events-0])}
+2026-11-27T12:36:44.815+09:00  INFO 88221 --- [commerce-streamer] [pon-issue-1-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-1, groupId=commerce-streamer.coupon-issue] Discovered group coordinator localhost:39294 (id: 2147483644 rack: null)
+2026-11-27T12:36:44.815+09:00  INFO 88221 --- [commerce-streamer] [pon-issue-1-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-1, groupId=commerce-streamer.coupon-issue] (Re-)joining group
+2026-11-27T12:36:44.816+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-1-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-1, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 6 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:36:44.818+09:00  INFO 88221 --- [commerce-streamer] [ntainer#0-1-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-1, groupId=loopers-default-consumer] Discovered group coordinator localhost:39294 (id: 2147483644 rack: null)
+2026-11-27T12:36:44.818+09:00  INFO 88221 --- [commerce-streamer] [ntainer#0-1-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-1, groupId=loopers-default-consumer] (Re-)joining group
+2026-11-27T12:36:44.818+09:00  INFO 88221 --- [commerce-streamer] [pon-issue-1-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-1, groupId=commerce-streamer.coupon-issue] Request joining group due to: need to re-join with the given member-id: commerce-streamer-1-464948e1-b3a8-4eac-9ecd-d79006f81694
+2026-11-27T12:36:44.819+09:00  INFO 88221 --- [commerce-streamer] [pon-issue-1-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-1, groupId=commerce-streamer.coupon-issue] (Re-)joining group
+2026-11-27T12:36:44.819+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-2-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-2, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 6 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:36:44.820+09:00  INFO 88221 --- [commerce-streamer] [pon-issue-0-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-0, groupId=commerce-streamer.coupon-issue] SyncGroup failed: The group began another rebalance. Need to re-join the group. Sent generation was Generation{generationId=1, memberId='commerce-streamer-0-3e72cb5a-c5f3-4d35-a634-fecc21c1e408', protocol='cooperative-sticky'}
+2026-11-27T12:36:44.820+09:00  INFO 88221 --- [commerce-streamer] [pon-issue-0-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-0, groupId=commerce-streamer.coupon-issue] Request joining group due to: rebalance failed due to 'The group is rebalancing, so a rejoin is needed.' (RebalanceInProgressException)
+2026-11-27T12:36:44.820+09:00  INFO 88221 --- [commerce-streamer] [pon-issue-0-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-0, groupId=commerce-streamer.coupon-issue] (Re-)joining group
+2026-11-27T12:36:44.821+09:00  INFO 88221 --- [commerce-streamer] [ntainer#0-1-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-1, groupId=loopers-default-consumer] Request joining group due to: need to re-join with the given member-id: commerce-streamer-1-8ef4e1dc-c71b-4733-8461-ff30730b3ca1
+2026-11-27T12:36:44.821+09:00  INFO 88221 --- [commerce-streamer] [ntainer#0-2-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-2, groupId=loopers-default-consumer] Discovered group coordinator localhost:39294 (id: 2147483644 rack: null)
+2026-11-27T12:36:44.821+09:00  INFO 88221 --- [commerce-streamer] [ntainer#0-1-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-1, groupId=loopers-default-consumer] (Re-)joining group
+2026-11-27T12:36:44.822+09:00  INFO 88221 --- [commerce-streamer] [ntainer#0-2-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-2, groupId=loopers-default-consumer] (Re-)joining group
+2026-11-27T12:36:44.822+09:00  INFO 88221 --- [commerce-streamer] [pon-issue-1-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-1, groupId=commerce-streamer.coupon-issue] Successfully joined group with generation Generation{generationId=2, memberId='commerce-streamer-1-464948e1-b3a8-4eac-9ecd-d79006f81694', protocol='cooperative-sticky'}
+2026-11-27T12:36:44.822+09:00  INFO 88221 --- [commerce-streamer] [pon-issue-0-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-0, groupId=commerce-streamer.coupon-issue] Successfully joined group with generation Generation{generationId=2, memberId='commerce-streamer-0-3e72cb5a-c5f3-4d35-a634-fecc21c1e408', protocol='cooperative-sticky'}
+2026-11-27T12:36:44.823+09:00  INFO 88221 --- [commerce-streamer] [pon-issue-0-C-1] [                                                 ] o.a.k.c.c.i.AbstractStickyAssignor       : Final assignment of partitions to consumers: 
+{commerce-streamer-0-3e72cb5a-c5f3-4d35-a634-fecc21c1e408=[coupon-issue-requests-0, coupon-issue-requests-2], commerce-streamer-1-464948e1-b3a8-4eac-9ecd-d79006f81694=[coupon-issue-requests-1]}
+2026-11-27T12:36:44.823+09:00  INFO 88221 --- [commerce-streamer] [pon-issue-0-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-0, groupId=commerce-streamer.coupon-issue] Finished assignment for group at generation 2: {commerce-streamer-1-464948e1-b3a8-4eac-9ecd-d79006f81694=Assignment(partitions=[coupon-issue-requests-1]), commerce-streamer-0-3e72cb5a-c5f3-4d35-a634-fecc21c1e408=Assignment(partitions=[coupon-issue-requests-0, coupon-issue-requests-2])}
+2026-11-27T12:36:44.826+09:00  INFO 88221 --- [commerce-streamer] [ntainer#0-2-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-2, groupId=loopers-default-consumer] Request joining group due to: need to re-join with the given member-id: commerce-streamer-2-dea0927f-eef5-4810-80fa-cb8e30f5d025
+2026-11-27T12:36:44.826+09:00  INFO 88221 --- [commerce-streamer] [ntainer#0-2-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-2, groupId=loopers-default-consumer] (Re-)joining group
+2026-11-27T12:36:44.999+09:00  INFO 88221 --- [commerce-streamer] [pon-issue-1-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-1, groupId=commerce-streamer.coupon-issue] Successfully synced group in generation Generation{generationId=2, memberId='commerce-streamer-1-464948e1-b3a8-4eac-9ecd-d79006f81694', protocol='cooperative-sticky'}
+2026-11-27T12:36:45.000+09:00  INFO 88221 --- [commerce-streamer] [pon-issue-0-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-0, groupId=commerce-streamer.coupon-issue] Successfully synced group in generation Generation{generationId=2, memberId='commerce-streamer-0-3e72cb5a-c5f3-4d35-a634-fecc21c1e408', protocol='cooperative-sticky'}
+2026-11-27T12:36:45.000+09:00  INFO 88221 --- [commerce-streamer] [-activity-0-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-0, groupId=commerce-streamer.product-purchase-activity] Successfully synced group in generation Generation{generationId=2, memberId='commerce-streamer-0-bd86e590-7daa-4d49-8fa8-f52070c7d4e4', protocol='cooperative-sticky'}
+2026-11-27T12:36:45.000+09:00  INFO 88221 --- [commerce-streamer] [-activity-2-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-2, groupId=commerce-streamer.product-purchase-activity] Successfully synced group in generation Generation{generationId=2, memberId='commerce-streamer-2-54f26db4-3e16-45ab-8ac7-0b0787499868', protocol='cooperative-sticky'}
+2026-11-27T12:36:45.000+09:00  INFO 88221 --- [commerce-streamer] [-activity-1-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-1, groupId=commerce-streamer.product-purchase-activity] Successfully synced group in generation Generation{generationId=2, memberId='commerce-streamer-1-951bf58b-37a1-4ec0-b5ab-9573df050f1c', protocol='cooperative-sticky'}
+2026-11-27T12:36:45.000+09:00  INFO 88221 --- [commerce-streamer] [pon-issue-0-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-0, groupId=commerce-streamer.coupon-issue] Updating assignment with
+	Assigned partitions:                       [coupon-issue-requests-0, coupon-issue-requests-2]
+	Current owned partitions:                  []
+	Added partitions (assigned - owned):       [coupon-issue-requests-0, coupon-issue-requests-2]
+	Revoked partitions (owned - assigned):     []
+
+2026-11-27T12:36:45.000+09:00  INFO 88221 --- [commerce-streamer] [-activity-1-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-1, groupId=commerce-streamer.product-purchase-activity] Updating assignment with
+	Assigned partitions:                       [order-events-1]
+	Current owned partitions:                  []
+	Added partitions (assigned - owned):       [order-events-1]
+	Revoked partitions (owned - assigned):     []
+
+2026-11-27T12:36:45.000+09:00  INFO 88221 --- [commerce-streamer] [pon-issue-1-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-1, groupId=commerce-streamer.coupon-issue] Updating assignment with
+	Assigned partitions:                       [coupon-issue-requests-1]
+	Current owned partitions:                  []
+	Added partitions (assigned - owned):       [coupon-issue-requests-1]
+	Revoked partitions (owned - assigned):     []
+
+2026-11-27T12:36:45.000+09:00  INFO 88221 --- [commerce-streamer] [-activity-2-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-2, groupId=commerce-streamer.product-purchase-activity] Updating assignment with
+	Assigned partitions:                       [order-events-2]
+	Current owned partitions:                  []
+	Added partitions (assigned - owned):       [order-events-2]
+	Revoked partitions (owned - assigned):     []
+
+2026-11-27T12:36:45.000+09:00  INFO 88221 --- [commerce-streamer] [-activity-0-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-0, groupId=commerce-streamer.product-purchase-activity] Updating assignment with
+	Assigned partitions:                       [order-events-0]
+	Current owned partitions:                  []
+	Added partitions (assigned - owned):       [order-events-0]
+	Revoked partitions (owned - assigned):     []
+
+2026-11-27T12:36:45.000+09:00  INFO 88221 --- [commerce-streamer] [pon-issue-1-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-1, groupId=commerce-streamer.coupon-issue] Notifying assignor about the new Assignment(partitions=[coupon-issue-requests-1])
+2026-11-27T12:36:45.000+09:00  INFO 88221 --- [commerce-streamer] [-activity-2-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-2, groupId=commerce-streamer.product-purchase-activity] Notifying assignor about the new Assignment(partitions=[order-events-2])
+2026-11-27T12:36:45.000+09:00  INFO 88221 --- [commerce-streamer] [pon-issue-0-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-0, groupId=commerce-streamer.coupon-issue] Notifying assignor about the new Assignment(partitions=[coupon-issue-requests-0, coupon-issue-requests-2])
+2026-11-27T12:36:45.000+09:00  INFO 88221 --- [commerce-streamer] [-activity-1-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-1, groupId=commerce-streamer.product-purchase-activity] Notifying assignor about the new Assignment(partitions=[order-events-1])
+2026-11-27T12:36:45.000+09:00  INFO 88221 --- [commerce-streamer] [-activity-0-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-0, groupId=commerce-streamer.product-purchase-activity] Notifying assignor about the new Assignment(partitions=[order-events-0])
+2026-11-27T12:36:45.003+09:00  INFO 88221 --- [commerce-streamer] [pon-issue-0-C-1] [                                                 ] k.c.c.i.ConsumerRebalanceListenerInvoker : [Consumer clientId=commerce-streamer-0, groupId=commerce-streamer.coupon-issue] Adding newly assigned partitions: coupon-issue-requests-0, coupon-issue-requests-2
+2026-11-27T12:36:45.003+09:00  INFO 88221 --- [commerce-streamer] [-activity-0-C-1] [                                                 ] k.c.c.i.ConsumerRebalanceListenerInvoker : [Consumer clientId=commerce-streamer-0, groupId=commerce-streamer.product-purchase-activity] Adding newly assigned partitions: order-events-0
+2026-11-27T12:36:45.003+09:00  INFO 88221 --- [commerce-streamer] [-activity-1-C-1] [                                                 ] k.c.c.i.ConsumerRebalanceListenerInvoker : [Consumer clientId=commerce-streamer-1, groupId=commerce-streamer.product-purchase-activity] Adding newly assigned partitions: order-events-1
+2026-11-27T12:36:45.003+09:00  INFO 88221 --- [commerce-streamer] [-activity-2-C-1] [                                                 ] k.c.c.i.ConsumerRebalanceListenerInvoker : [Consumer clientId=commerce-streamer-2, groupId=commerce-streamer.product-purchase-activity] Adding newly assigned partitions: order-events-2
+2026-11-27T12:36:45.003+09:00  INFO 88221 --- [commerce-streamer] [pon-issue-1-C-1] [                                                 ] k.c.c.i.ConsumerRebalanceListenerInvoker : [Consumer clientId=commerce-streamer-1, groupId=commerce-streamer.coupon-issue] Adding newly assigned partitions: coupon-issue-requests-1
+2026-11-27T12:36:45.012+09:00  INFO 88221 --- [commerce-streamer] [-activity-0-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-0, groupId=commerce-streamer.product-purchase-activity] Found no committed offset for partition order-events-0
+2026-11-27T12:36:45.012+09:00  INFO 88221 --- [commerce-streamer] [pon-issue-1-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-1, groupId=commerce-streamer.coupon-issue] Found no committed offset for partition coupon-issue-requests-1
+2026-11-27T12:36:45.012+09:00  INFO 88221 --- [commerce-streamer] [-activity-1-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-1, groupId=commerce-streamer.product-purchase-activity] Found no committed offset for partition order-events-1
+2026-11-27T12:36:45.012+09:00  INFO 88221 --- [commerce-streamer] [-activity-2-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-2, groupId=commerce-streamer.product-purchase-activity] Found no committed offset for partition order-events-2
+2026-11-27T12:36:45.012+09:00  INFO 88221 --- [commerce-streamer] [pon-issue-0-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-0, groupId=commerce-streamer.coupon-issue] Found no committed offset for partition coupon-issue-requests-0
+2026-11-27T12:36:45.012+09:00  INFO 88221 --- [commerce-streamer] [pon-issue-0-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-0, groupId=commerce-streamer.coupon-issue] Found no committed offset for partition coupon-issue-requests-2
+2026-11-27T12:36:45.021+09:00  INFO 88221 --- [commerce-streamer] [-activity-2-C-1] [                                                 ] o.a.k.c.c.internals.SubscriptionState    : [Consumer clientId=commerce-streamer-2, groupId=commerce-streamer.product-purchase-activity] Resetting offset for partition order-events-2 to position FetchPosition{offset=0, offsetEpoch=Optional.empty, currentLeader=LeaderAndEpoch{leader=Optional[localhost:39292 (id: 1 rack: null)], epoch=0}}.
+2026-11-27T12:36:45.021+09:00  INFO 88221 --- [commerce-streamer] [-activity-0-C-1] [                                                 ] o.a.k.c.c.internals.SubscriptionState    : [Consumer clientId=commerce-streamer-0, groupId=commerce-streamer.product-purchase-activity] Resetting offset for partition order-events-0 to position FetchPosition{offset=0, offsetEpoch=Optional.empty, currentLeader=LeaderAndEpoch{leader=Optional[localhost:39293 (id: 2 rack: null)], epoch=0}}.
+2026-11-27T12:36:45.021+09:00  INFO 88221 --- [commerce-streamer] [pon-issue-0-C-1] [                                                 ] o.a.k.c.c.internals.SubscriptionState    : [Consumer clientId=commerce-streamer-0, groupId=commerce-streamer.coupon-issue] Resetting offset for partition coupon-issue-requests-2 to position FetchPosition{offset=0, offsetEpoch=Optional.empty, currentLeader=LeaderAndEpoch{leader=Optional[localhost:39293 (id: 2 rack: null)], epoch=0}}.
+2026-11-27T12:36:45.021+09:00  INFO 88221 --- [commerce-streamer] [pon-issue-1-C-1] [                                                 ] o.a.k.c.c.internals.SubscriptionState    : [Consumer clientId=commerce-streamer-1, groupId=commerce-streamer.coupon-issue] Resetting offset for partition coupon-issue-requests-1 to position FetchPosition{offset=0, offsetEpoch=Optional.empty, currentLeader=LeaderAndEpoch{leader=Optional[localhost:39292 (id: 1 rack: null)], epoch=0}}.
+2026-11-27T12:36:45.021+09:00  INFO 88221 --- [commerce-streamer] [pon-issue-1-C-1] [                                                 ] o.s.k.l.KafkaMessageListenerContainer    : commerce-streamer.coupon-issue: partitions assigned: [coupon-issue-requests-1]
+2026-11-27T12:36:45.021+09:00  INFO 88221 --- [commerce-streamer] [-activity-2-C-1] [                                                 ] o.s.k.l.KafkaMessageListenerContainer    : commerce-streamer.product-purchase-activity: partitions assigned: [order-events-2]
+2026-11-27T12:36:45.021+09:00  INFO 88221 --- [commerce-streamer] [-activity-0-C-1] [                                                 ] o.s.k.l.KafkaMessageListenerContainer    : commerce-streamer.product-purchase-activity: partitions assigned: [order-events-0]
+2026-11-27T12:36:45.023+09:00  INFO 88221 --- [commerce-streamer] [pon-issue-0-C-1] [                                                 ] o.a.k.c.c.internals.SubscriptionState    : [Consumer clientId=commerce-streamer-0, groupId=commerce-streamer.coupon-issue] Resetting offset for partition coupon-issue-requests-0 to position FetchPosition{offset=0, offsetEpoch=Optional.empty, currentLeader=LeaderAndEpoch{leader=Optional[localhost:39294 (id: 3 rack: null)], epoch=0}}.
+2026-11-27T12:36:45.023+09:00  INFO 88221 --- [commerce-streamer] [-activity-1-C-1] [                                                 ] o.a.k.c.c.internals.SubscriptionState    : [Consumer clientId=commerce-streamer-1, groupId=commerce-streamer.product-purchase-activity] Resetting offset for partition order-events-1 to position FetchPosition{offset=0, offsetEpoch=Optional.empty, currentLeader=LeaderAndEpoch{leader=Optional[localhost:39294 (id: 3 rack: null)], epoch=0}}.
+2026-11-27T12:36:45.023+09:00  INFO 88221 --- [commerce-streamer] [pon-issue-0-C-1] [                                                 ] o.s.k.l.KafkaMessageListenerContainer    : commerce-streamer.coupon-issue: partitions assigned: [coupon-issue-requests-0, coupon-issue-requests-2]
+2026-11-27T12:36:45.023+09:00  INFO 88221 --- [commerce-streamer] [-activity-1-C-1] [                                                 ] o.s.k.l.KafkaMessageListenerContainer    : commerce-streamer.product-purchase-activity: partitions assigned: [order-events-1]
+2026-11-27T12:36:45.705+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-1-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-1, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 11 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:36:45.782+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-0-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-0, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 11 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:36:45.784+09:00  INFO 88221 --- [commerce-streamer] [ntainer#0-0-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-0, groupId=loopers-default-consumer] Finished assignment for group at generation 1: {commerce-streamer-0-a758e98a-3dc2-4c19-b6b9-bb885a5aff59=Assignment(partitions=[])}
+2026-11-27T12:36:45.787+09:00  INFO 88221 --- [commerce-streamer] [ntainer#0-0-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-0, groupId=loopers-default-consumer] SyncGroup failed: The group began another rebalance. Need to re-join the group. Sent generation was Generation{generationId=1, memberId='commerce-streamer-0-a758e98a-3dc2-4c19-b6b9-bb885a5aff59', protocol='range'}
+2026-11-27T12:36:45.787+09:00  INFO 88221 --- [commerce-streamer] [ntainer#0-0-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-0, groupId=loopers-default-consumer] Request joining group due to: rebalance failed due to 'The group is rebalancing, so a rejoin is needed.' (RebalanceInProgressException)
+2026-11-27T12:36:45.787+09:00  INFO 88221 --- [commerce-streamer] [ntainer#0-0-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-0, groupId=loopers-default-consumer] (Re-)joining group
+2026-11-27T12:36:45.789+09:00  INFO 88221 --- [commerce-streamer] [ntainer#0-1-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-1, groupId=loopers-default-consumer] Successfully joined group with generation Generation{generationId=2, memberId='commerce-streamer-1-8ef4e1dc-c71b-4733-8461-ff30730b3ca1', protocol='range'}
+2026-11-27T12:36:45.789+09:00  INFO 88221 --- [commerce-streamer] [ntainer#0-2-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-2, groupId=loopers-default-consumer] Successfully joined group with generation Generation{generationId=2, memberId='commerce-streamer-2-dea0927f-eef5-4810-80fa-cb8e30f5d025', protocol='range'}
+2026-11-27T12:36:45.789+09:00  INFO 88221 --- [commerce-streamer] [ntainer#0-0-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-0, groupId=loopers-default-consumer] Successfully joined group with generation Generation{generationId=2, memberId='commerce-streamer-0-a758e98a-3dc2-4c19-b6b9-bb885a5aff59', protocol='range'}
+2026-11-27T12:36:45.792+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-2-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-2, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 12 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:36:46.631+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-1-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-1, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 13 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:36:46.791+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-0-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-0, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 14 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:36:46.792+09:00  INFO 88221 --- [commerce-streamer] [ntainer#0-0-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-0, groupId=loopers-default-consumer] Finished assignment for group at generation 2: {commerce-streamer-1-8ef4e1dc-c71b-4733-8461-ff30730b3ca1=Assignment(partitions=[]), commerce-streamer-2-dea0927f-eef5-4810-80fa-cb8e30f5d025=Assignment(partitions=[]), commerce-streamer-0-a758e98a-3dc2-4c19-b6b9-bb885a5aff59=Assignment(partitions=[])}
+2026-11-27T12:36:46.798+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-2-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-2, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 13 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:36:46.812+09:00  INFO 88221 --- [commerce-streamer] [ntainer#0-0-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-0, groupId=loopers-default-consumer] Successfully synced group in generation Generation{generationId=2, memberId='commerce-streamer-0-a758e98a-3dc2-4c19-b6b9-bb885a5aff59', protocol='range'}
+2026-11-27T12:36:46.812+09:00  INFO 88221 --- [commerce-streamer] [ntainer#0-2-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-2, groupId=loopers-default-consumer] Successfully synced group in generation Generation{generationId=2, memberId='commerce-streamer-2-dea0927f-eef5-4810-80fa-cb8e30f5d025', protocol='range'}
+2026-11-27T12:36:46.812+09:00  INFO 88221 --- [commerce-streamer] [ntainer#0-1-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-1, groupId=loopers-default-consumer] Successfully synced group in generation Generation{generationId=2, memberId='commerce-streamer-1-8ef4e1dc-c71b-4733-8461-ff30730b3ca1', protocol='range'}
+2026-11-27T12:36:46.813+09:00  INFO 88221 --- [commerce-streamer] [ntainer#0-1-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-1, groupId=loopers-default-consumer] Notifying assignor about the new Assignment(partitions=[])
+2026-11-27T12:36:46.813+09:00  INFO 88221 --- [commerce-streamer] [ntainer#0-2-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-2, groupId=loopers-default-consumer] Notifying assignor about the new Assignment(partitions=[])
+2026-11-27T12:36:46.813+09:00  INFO 88221 --- [commerce-streamer] [ntainer#0-0-C-1] [                                                 ] o.a.k.c.c.internals.ConsumerCoordinator  : [Consumer clientId=commerce-streamer-0, groupId=loopers-default-consumer] Notifying assignor about the new Assignment(partitions=[])
+2026-11-27T12:36:46.813+09:00  INFO 88221 --- [commerce-streamer] [ntainer#0-2-C-1] [                                                 ] k.c.c.i.ConsumerRebalanceListenerInvoker : [Consumer clientId=commerce-streamer-2, groupId=loopers-default-consumer] Adding newly assigned partitions: 
+2026-11-27T12:36:46.813+09:00  INFO 88221 --- [commerce-streamer] [ntainer#0-1-C-1] [                                                 ] k.c.c.i.ConsumerRebalanceListenerInvoker : [Consumer clientId=commerce-streamer-1, groupId=loopers-default-consumer] Adding newly assigned partitions: 
+2026-11-27T12:36:46.813+09:00  INFO 88221 --- [commerce-streamer] [ntainer#0-0-C-1] [                                                 ] k.c.c.i.ConsumerRebalanceListenerInvoker : [Consumer clientId=commerce-streamer-0, groupId=loopers-default-consumer] Adding newly assigned partitions: 
+2026-11-27T12:36:46.814+09:00  INFO 88221 --- [commerce-streamer] [ntainer#0-0-C-1] [                                                 ] o.s.k.l.KafkaMessageListenerContainer    : loopers-default-consumer: partitions assigned: []
+2026-11-27T12:36:46.814+09:00  INFO 88221 --- [commerce-streamer] [ntainer#0-2-C-1] [                                                 ] o.s.k.l.KafkaMessageListenerContainer    : loopers-default-consumer: partitions assigned: []
+2026-11-27T12:36:46.814+09:00  INFO 88221 --- [commerce-streamer] [ntainer#0-1-C-1] [                                                 ] o.s.k.l.KafkaMessageListenerContainer    : loopers-default-consumer: partitions assigned: []
+2026-11-27T12:36:47.633+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-1-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-1, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 14 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:36:47.765+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-0-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-0, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 16 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:36:47.801+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-2-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-2, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 14 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:36:48.635+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-1-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-1, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 15 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:36:48.771+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-0-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-0, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 17 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:36:48.808+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-2-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-2, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 15 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:36:49.012+09:00  INFO 88221 --- [commerce-streamer] [-activity-1-C-1] [                                                 ] o.a.k.clients.admin.AdminClientConfig    : AdminClientConfig values: 
+	auto.include.jmx.reporter = true
+	bootstrap.controllers = []
+	bootstrap.servers = [localhost:39292, localhost:39293, localhost:39294]
+	client.dns.lookup = use_all_dns_ips
+	client.id = commerce-streamer
+	connections.max.idle.ms = 300000
+	default.api.timeout.ms = 60000
+	enable.metrics.push = true
+	metadata.max.age.ms = 300000
+	metadata.recovery.strategy = none
+	metric.reporters = []
+	metrics.num.samples = 2
+	metrics.recording.level = INFO
+	metrics.sample.window.ms = 30000
+	receive.buffer.bytes = 65536
+	reconnect.backoff.max.ms = 1000
+	reconnect.backoff.ms = 50
+	request.timeout.ms = 20000
+	retries = 2147483647
+	retry.backoff.max.ms = 1000
+	retry.backoff.ms = 500
+	sasl.client.callback.handler.class = null
+	sasl.jaas.config = null
+	sasl.kerberos.kinit.cmd = /usr/bin/kinit
+	sasl.kerberos.min.time.before.relogin = 60000
+	sasl.kerberos.service.name = null
+	sasl.kerberos.ticket.renew.jitter = 0.05
+	sasl.kerberos.ticket.renew.window.factor = 0.8
+	sasl.login.callback.handler.class = null
+	sasl.login.class = null
+	sasl.login.connect.timeout.ms = null
+	sasl.login.read.timeout.ms = null
+	sasl.login.refresh.buffer.seconds = 300
+	sasl.login.refresh.min.period.seconds = 60
+	sasl.login.refresh.window.factor = 0.8
+	sasl.login.refresh.window.jitter = 0.05
+	sasl.login.retry.backoff.max.ms = 10000
+	sasl.login.retry.backoff.ms = 100
+	sasl.mechanism = GSSAPI
+	sasl.oauthbearer.clock.skew.seconds = 30
+	sasl.oauthbearer.expected.audience = null
+	sasl.oauthbearer.expected.issuer = null
+	sasl.oauthbearer.jwks.endpoint.refresh.ms = 3600000
+	sasl.oauthbearer.jwks.endpoint.retry.backoff.max.ms = 10000
+	sasl.oauthbearer.jwks.endpoint.retry.backoff.ms = 100
+	sasl.oauthbearer.jwks.endpoint.url = null
+	sasl.oauthbearer.scope.claim.name = scope
+	sasl.oauthbearer.sub.claim.name = sub
+	sasl.oauthbearer.token.endpoint.url = null
+	security.protocol = PLAINTEXT
+	security.providers = null
+	send.buffer.bytes = 131072
+	socket.connection.setup.timeout.max.ms = 30000
+	socket.connection.setup.timeout.ms = 10000
+	ssl.cipher.suites = null
+	ssl.enabled.protocols = [TLSv1.2, TLSv1.3]
+	ssl.endpoint.identification.algorithm = https
+	ssl.engine.factory.class = null
+	ssl.key.password = null
+	ssl.keymanager.algorithm = SunX509
+	ssl.keystore.certificate.chain = null
+	ssl.keystore.key = null
+	ssl.keystore.location = null
+	ssl.keystore.password = null
+	ssl.keystore.type = JKS
+	ssl.protocol = TLSv1.3
+	ssl.provider = null
+	ssl.secure.random.implementation = null
+	ssl.trustmanager.algorithm = PKIX
+	ssl.truststore.certificates = null
+	ssl.truststore.location = null
+	ssl.truststore.password = null
+	ssl.truststore.type = JKS
+
+2026-11-27T12:36:49.012+09:00  INFO 88221 --- [commerce-streamer] [-activity-2-C-1] [                                                 ] o.a.k.clients.admin.AdminClientConfig    : AdminClientConfig values: 
+	auto.include.jmx.reporter = true
+	bootstrap.controllers = []
+	bootstrap.servers = [localhost:39292, localhost:39293, localhost:39294]
+	client.dns.lookup = use_all_dns_ips
+	client.id = commerce-streamer
+	connections.max.idle.ms = 300000
+	default.api.timeout.ms = 60000
+	enable.metrics.push = true
+	metadata.max.age.ms = 300000
+	metadata.recovery.strategy = none
+	metric.reporters = []
+	metrics.num.samples = 2
+	metrics.recording.level = INFO
+	metrics.sample.window.ms = 30000
+	receive.buffer.bytes = 65536
+	reconnect.backoff.max.ms = 1000
+	reconnect.backoff.ms = 50
+	request.timeout.ms = 20000
+	retries = 2147483647
+	retry.backoff.max.ms = 1000
+	retry.backoff.ms = 500
+	sasl.client.callback.handler.class = null
+	sasl.jaas.config = null
+	sasl.kerberos.kinit.cmd = /usr/bin/kinit
+	sasl.kerberos.min.time.before.relogin = 60000
+	sasl.kerberos.service.name = null
+	sasl.kerberos.ticket.renew.jitter = 0.05
+	sasl.kerberos.ticket.renew.window.factor = 0.8
+	sasl.login.callback.handler.class = null
+	sasl.login.class = null
+	sasl.login.connect.timeout.ms = null
+	sasl.login.read.timeout.ms = null
+	sasl.login.refresh.buffer.seconds = 300
+	sasl.login.refresh.min.period.seconds = 60
+	sasl.login.refresh.window.factor = 0.8
+	sasl.login.refresh.window.jitter = 0.05
+	sasl.login.retry.backoff.max.ms = 10000
+	sasl.login.retry.backoff.ms = 100
+	sasl.mechanism = GSSAPI
+	sasl.oauthbearer.clock.skew.seconds = 30
+	sasl.oauthbearer.expected.audience = null
+	sasl.oauthbearer.expected.issuer = null
+	sasl.oauthbearer.jwks.endpoint.refresh.ms = 3600000
+	sasl.oauthbearer.jwks.endpoint.retry.backoff.max.ms = 10000
+	sasl.oauthbearer.jwks.endpoint.retry.backoff.ms = 100
+	sasl.oauthbearer.jwks.endpoint.url = null
+	sasl.oauthbearer.scope.claim.name = scope
+	sasl.oauthbearer.sub.claim.name = sub
+	sasl.oauthbearer.token.endpoint.url = null
+	security.protocol = PLAINTEXT
+	security.providers = null
+	send.buffer.bytes = 131072
+	socket.connection.setup.timeout.max.ms = 30000
+	socket.connection.setup.timeout.ms = 10000
+	ssl.cipher.suites = null
+	ssl.enabled.protocols = [TLSv1.2, TLSv1.3]
+	ssl.endpoint.identification.algorithm = https
+	ssl.engine.factory.class = null
+	ssl.key.password = null
+	ssl.keymanager.algorithm = SunX509
+	ssl.keystore.certificate.chain = null
+	ssl.keystore.key = null
+	ssl.keystore.location = null
+	ssl.keystore.password = null
+	ssl.keystore.type = JKS
+	ssl.protocol = TLSv1.3
+	ssl.provider = null
+	ssl.secure.random.implementation = null
+	ssl.trustmanager.algorithm = PKIX
+	ssl.truststore.certificates = null
+	ssl.truststore.location = null
+	ssl.truststore.password = null
+	ssl.truststore.type = JKS
+
+2026-11-27T12:36:49.012+09:00  INFO 88221 --- [commerce-streamer] [-activity-0-C-1] [                                                 ] o.a.k.clients.admin.AdminClientConfig    : AdminClientConfig values: 
+	auto.include.jmx.reporter = true
+	bootstrap.controllers = []
+	bootstrap.servers = [localhost:39292, localhost:39293, localhost:39294]
+	client.dns.lookup = use_all_dns_ips
+	client.id = commerce-streamer
+	connections.max.idle.ms = 300000
+	default.api.timeout.ms = 60000
+	enable.metrics.push = true
+	metadata.max.age.ms = 300000
+	metadata.recovery.strategy = none
+	metric.reporters = []
+	metrics.num.samples = 2
+	metrics.recording.level = INFO
+	metrics.sample.window.ms = 30000
+	receive.buffer.bytes = 65536
+	reconnect.backoff.max.ms = 1000
+	reconnect.backoff.ms = 50
+	request.timeout.ms = 20000
+	retries = 2147483647
+	retry.backoff.max.ms = 1000
+	retry.backoff.ms = 500
+	sasl.client.callback.handler.class = null
+	sasl.jaas.config = null
+	sasl.kerberos.kinit.cmd = /usr/bin/kinit
+	sasl.kerberos.min.time.before.relogin = 60000
+	sasl.kerberos.service.name = null
+	sasl.kerberos.ticket.renew.jitter = 0.05
+	sasl.kerberos.ticket.renew.window.factor = 0.8
+	sasl.login.callback.handler.class = null
+	sasl.login.class = null
+	sasl.login.connect.timeout.ms = null
+	sasl.login.read.timeout.ms = null
+	sasl.login.refresh.buffer.seconds = 300
+	sasl.login.refresh.min.period.seconds = 60
+	sasl.login.refresh.window.factor = 0.8
+	sasl.login.refresh.window.jitter = 0.05
+	sasl.login.retry.backoff.max.ms = 10000
+	sasl.login.retry.backoff.ms = 100
+	sasl.mechanism = GSSAPI
+	sasl.oauthbearer.clock.skew.seconds = 30
+	sasl.oauthbearer.expected.audience = null
+	sasl.oauthbearer.expected.issuer = null
+	sasl.oauthbearer.jwks.endpoint.refresh.ms = 3600000
+	sasl.oauthbearer.jwks.endpoint.retry.backoff.max.ms = 10000
+	sasl.oauthbearer.jwks.endpoint.retry.backoff.ms = 100
+	sasl.oauthbearer.jwks.endpoint.url = null
+	sasl.oauthbearer.scope.claim.name = scope
+	sasl.oauthbearer.sub.claim.name = sub
+	sasl.oauthbearer.token.endpoint.url = null
+	security.protocol = PLAINTEXT
+	security.providers = null
+	send.buffer.bytes = 131072
+	socket.connection.setup.timeout.max.ms = 30000
+	socket.connection.setup.timeout.ms = 10000
+	ssl.cipher.suites = null
+	ssl.enabled.protocols = [TLSv1.2, TLSv1.3]
+	ssl.endpoint.identification.algorithm = https
+	ssl.engine.factory.class = null
+	ssl.key.password = null
+	ssl.keymanager.algorithm = SunX509
+	ssl.keystore.certificate.chain = null
+	ssl.keystore.key = null
+	ssl.keystore.location = null
+	ssl.keystore.password = null
+	ssl.keystore.type = JKS
+	ssl.protocol = TLSv1.3
+	ssl.provider = null
+	ssl.secure.random.implementation = null
+	ssl.trustmanager.algorithm = PKIX
+	ssl.truststore.certificates = null
+	ssl.truststore.location = null
+	ssl.truststore.password = null
+	ssl.truststore.type = JKS
+
+2026-11-27T12:36:49.016+09:00  INFO 88221 --- [commerce-streamer] [-activity-1-C-1] [                                                 ] o.a.k.clients.admin.AdminClientConfig    : These configurations '[auto.create.topics.enable, auto.register.schemas, use.latest.version, spring.json.add.type.headers, auto.offset.reset]' were supplied but are not used yet.
+2026-11-27T12:36:49.016+09:00  INFO 88221 --- [commerce-streamer] [-activity-0-C-1] [                                                 ] o.a.k.clients.admin.AdminClientConfig    : These configurations '[auto.create.topics.enable, auto.register.schemas, use.latest.version, spring.json.add.type.headers, auto.offset.reset]' were supplied but are not used yet.
+2026-11-27T12:36:49.016+09:00  INFO 88221 --- [commerce-streamer] [-activity-2-C-1] [                                                 ] o.a.k.clients.admin.AdminClientConfig    : These configurations '[auto.create.topics.enable, auto.register.schemas, use.latest.version, spring.json.add.type.headers, auto.offset.reset]' were supplied but are not used yet.
+2026-11-27T12:36:49.016+09:00  INFO 88221 --- [commerce-streamer] [-activity-1-C-1] [                                                 ] o.a.kafka.common.utils.AppInfoParser     : Kafka version: 3.8.1
+2026-11-27T12:36:49.016+09:00  INFO 88221 --- [commerce-streamer] [-activity-1-C-1] [                                                 ] o.a.kafka.common.utils.AppInfoParser     : Kafka commitId: 70d6ff42debf7e17
+2026-11-27T12:36:49.016+09:00  INFO 88221 --- [commerce-streamer] [-activity-1-C-1] [                                                 ] o.a.kafka.common.utils.AppInfoParser     : Kafka startTimeMs: 1795750609016
+2026-11-27T12:36:49.016+09:00  INFO 88221 --- [commerce-streamer] [-activity-2-C-1] [                                                 ] o.a.kafka.common.utils.AppInfoParser     : The mbean of App info: [kafka.admin.client], id: [commerce-streamer] already exists, so skipping a new mbean creation.
+2026-11-27T12:36:49.016+09:00  INFO 88221 --- [commerce-streamer] [-activity-0-C-1] [                                                 ] o.a.kafka.common.utils.AppInfoParser     : The mbean of App info: [kafka.admin.client], id: [commerce-streamer] already exists, so skipping a new mbean creation.
+2026-11-27T12:36:49.026+09:00  INFO 88221 --- [commerce-streamer] [mmerce-streamer] [                                                 ] o.a.kafka.common.utils.AppInfoParser     : App info kafka.admin.client for commerce-streamer unregistered
+2026-11-27T12:36:49.027+09:00  INFO 88221 --- [commerce-streamer] [mmerce-streamer] [                                                 ] o.apache.kafka.common.metrics.Metrics    : Metrics scheduler closed
+2026-11-27T12:36:49.027+09:00  INFO 88221 --- [commerce-streamer] [mmerce-streamer] [                                                 ] o.apache.kafka.common.metrics.Metrics    : Closing reporter org.apache.kafka.common.metrics.JmxReporter
+2026-11-27T12:36:49.027+09:00  INFO 88221 --- [commerce-streamer] [mmerce-streamer] [                                                 ] o.apache.kafka.common.metrics.Metrics    : Metrics reporters closed
+2026-11-27T12:36:49.029+09:00  INFO 88221 --- [commerce-streamer] [mmerce-streamer] [                                                 ] o.a.kafka.common.utils.AppInfoParser     : App info kafka.admin.client for commerce-streamer unregistered
+2026-11-27T12:36:49.030+09:00  INFO 88221 --- [commerce-streamer] [mmerce-streamer] [                                                 ] o.apache.kafka.common.metrics.Metrics    : Metrics scheduler closed
+2026-11-27T12:36:49.030+09:00  INFO 88221 --- [commerce-streamer] [mmerce-streamer] [                                                 ] o.apache.kafka.common.metrics.Metrics    : Closing reporter org.apache.kafka.common.metrics.JmxReporter
+2026-11-27T12:36:49.030+09:00  INFO 88221 --- [commerce-streamer] [mmerce-streamer] [                                                 ] o.apache.kafka.common.metrics.Metrics    : Metrics reporters closed
+2026-11-27T12:36:49.030+09:00  INFO 88221 --- [commerce-streamer] [mmerce-streamer] [                                                 ] o.a.kafka.common.utils.AppInfoParser     : App info kafka.admin.client for commerce-streamer unregistered
+2026-11-27T12:36:49.031+09:00  INFO 88221 --- [commerce-streamer] [mmerce-streamer] [                                                 ] o.apache.kafka.common.metrics.Metrics    : Metrics scheduler closed
+2026-11-27T12:36:49.032+09:00  INFO 88221 --- [commerce-streamer] [mmerce-streamer] [                                                 ] o.apache.kafka.common.metrics.Metrics    : Closing reporter org.apache.kafka.common.metrics.JmxReporter
+2026-11-27T12:36:49.032+09:00  INFO 88221 --- [commerce-streamer] [mmerce-streamer] [                                                 ] o.apache.kafka.common.metrics.Metrics    : Metrics reporters closed
+2026-11-27T12:36:49.207+09:00  INFO 88221 --- [commerce-streamer] [-activity-0-C-1] [7312d6c4375a44b4feb4fe05dff6171f-0874a4b828dd3dff] c.l.p.a.PurchaseActivityService          : 구매 활동 저장. eventId=2d51e3cb-5a59-46bf-859d-f5e6f26ef191, orderId=1, items=1
+2026-11-27T12:36:49.210+09:00  INFO 88221 --- [commerce-streamer] [-activity-1-C-1] [97fc1c917d943ea6e48aa44e32fcfa5d-eeca73a7e3c40f6d] c.l.p.a.PurchaseActivityService          : 구매 활동 저장. eventId=9d2394ab-30aa-49d0-be16-9179e803b49c, orderId=4, items=1
+2026-11-27T12:36:49.210+09:00  INFO 88221 --- [commerce-streamer] [-activity-2-C-1] [381e7a48d3a413f09b01ab0a507323e2-e22230c4a939e8f5] c.l.p.a.PurchaseActivityService          : 구매 활동 저장. eventId=53a11d11-a692-4226-844b-7880a8a5ee5d, orderId=2, items=1
+2026-11-27T12:36:49.226+09:00  WARN 88221 --- [commerce-streamer] [-activity-2-C-1] [381e7a48d3a413f09b01ab0a507323e2-e22230c4a939e8f5] i.m.p.PrometheusMeterRegistry            : The meter (MeterId{name='spring.kafka.listener', tags=[tag(application=commerce-streamer),tag(error=none),tag(messaging.kafka.consumer.group=commerce-streamer.product-purchase-activity),tag(messaging.operation=receive),tag(messaging.source.kind=topic),tag(messaging.source.name=order-events),tag(messaging.system=kafka),tag(spring.kafka.listener.id=purchase-activity-2)]}) registration has failed: Prometheus requires that all meters with the same name have the same set of tag keys. There is already an existing meter named 'spring.kafka.listener' containing tag keys [application, exception, name, result]. The meter you are attempting to register has keys [application, error, messaging.kafka.consumer.group, messaging.operation, messaging.source.kind, messaging.source.name, messaging.system, spring.kafka.listener.id]. Note that subsequent logs will be logged at debug level.
+2026-11-27T12:36:49.240+09:00  INFO 88221 --- [commerce-streamer] [-activity-0-C-1] [fd85ab4d7e4d0a1d2553f942dc655d5e-acdef27a7435cdd8] c.l.p.a.PurchaseActivityService          : 구매 활동 저장. eventId=8ac27eca-71e2-45cd-8fe7-6db87fe284c4, orderId=5, items=1
+2026-11-27T12:36:49.240+09:00  INFO 88221 --- [commerce-streamer] [-activity-1-C-1] [dcd15a1c47e2a8f8a7f31933d05f8d5c-3d15c168e7180eda] c.l.p.a.PurchaseActivityService          : 구매 활동 저장. eventId=db67d27f-88bb-42f4-afc2-2fc88d01f9e3, orderId=6, items=1
+2026-11-27T12:36:49.241+09:00  INFO 88221 --- [commerce-streamer] [-activity-2-C-1] [1a17628e764d41671e5a5f630f2b188c-c205671b1d4abd13] c.l.p.a.PurchaseActivityService          : 구매 활동 저장. eventId=93a4d95b-7cec-49dc-b618-2bdbb6548cc8, orderId=3, items=1
+2026-11-27T12:36:49.260+09:00  INFO 88221 --- [commerce-streamer] [-activity-2-C-1] [fa0552ef04f5cd077de06b877a246220-f2f76a5932e2bfcf] c.l.p.a.PurchaseActivityService          : 구매 활동 저장. eventId=1e2d2463-55fe-42c0-9346-81b2046ce94c, orderId=9, items=1
+2026-11-27T12:36:49.260+09:00  INFO 88221 --- [commerce-streamer] [-activity-0-C-1] [32c80286412468848b44c97d12ce4578-22035a573c9168ef] c.l.p.a.PurchaseActivityService          : 구매 활동 저장. eventId=3c9e41fd-84f2-4475-9f4f-c6280420535d, orderId=7, items=1
+2026-11-27T12:36:49.260+09:00  INFO 88221 --- [commerce-streamer] [-activity-1-C-1] [aff19772b902e3b56c38f48ce8f401b3-da458fe1b4a76746] c.l.p.a.PurchaseActivityService          : 구매 활동 저장. eventId=25098538-f0ec-49ac-aa9a-d853e1021f00, orderId=10, items=1
+2026-11-27T12:36:49.280+09:00  INFO 88221 --- [commerce-streamer] [-activity-0-C-1] [f57290a1c1f509770f80a27f7c253d00-975733bfe8f362ec] c.l.p.a.PurchaseActivityService          : 구매 활동 저장. eventId=e505f6ee-a792-4134-9bcd-3948606aa8a4, orderId=8, items=1
+2026-11-27T12:36:49.594+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-1-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-1, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 16 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:36:49.731+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-2-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-2, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 16 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:36:49.773+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-0-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-0, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 18 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:36:50.139+09:00  INFO 88221 --- [commerce-streamer] [-activity-0-C-1] [89ae3ae2a822323cba54acc6d1978932-c5c5d459ec9d5b7f] c.l.p.a.PurchaseActivityService          : 구매 활동 저장. eventId=8888b94d-7753-4564-8622-e20397dfb2af, orderId=11, items=1
+2026-11-27T12:36:50.146+09:00  INFO 88221 --- [commerce-streamer] [-activity-1-C-1] [7395440867cceee43021eda49d52e410-732c2f0e7bc20865] c.l.p.a.PurchaseActivityService          : 구매 활동 저장. eventId=5b8cb238-310e-45f0-b065-a6eef62cde2b, orderId=13, items=1
+2026-11-27T12:36:50.167+09:00  INFO 88221 --- [commerce-streamer] [-activity-2-C-1] [e6f9b5474be080cbe7495e361ebf539d-9b1c52c486de9fa6] c.l.p.a.PurchaseActivityService          : 구매 활동 저장. eventId=972e7f25-e324-43d9-86ab-2382c3eb2f4c, orderId=16, items=1
+2026-11-27T12:36:50.168+09:00  INFO 88221 --- [commerce-streamer] [-activity-1-C-1] [2384fbbe9b7aed09d21ec6cf3a12d06e-a0dd994bd1218dca] c.l.p.a.PurchaseActivityService          : 구매 활동 저장. eventId=69bd4d1e-eaa6-485b-83c1-9b808bf1376b, orderId=14, items=1
+2026-11-27T12:36:50.175+09:00  INFO 88221 --- [commerce-streamer] [-activity-0-C-1] [f7050e5a7ee9a8017aa1c7e4ba17037c-5a915ed7adaf6421] c.l.p.a.PurchaseActivityService          : 구매 활동 저장. eventId=b4b7feeb-2a2c-4953-8859-acd0ec29c64b, orderId=17, items=1
+2026-11-27T12:36:50.186+09:00  INFO 88221 --- [commerce-streamer] [-activity-1-C-1] [77ba78d2f9ebcfb1705322e520ee676b-5a24fba631a49bb7] c.l.p.a.PurchaseActivityService          : 구매 활동 저장. eventId=6566d82d-dbda-44ae-a6fc-05a9ae72bbb7, orderId=19, items=1
+2026-11-27T12:36:50.201+09:00  INFO 88221 --- [commerce-streamer] [-activity-1-C-1] [21af57b6b5c8f17e29578fbc012c8f1c-a4b8185ccd204a39] c.l.p.a.PurchaseActivityService          : 구매 활동 저장. eventId=18473fd4-0c0c-45fb-8fe3-590b9445e970, orderId=20, items=1
+2026-11-27T12:36:50.597+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-1-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-1, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 17 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:36:50.599+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-2-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-2, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 17 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:36:50.776+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-0-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-0, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 19 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:36:51.601+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-1-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-1, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 18 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:36:51.603+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-2-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-2, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 18 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:36:51.782+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-0-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-0, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 20 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:36:52.524+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-1-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-1, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 19 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:36:52.537+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-2-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-2, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 19 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:36:52.786+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-0-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-0, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 21 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:36:53.531+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-1-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-1, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 20 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:36:53.541+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-2-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-2, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 20 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:36:53.691+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-0-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-0, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 22 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:36:54.535+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-1-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-1, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 21 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:36:54.545+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-2-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-2, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 21 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:36:54.697+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-0-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-0, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 23 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:36:55.539+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-1-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-1, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 22 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:36:55.547+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-2-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-2, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 22 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:36:55.701+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-0-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-0, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 24 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:36:56.542+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-1-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-1, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 23 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:36:56.549+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-2-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-2, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 23 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:36:56.704+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-0-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-0, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 25 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:36:57.469+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-1-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-1, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 24 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:36:57.552+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-2-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-2, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 24 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:36:57.707+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-0-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-0, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 26 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:36:58.467+09:00  INFO 88221 --- [commerce-streamer] [-activity-1-C-1] [8a0d8aba705fe152d3802ba96072e20f-203ed4c205679bca] c.l.p.a.PurchaseActivityService          : 구매 활동 저장. eventId=db70fea9-6e51-4193-871b-b0231c17efd1, orderId=12, items=1
+2026-11-27T12:36:58.472+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-1-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-1, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 25 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:36:58.476+09:00  INFO 88221 --- [commerce-streamer] [-activity-0-C-1] [6446465fcd8a3ebfea2ceb0fdd79a124-1d4afd2c99eb1154] c.l.p.a.PurchaseActivityService          : 구매 활동 저장. eventId=9e3feecf-1748-4e47-a3f8-422d74b50ef7, orderId=15, items=1
+2026-11-27T12:36:58.494+09:00  INFO 88221 --- [commerce-streamer] [-activity-1-C-1] [80d064ddcd6acb24c5ca7506521e7818-457d88e3c0ad844a] c.l.p.a.PurchaseActivityService          : 구매 활동 저장. eventId=cbd45a1e-53a7-44dd-b298-9e0a2d1bc6b0, orderId=18, items=1
+2026-11-27T12:36:58.555+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-2-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-2, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 25 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:36:58.710+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-0-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-0, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 27 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:36:59.359+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-1-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-1, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 26 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:36:59.556+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-2-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-2, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 26 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:36:59.714+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-0-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-0, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 28 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:37:00.365+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-1-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-1, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 27 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:37:00.560+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-2-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-2, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 27 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:37:00.719+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-0-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-0, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 29 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:37:01.369+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-1-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-1, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 28 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:37:01.561+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-2-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-2, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 28 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:37:01.722+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-0-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-0, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 30 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:37:02.373+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-1-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-1, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 29 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:37:02.566+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-2-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-2, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 29 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:37:02.728+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-0-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-0, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 31 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:37:03.377+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-1-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-1, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 30 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:37:03.442+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-2-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-2, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 30 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:37:03.734+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-0-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-0, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 32 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:37:04.381+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-1-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-1, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 31 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:37:04.407+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-2-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-2, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 31 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:37:04.736+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-0-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-0, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 33 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:37:05.384+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-1-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-1, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 32 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:37:05.411+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-2-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-2, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 32 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:37:05.740+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-0-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-0, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 34 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:37:06.388+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-1-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-1, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 34 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:37:06.414+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-2-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-2, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 34 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:37:06.743+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-0-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-0, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 36 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:37:07.286+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-1-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-1, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 35 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:37:07.292+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-2-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-2, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 35 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:37:07.744+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-0-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-0, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 37 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:37:08.290+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-1-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-1, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 36 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:37:08.294+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-2-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-2, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 36 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:37:08.747+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-0-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-0, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 38 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:37:09.228+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-2-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-2, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 37 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:37:09.293+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-1-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-1, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 37 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:37:09.749+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-0-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-0, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 39 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:37:10.204+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-1-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-1, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 38 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:37:10.231+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-2-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-2, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 38 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
+2026-11-27T12:37:10.753+09:00  WARN 88221 --- [commerce-streamer] [ntainer#0-0-C-1] [                                                 ] org.apache.kafka.clients.NetworkClient   : [Consumer clientId=commerce-streamer-0, groupId=loopers-default-consumer] Error while fetching metadata with correlation id 40 : {demo.internal.topic-v1=UNKNOWN_TOPIC_OR_PARTITION}
