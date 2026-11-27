@@ -1,0 +1,32 @@
+[holds] at=2026-11-24T14:50:16.857923Z held=[]
+[benefits] at=2026-11-24T14:50:16.879966Z phase=before-reconcile points=5000 coupons=[CouponInfo[couponId=1, campaignId=1, issuedAt=2020-01-08T12:00:00Z, benefitDescription=테스트 쿠폰, reservationId=null]]
+[reconcile] at=2026-11-24T14:50:16.952587Z orderId=13 httpStatus=200 body={"meta":{"result":"SUCCESS"},"data":{"orderId":13,"orderStatus":"CONFIRMED","paymentMethod":"PG","reservationStatus":"CONSUMED","paymentStatus":"SUCCESS","amount":1000,"checked":true,"statusPath":"/api/v1/orders/13"}}
+[reconcile] at=2026-11-24T14:50:16.986916Z orderId=16 httpStatus=200 body={"meta":{"result":"SUCCESS"},"data":{"orderId":16,"orderStatus":"CONFIRMED","paymentMethod":"PG","reservationStatus":"CONSUMED","paymentStatus":"SUCCESS","amount":1000,"checked":true,"statusPath":"/api/v1/orders/16"}}
+[reconcile] at=2026-11-24T14:50:17.046202Z orderId=19 httpStatus=200 body={"meta":{"result":"SUCCESS"},"data":{"orderId":19,"orderStatus":"CONFIRMED","paymentMethod":"PG","reservationStatus":"CONSUMED","paymentStatus":"SUCCESS","amount":1000,"checked":true,"statusPath":"/api/v1/orders/19"}}
+[recovery-check] at=2026-11-24T14:50:17.122912Z pgCreatesBefore=20 pgCreatesAfter=20 stockBefore=10 stockAfter=10 keysUnchanged=true
+[repeat] at=2026-11-24T14:50:17.155044Z orderId=13 reconcileStatus=200 callbackStatus=200 order=CONFIRMED pgCreates=20
+[other-user] at=2026-11-24T14:50:17.158872Z userId=2 orderId=16 httpStatus=404 body={"meta":{"result":"FAIL","errorCode":"Not Found","message":"주문을 찾을 수 없습니다."}}
+[benefits] at=2026-11-24T14:50:17.176064Z phase=after-reconcile points=5000 coupons=[CouponInfo[couponId=1, campaignId=1, issuedAt=2020-01-08T12:00:00Z, benefitDescription=테스트 쿠폰, reservationId=null]]
+[health] at=2026-11-24T14:50:17.187730Z path=/actuator/health httpStatus=200 body={"status":"UP","groups":["liveness","readiness"]}
+[health] at=2026-11-24T14:50:17.191058Z path=/actuator/health/liveness httpStatus=200 body={"status":"UP","components":{"livenessState":{"status":"UP"}}}
+[health] at=2026-11-24T14:50:17.199446Z path=/actuator/health/readiness httpStatus=200 body={"status":"UP","components":{"db":{"status":"UP"},"diskSpace":{"status":"UP"},"livenessState":{"status":"UP"},"ping":{"status":"UP"},"readinessState":{"status":"UP"},"redis":{"status":"UP","components":{"defaultRedisConnectionFactory":{"status":"UP"},"masterRedisConnectionFactory":{"status":"UP"},"productCacheRedisConnection":{"status":"UP"}}},"ssl":{"status":"UP"}}}
+[unknown-count] at=2026-11-24T14:50:17.202218Z count=0
+[unknown-gauge] at=2026-11-24T14:50:21.732393Z observedAfterMs=4529 sample=commerce_payment_attempts_unknown{application="commerce-api"} 0.0
+[order] orderId=11 providerOrderId=LP-ORD-0000000011 attempt=SUCCESS internalTxKey=TEST-TX-11 order=CONFIRMED reservation=CONSUMED paidAmount=1000
+[order] orderId=12 providerOrderId=LP-ORD-0000000012 attempt=SUCCESS internalTxKey=TEST-TX-12 order=CONFIRMED reservation=CONSUMED paidAmount=1000
+[order] orderId=13 providerOrderId=LP-ORD-0000000013 attempt=SUCCESS internalTxKey=TEST-TX-13 order=CONFIRMED reservation=CONSUMED paidAmount=1000
+[order] orderId=14 providerOrderId=LP-ORD-0000000014 attempt=SUCCESS internalTxKey=TEST-TX-14 order=CONFIRMED reservation=CONSUMED paidAmount=1000
+[order] orderId=15 providerOrderId=LP-ORD-0000000015 attempt=SUCCESS internalTxKey=TEST-TX-15 order=CONFIRMED reservation=CONSUMED paidAmount=1000
+[order] orderId=16 providerOrderId=LP-ORD-0000000016 attempt=SUCCESS internalTxKey=TEST-TX-16 order=CONFIRMED reservation=CONSUMED paidAmount=1000
+[order] orderId=17 providerOrderId=LP-ORD-0000000017 attempt=SUCCESS internalTxKey=TEST-TX-17 order=CONFIRMED reservation=CONSUMED paidAmount=1000
+[order] orderId=18 providerOrderId=LP-ORD-0000000018 attempt=SUCCESS internalTxKey=TEST-TX-18 order=CONFIRMED reservation=CONSUMED paidAmount=1000
+[order] orderId=19 providerOrderId=LP-ORD-0000000019 attempt=SUCCESS internalTxKey=TEST-TX-19 order=CONFIRMED reservation=CONSUMED paidAmount=1000
+[order] orderId=20 providerOrderId=LP-ORD-0000000020 attempt=SUCCESS internalTxKey=TEST-TX-20 order=CONFIRMED reservation=CONSUMED paidAmount=1000
+[pg] at=2026-11-24T14:50:21.799663Z createCalls=20 lookupCalls=23 transactions=20 stock=10 createCallsByOrder={LP-ORD-0000000011=1, LP-ORD-0000000012=1, LP-ORD-0000000013=1, LP-ORD-0000000014=1, LP-ORD-0000000015=1, LP-ORD-0000000016=1, LP-ORD-0000000017=1, LP-ORD-0000000018=1, LP-ORD-0000000019=1, LP-ORD-0000000020=1}
+[boundary-logs]
+2026-11-24T23:50:16.893+09:00  INFO 37054 --- [commerce-api] [    Test worker] [6b05a428389e3e0e6958b2256aecb5f5-6958b2256aecb5f5] c.l.i.payment.TestPgPaymentAdapter       : PG 요청: op=lookup providerOrderId=LP-ORD-0000000013
+2026-11-24T23:50:16.896+09:00  INFO 37054 --- [commerce-api] [    Test worker] [6b05a428389e3e0e6958b2256aecb5f5-6958b2256aecb5f5] c.l.i.payment.TestPgPaymentAdapter       : PG 응답: op=lookup providerOrderId=LP-ORD-0000000013 httpStatus=200 result=OBSERVED transactions=[TEST-TX-13:LP-ORD-0000000013:SUCCESS:1000] elapsedMs=2
+2026-11-24T23:50:16.963+09:00  INFO 37054 --- [commerce-api] [    Test worker] [6b05a428fd2bda80a5234fe4ad955307-a5234fe4ad955307] c.l.i.payment.TestPgPaymentAdapter       : PG 요청: op=lookup providerOrderId=LP-ORD-0000000016
+2026-11-24T23:50:16.965+09:00  INFO 37054 --- [commerce-api] [    Test worker] [6b05a428fd2bda80a5234fe4ad955307-a5234fe4ad955307] c.l.i.payment.TestPgPaymentAdapter       : PG 응답: op=lookup providerOrderId=LP-ORD-0000000016 httpStatus=200 result=OBSERVED transactions=[TEST-TX-16:LP-ORD-0000000016:SUCCESS:1000] elapsedMs=1
+2026-11-24T23:50:16.995+09:00  INFO 37054 --- [commerce-api] [    Test worker] [6b05a428a3a1cde52c9c24cbf8f5378c-2c9c24cbf8f5378c] c.l.i.payment.TestPgPaymentAdapter       : PG 요청: op=lookup providerOrderId=LP-ORD-0000000019
+2026-11-24T23:50:16.997+09:00  INFO 37054 --- [commerce-api] [    Test worker] [6b05a428a3a1cde52c9c24cbf8f5378c-2c9c24cbf8f5378c] c.l.i.payment.TestPgPaymentAdapter       : PG 응답: op=lookup providerOrderId=LP-ORD-0000000019 httpStatus=200 result=OBSERVED transactions=[TEST-TX-19:LP-ORD-0000000019:SUCCESS:1000] elapsedMs=1

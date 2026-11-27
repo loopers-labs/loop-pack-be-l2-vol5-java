@@ -1,0 +1,2 @@
+[holds] at=2026-11-24T14:53:31.190601Z held=[]
+[benefits] at=2026-11-24T14:53:31.213002Z phase=before-reconcile points=5000 coupons=[CouponInfo[couponId=1, campaignId=1, issuedAt=2020-01-08T12:00:00Z, benefitDescription=테스트 쿠폰, reservationId=null]]
